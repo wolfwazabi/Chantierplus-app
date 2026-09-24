@@ -1,0 +1,324 @@
+rules_version = '2';
+
+// =============================================================================
+// Règles Firestore — application de gestion de chantier (multi-compagnies)
+//
+// Modèle d'identité :
+//  - Employé : compte Firebase anonyme + document sessions/{uid} écrit
+//    UNIQUEMENT par la Cloud Function connexionEmploye (Admin SDK). La session
+//    n'est valide que si l'employé existe encore, appartient toujours à la même
+//    compagnie et que la compagnie est approuvée : une suppression d'employé,
+//    un changement de rôle ou un refus de compagnie prend effet immédiatement.
+//  - Particulier : compte courriel/mot de passe, données sous son uid.
+//  - Super-admin : custom claim superAdmin == true (posé côté serveur).
+//
+// Rappel : les règles ne filtrent pas les requêtes. Toute requête client DOIT
+// contenir where('companyId', isEqualTo: ...) sinon elle est refusée en bloc.
+//
+// Coût en lectures : sessions + employees + companies (+ chantiers pour les
+// sous-collections) = 4 documents maximum par requête. Firestore met en cache
+// les get()/exists() d'un même chemin durant une évaluation ; les appels
+// répétés ne comptent qu'une fois dans la limite de 10.
+// =============================================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------------------------------------------------------------- Identité
+
+    function estAuth() {
+      return request.auth != null;
+    }
+
+    function fournisseur() {
+      return request.auth.token.firebase.sign_in_provider;
+    }
+
+    function estSuperAdmin() {
+      // get() avec défaut : lire un claim absent lève une erreur, et
+      // !erreur ne vaut pas true (cela bloquerait tous les particuliers).
+      return estAuth() && request.auth.token.get('superAdmin', false) == true;
+    }
+
+    // Particulier : compte courriel/mot de passe qui n'est pas super-admin.
+    function estIndividu() {
+      return estAuth() && fournisseur() == 'password' && !estSuperAdmin();
+    }
+
+    function cheminSession() {
+      return /databases/$(database)/documents/sessions/$(request.auth.uid);
+    }
+
+    function cheminEmploye(id) {
+      return /databases/$(database)/documents/employees/$(id);
+    }
+
+    function cheminCompagnie(id) {
+      return /databases/$(database)/documents/companies/$(id);
+    }
+
+    function session() {
+      return get(cheminSession()).data;
+    }
+
+    function moi() {
+      return get(cheminEmploye(session().employeeId)).data;
+    }
+
+    function maCompagnie() {
+      return session().companyId;
+    }
+
+    // Vérifié en premier par toutes les règles employé ; grâce au court-circuit
+    // de &&, session()/moi() ne sont jamais évalués sur un document absent.
+    function estEmployeActif() {
+      return estAuth()
+        && fournisseur() == 'anonymous'
+        && exists(cheminSession())
+        && sessionEstValide(session());
+    }
+
+    function sessionEstValide(s) {
+      return s.employeeId is string
+        && s.companyId is string
+        && exists(cheminEmploye(s.employeeId))
+        && get(cheminEmploye(s.employeeId)).data.companyId == s.companyId
+        && get(cheminCompagnie(s.companyId)).data.statut == 'approuvee';
+    }
+
+    function membreDe(companyId) {
+      return estEmployeActif() && maCompagnie() == companyId;
+    }
+
+    function adminDe(companyId) {
+      return membreDe(companyId) && moi().role == 'admin';
+    }
+
+    // ------------------------------------------------------------- Validation
+
+    function texte(v, min, max) {
+      return v is string && v.size() >= min && v.size() <= max;
+    }
+
+    function texteOptionnel(data, champ, max) {
+      return !data.keys().hasAny([champ]) || texte(data[champ], 0, max);
+    }
+
+    function champsPermis(data, permis) {
+      return data.keys().hasOnly(permis);
+    }
+
+    function champsModifiesPermis(permis) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(permis);
+    }
+
+    function urlStorage(v) {
+      return v is string
+        && v.size() <= 2048
+        && v.matches('https://firebasestorage[.]googleapis[.]com/.*');
+    }
+
+    function chantierDe(chantierId, companyId) {
+      return chantierId is string
+        && exists(/databases/$(database)/documents/chantiers/$(chantierId))
+        && get(/databases/$(database)/documents/chantiers/$(chantierId)).data.companyId == companyId;
+    }
+
+    // ------------------------------------------------ Collections serveur seul
+
+    // Créées/modifiées exclusivement par les Cloud Functions (Admin SDK).
+    match /compteurs/{doc=**} {
+      allow read, write: if false;
+    }
+
+    match /limites_connexion/{doc=**} {
+      allow read, write: if false;
+    }
+
+    match /companies_prive/{doc=**} {
+      allow read, write: if false;
+    }
+
+    // ----------------------------------------------------------------- Sessions
+
+    match /sessions/{uid} {
+      // Lecture de sa propre session (reconnexion automatique) et déconnexion.
+      allow get: if estAuth() && request.auth.uid == uid;
+      allow delete: if estAuth() && request.auth.uid == uid;
+      // Création/modification : jamais depuis le client (sinon usurpation).
+      allow list, create, update: if false;
+    }
+
+    // --------------------------------------------------------------- Compagnies
+
+    match /companies/{companyId} {
+      allow get: if membreDe(companyId) || estSuperAdmin();
+      allow list: if estSuperAdmin();
+      allow write: if false; // inscrireCompagnie / approuverCompagnie
+    }
+
+    // ----------------------------------------------------------------- Employés
+
+    // Les NIP ne sont jamais stockés ici en clair (pinHash, écrit par les
+    // Cloud Functions). Aucune écriture client : enregistrerEmploye /
+    // supprimerEmploye appliquent les protections (propriétaire, unicité NIP).
+    match /employees/{employeeId} {
+      allow get: if membreDe(resource.data.companyId)
+        && (employeeId == session().employeeId || moi().role == 'admin');
+      allow list: if adminDe(resource.data.companyId);
+      allow write: if false;
+    }
+
+    // -------------------------------------------------------------- Particuliers
+
+    match /individus/{uid} {
+      allow get: if estIndividu() && request.auth.uid == uid;
+      allow create, update: if estIndividu()
+        && request.auth.uid == uid
+        && champsPermis(request.resource.data, ['nom', 'email'])
+        && texte(request.resource.data.nom, 1, 100)
+        && request.resource.data.email == request.auth.token.email;
+      allow list, delete: if false;
+    }
+
+    // ---------------------------------------------------------------- Chantiers
+
+    match /chantiers/{chantierId} {
+      allow read: if membreDe(resource.data.companyId);
+
+      allow create: if adminDe(request.resource.data.companyId)
+        && champsPermis(request.resource.data, ['companyId', 'nom', 'adresse'])
+        && texte(request.resource.data.nom, 1, 200)
+        && texteOptionnel(request.resource.data, 'adresse', 300);
+
+      allow update: if adminDe(resource.data.companyId)
+        && champsModifiesPermis(['nom', 'adresse'])
+        && texte(request.resource.data.nom, 1, 200)
+        && texteOptionnel(request.resource.data, 'adresse', 300);
+
+      allow delete: if adminDe(resource.data.companyId);
+    }
+
+    // ------------------------------------------------------------------- Photos
+
+    match /chantier_photos/{photoId} {
+      allow read: if membreDe(resource.data.companyId);
+
+      allow create: if membreDe(request.resource.data.companyId)
+        && champsPermis(request.resource.data,
+             ['companyId', 'chantierId', 'url', 'cheminStorage', 'dateAjout'])
+        && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
+        && urlStorage(request.resource.data.url)
+        && request.resource.data.cheminStorage is string
+        && request.resource.data.cheminStorage.matches(
+             'chantiers/' + request.resource.data.companyId + '/'
+             + request.resource.data.chantierId + '/photos/[^/]{1,200}')
+        && request.resource.data.dateAjout == request.time;
+
+      allow update: if false;
+      allow delete: if membreDe(resource.data.companyId);
+    }
+
+    // ------------------------------------------------------- Travaux / Matériel
+
+    function entreeValideCreation(d) {
+      return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
+                              'dateAjout', 'photoUrl', 'quantite'])
+        && chantierDe(d.chantierId, d.companyId)
+        && texte(d.texte, 1, 2000)
+        && d.complete == false
+        && d.dateAjout == request.time
+        && (!d.keys().hasAny(['photoUrl']) || urlStorage(d.photoUrl))
+        && texteOptionnel(d, 'quantite', 100);
+    }
+
+    function entreeValideModification(d) {
+      return champsModifiesPermis(['texte', 'quantite', 'photoUrl', 'complete', 'dateComplete'])
+        && texte(d.texte, 1, 2000)
+        && d.complete is bool
+        && (!d.keys().hasAny(['photoUrl']) || urlStorage(d.photoUrl))
+        && texteOptionnel(d, 'quantite', 100)
+        // dateComplete : horodatage serveur quand on complète, absent sinon.
+        && (d.complete == true
+              ? (!d.diff(resource.data).affectedKeys().hasAny(['dateComplete'])
+                 || d.dateComplete == request.time)
+              : !d.keys().hasAny(['dateComplete']));
+    }
+
+    match /chantier_travaux/{entreeId} {
+      allow read: if membreDe(resource.data.companyId);
+      allow create: if membreDe(request.resource.data.companyId)
+        && entreeValideCreation(request.resource.data);
+      allow update: if membreDe(resource.data.companyId)
+        && entreeValideModification(request.resource.data);
+      allow delete: if membreDe(resource.data.companyId);
+    }
+
+    match /chantier_materiel/{entreeId} {
+      allow read: if membreDe(resource.data.companyId);
+      allow create: if membreDe(request.resource.data.companyId)
+        && entreeValideCreation(request.resource.data);
+      allow update: if membreDe(resource.data.companyId)
+        && entreeValideModification(request.resource.data);
+      allow delete: if membreDe(resource.data.companyId);
+    }
+
+    // ---------------------------------------------------------- Feuilles de temps
+
+    // Identifiant : {employeeId}_{AAAA-MM-JJ} (lundi de la semaine).
+    function idFeuille(proprietaireId, lundiDate) {
+      return proprietaireId + '_' + lundiDate;
+    }
+
+    function contenuFeuilleValide(d, feuilleId) {
+      return d.lundiDate is string
+        && d.lundiDate.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+        && feuilleId == idFeuille(d.employeeId, d.lundiDate)
+        && texte(d.employeeNom, 0, 200)
+        && d.jours is list
+        && d.jours.size() <= 7
+        && d.totalHeures is number
+        && d.totalHeures >= 0
+        && d.totalHeures <= 168
+        && d.dateModification == request.time;
+    }
+
+    function feuilleEmployeValide(d, feuilleId) {
+      return champsPermis(d, ['companyId', 'estIndividuel', 'employeeId', 'employeeNom',
+                              'lundiDate', 'jours', 'totalHeures', 'dateModification'])
+        && d.companyId == maCompagnie()
+        && d.employeeId == session().employeeId
+        && d.employeeNom == moi().nom
+        && d.estIndividuel == false
+        && contenuFeuilleValide(d, feuilleId);
+    }
+
+    function feuilleIndividuValide(d, feuilleId) {
+      return champsPermis(d, ['estIndividuel', 'employeeId', 'employeeNom',
+                              'lundiDate', 'jours', 'totalHeures', 'dateModification'])
+        && d.employeeId == request.auth.uid
+        && d.estIndividuel == true
+        && contenuFeuilleValide(d, feuilleId);
+    }
+
+    match /feuilles_temps/{feuilleId} {
+      // Lecture de sa propre feuille, y compris inexistante (resource == null).
+      allow get: if (estEmployeActif()
+                      && feuilleId.matches(session().employeeId + '_[0-9]{4}-[0-9]{2}-[0-9]{2}'))
+                 || (estIndividu()
+                      && feuilleId.matches(request.auth.uid + '_[0-9]{4}-[0-9]{2}-[0-9]{2}'));
+
+      // Admin : toutes les feuilles de sa compagnie (requêtes filtrées par companyId).
+      allow list: if adminDe(resource.data.companyId);
+
+      allow create, update: if (estEmployeActif()
+                                 && feuilleEmployeValide(request.resource.data, feuilleId))
+                            || (estIndividu()
+                                 && feuilleIndividuValide(request.resource.data, feuilleId));
+
+      allow delete: if false;
+    }
+
+    // Tout le reste est refusé par défaut.
+  }
+}

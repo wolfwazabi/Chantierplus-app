@@ -1,0 +1,62 @@
+rules_version = '2';
+
+// =============================================================================
+// Règles Cloud Storage — photos de chantier
+//
+// Chemin : chantiers/{companyId}/{chantierId}/{type}/{fichier}
+//   type ∈ photos | chantier_travaux | chantier_materiel
+//
+// L'appartenance à la compagnie est vérifiée dans Firestore (même modèle que
+// firestore.rules : session écrite par le serveur + employé existant +
+// compagnie approuvée + chantier de la compagnie).
+//
+// Note : une URL obtenue par getDownloadURL() contient un jeton d'accès qui
+// contourne ces règles en lecture. Ne jamais exposer ces URL hors compagnie.
+// =============================================================================
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function estEmployeDe(companyId) {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'anonymous'
+        && firestore.exists(/databases/(default)/documents/sessions/$(request.auth.uid))
+        && sessionValide(firestore.get(/databases/(default)/documents/sessions/$(request.auth.uid)).data, companyId);
+    }
+
+    function sessionValide(s, companyId) {
+      return s.companyId == companyId
+        && firestore.exists(/databases/(default)/documents/employees/$(s.employeeId))
+        && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.companyId == companyId
+        && firestore.get(/databases/(default)/documents/companies/$(companyId)).data.statut == 'approuvee';
+    }
+
+    function chantierDe(chantierId, companyId) {
+      return firestore.exists(/databases/(default)/documents/chantiers/$(chantierId))
+        && firestore.get(/databases/(default)/documents/chantiers/$(chantierId)).data.companyId == companyId;
+    }
+
+    match /chantiers/{companyId}/{chantierId}/{type}/{fichier} {
+      allow read: if estEmployeDe(companyId);
+
+      // Création seulement. Dans Storage, réécrire un objet existant passe par
+      // « create » (update ne couvre que les métadonnées) : resource == null
+      // empêche l'écrasement.
+      allow create: if resource == null
+        && estEmployeDe(companyId)
+        && type in ['photos', 'chantier_travaux', 'chantier_materiel']
+        && chantierDe(chantierId, companyId)
+        && request.resource.size > 0
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp|heic)');
+
+      allow update: if false;
+      allow delete: if estEmployeDe(companyId);
+    }
+
+    // Tout le reste est refusé.
+    match /{tout=**} {
+      allow read, write: if false;
+    }
+  }
+}
