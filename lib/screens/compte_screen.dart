@@ -1,4 +1,6 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
+
 import '../models/employee.dart';
 import '../services/app_session.dart';
 
@@ -43,7 +45,8 @@ class CompteScreen extends StatefulWidget {
 }
 
 class _CompteScreenState extends State<CompteScreen> {
-  int _mode = 0; // 0 = connexion compagnie, 1 = inscription compagnie, 2 = individuel
+  int _mode =
+      0; // 0 = connexion compagnie, 1 = inscription compagnie, 2 = individuel
 
   final _numeroCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
@@ -109,7 +112,15 @@ class _CompteScreenState extends State<CompteScreen> {
         _nomAdminCtrl.text.trim().isEmpty ||
         _pinAdminCtrl.text.trim().isEmpty ||
         _emailAdminCtrl.text.trim().isEmpty) {
-      setState(() => _inscriptionErreur = 'Veuillez remplir tous les champs requis.');
+      setState(
+        () => _inscriptionErreur = 'Veuillez remplir tous les champs requis.',
+      );
+      return;
+    }
+    if (!RegExp(r'^\d{4,8}$').hasMatch(_pinAdminCtrl.text.trim())) {
+      setState(
+        () => _inscriptionErreur = 'Le NIP doit contenir de 4 à 8 chiffres.',
+      );
       return;
     }
 
@@ -134,9 +145,15 @@ class _CompteScreenState extends State<CompteScreen> {
         _numeroAttribue = numero;
         _inscriptionEnCours = false;
       });
-    } catch (e) {
+    } on FirebaseFunctionsException catch (e) {
       setState(() {
-        _inscriptionErreur = 'Erreur : $e';
+        _inscriptionErreur = e.message ?? 'Erreur lors de l\'inscription.';
+        _inscriptionEnCours = false;
+      });
+    } catch (_) {
+      setState(() {
+        _inscriptionErreur =
+            'Erreur lors de l\'inscription. Vérifiez votre réseau.';
         _inscriptionEnCours = false;
       });
     }
@@ -208,22 +225,47 @@ class _CompteScreenState extends State<CompteScreen> {
                     child: Icon(Icons.person, size: 40, color: Colors.white),
                   ),
                   const SizedBox(height: 16),
-                  Text(employee.nom, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  Text(
+                    employee.nom,
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(_libelleRole(employee), style: TextStyle(color: Colors.grey.shade600, fontSize: 15)),
+                  Text(
+                    _libelleRole(employee),
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 15),
+                  ),
                   if (employee.companyNom != null) ...[
                     const SizedBox(height: 2),
-                    Text(employee.companyNom!, style: TextStyle(color: Colors.grey.shade500, fontSize: 13)),
+                    Text(
+                      employee.companyNom!,
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 13,
+                      ),
+                    ),
                   ],
                   if (employee.estSuperAdmin) ...[
                     const SizedBox(height: 8),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
                       decoration: BoxDecoration(
                         color: Colors.purple.shade50,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: Text('Super Admin', style: TextStyle(color: Colors.purple.shade700, fontSize: 12, fontWeight: FontWeight.w600)),
+                      child: Text(
+                        'Super Admin',
+                        style: TextStyle(
+                          color: Colors.purple.shade700,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ],
                   const SizedBox(height: 32),
@@ -249,7 +291,11 @@ class _CompteScreenState extends State<CompteScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.construction, size: 56, color: Colors.orange.shade700),
+                  Icon(
+                    Icons.construction,
+                    size: 56,
+                    color: Colors.orange.shade700,
+                  ),
                   const SizedBox(height: 16),
                   ToggleButtons(
                     isSelected: [_mode == 0, _mode == 1, _mode == 2],
@@ -259,9 +305,27 @@ class _CompteScreenState extends State<CompteScreen> {
                     }),
                     borderRadius: BorderRadius.circular(8),
                     children: const [
-                      Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Se connecter')),
-                      Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Inscrire compagnie')),
-                      Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10), child: Text('Particuliers')),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        child: Text('Se connecter'),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        child: Text('Inscrire compagnie'),
+                      ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        child: Text('Particuliers'),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 24),
@@ -315,7 +379,11 @@ class _CompteScreenState extends State<CompteScreen> {
             onPressed: _enCours ? null : _seConnecter,
             style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
             child: _enCours
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('Se connecter'),
           ),
         ),
@@ -347,17 +415,26 @@ class _CompteScreenState extends State<CompteScreen> {
         content: TextField(
           controller: emailCtrl,
           keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'Votre courriel (propriétaire)'),
+          decoration: const InputDecoration(
+            labelText: 'Votre courriel (propriétaire)',
+          ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
           FilledButton(
             onPressed: () async {
               Navigator.pop(ctx);
               await AppSession.demanderNumeroCompagnie(emailCtrl.text.trim());
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Si ce courriel est associé à une compagnie, vous recevrez un message.')),
+                const SnackBar(
+                  content: Text(
+                    'Si ce courriel est associé à une compagnie, vous recevrez un message.',
+                  ),
+                ),
               );
             },
             child: const Text('Envoyer'),
@@ -380,7 +457,9 @@ class _CompteScreenState extends State<CompteScreen> {
             TextField(
               controller: numeroCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Numéro de compagnie'),
+              decoration: const InputDecoration(
+                labelText: 'Numéro de compagnie',
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
@@ -391,7 +470,10 @@ class _CompteScreenState extends State<CompteScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
           FilledButton(
             onPressed: () async {
               final numero = numeroCtrl.text.trim();
@@ -424,7 +506,9 @@ class _CompteScreenState extends State<CompteScreen> {
               TextField(
                 controller: codeCtrl,
                 keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Code (6 chiffres)'),
+                decoration: const InputDecoration(
+                  labelText: 'Code (6 chiffres)',
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
@@ -440,7 +524,10 @@ class _CompteScreenState extends State<CompteScreen> {
             ],
           ),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annuler'),
+            ),
             FilledButton(
               onPressed: () async {
                 final erreur = await AppSession.validerReinitialisation(
@@ -456,7 +543,9 @@ class _CompteScreenState extends State<CompteScreen> {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
-                        content: Text('NIP réinitialisé avec succès. Vous pouvez vous connecter.'),
+                        content: Text(
+                          'NIP réinitialisé avec succès. Vous pouvez vous connecter.',
+                        ),
                         backgroundColor: Colors.green,
                       ),
                     );
@@ -486,7 +575,10 @@ class _CompteScreenState extends State<CompteScreen> {
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
               const SizedBox(height: 8),
-              Text('Votre numéro de compagnie : $_numeroAttribue', style: const TextStyle(fontWeight: FontWeight.bold)),
+              Text(
+                'Votre numéro de compagnie : $_numeroAttribue',
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
               const SizedBox(height: 8),
               const Text(
                 'Votre inscription est en attente d\'approbation. Vous pourrez vous connecter dès qu\'elle sera approuvée.',
@@ -501,50 +593,79 @@ class _CompteScreenState extends State<CompteScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text('Informations sur la compagnie', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'Informations sur la compagnie',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
         TextField(
           controller: _nomEntrepriseCtrl,
-          decoration: const InputDecoration(labelText: 'Nom d\'entreprise', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Nom d\'entreprise',
+            border: OutlineInputBorder(),
+          ),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _nomLegalCtrl,
-          decoration: const InputDecoration(labelText: 'Nom légal', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Nom légal',
+            border: OutlineInputBorder(),
+          ),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _secteurChoisi,
           isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Secteur / métier', border: OutlineInputBorder()),
-          items: metiersQuebec.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+          decoration: const InputDecoration(
+            labelText: 'Secteur / métier',
+            border: OutlineInputBorder(),
+          ),
+          items: metiersQuebec
+              .map((m) => DropdownMenuItem(value: m, child: Text(m)))
+              .toList(),
           onChanged: (v) => setState(() => _secteurChoisi = v),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _nombreEmployesCtrl,
           keyboardType: TextInputType.number,
-          decoration: const InputDecoration(labelText: 'Nombre d\'employés (approx.)', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Nombre d\'employés (approx.)',
+            border: OutlineInputBorder(),
+          ),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _telephoneCtrl,
           keyboardType: TextInputType.phone,
-          decoration: const InputDecoration(labelText: 'Téléphone', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Téléphone',
+            border: OutlineInputBorder(),
+          ),
         ),
         const SizedBox(height: 20),
-        const Text('Votre compte administrateur (propriétaire)', style: TextStyle(fontWeight: FontWeight.bold)),
+        const Text(
+          'Votre compte administrateur (propriétaire)',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
         const SizedBox(height: 12),
         TextField(
           controller: _nomAdminCtrl,
-          decoration: const InputDecoration(labelText: 'Votre nom', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Votre nom',
+            border: OutlineInputBorder(),
+          ),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _pinAdminCtrl,
           keyboardType: TextInputType.number,
           obscureText: true,
-          decoration: const InputDecoration(labelText: 'Choisissez un NIP', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Choisissez un NIP',
+            border: OutlineInputBorder(),
+          ),
         ),
         const SizedBox(height: 12),
         TextField(
@@ -567,7 +688,11 @@ class _CompteScreenState extends State<CompteScreen> {
             onPressed: _inscriptionEnCours ? null : _soumettreInscription,
             style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
             child: _inscriptionEnCours
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
                 : const Text('Envoyer la demande'),
           ),
         ),
@@ -584,26 +709,36 @@ class _CompteScreenState extends State<CompteScreen> {
             ButtonSegment(value: true, label: Text('Créer un compte')),
           ],
           selected: {_modeInscriptionIndividuel},
-          onSelectionChanged: (s) => setState(() => _modeInscriptionIndividuel = s.first),
+          onSelectionChanged: (s) =>
+              setState(() => _modeInscriptionIndividuel = s.first),
         ),
         const SizedBox(height: 16),
         if (_modeInscriptionIndividuel) ...[
           TextField(
             controller: _nomIndividuelCtrl,
-            decoration: const InputDecoration(labelText: 'Votre nom', border: OutlineInputBorder()),
+            decoration: const InputDecoration(
+              labelText: 'Votre nom',
+              border: OutlineInputBorder(),
+            ),
           ),
           const SizedBox(height: 12),
         ],
         TextField(
           controller: _emailIndividuelCtrl,
           keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(labelText: 'Courriel', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Courriel',
+            border: OutlineInputBorder(),
+          ),
         ),
         const SizedBox(height: 12),
         TextField(
           controller: _motDePasseIndividuelCtrl,
           obscureText: true,
-          decoration: const InputDecoration(labelText: 'Mot de passe', border: OutlineInputBorder()),
+          decoration: const InputDecoration(
+            labelText: 'Mot de passe',
+            border: OutlineInputBorder(),
+          ),
         ),
         if (_individuelErreur != null) ...[
           const SizedBox(height: 12),
@@ -616,8 +751,16 @@ class _CompteScreenState extends State<CompteScreen> {
             onPressed: _individuelEnCours ? null : _soumettreIndividuel,
             style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
             child: _individuelEnCours
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                : Text(_modeInscriptionIndividuel ? 'Créer mon compte' : 'Se connecter'),
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(
+                    _modeInscriptionIndividuel
+                        ? 'Créer mon compte'
+                        : 'Se connecter',
+                  ),
           ),
         ),
         if (!_modeInscriptionIndividuel)
@@ -625,7 +768,9 @@ class _CompteScreenState extends State<CompteScreen> {
             onPressed: () async {
               if (_emailIndividuelCtrl.text.trim().isEmpty) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Entrez votre courriel ci-dessus d\'abord.')),
+                  const SnackBar(
+                    content: Text('Entrez votre courriel ci-dessus d\'abord.'),
+                  ),
                 );
                 return;
               }
@@ -633,7 +778,11 @@ class _CompteScreenState extends State<CompteScreen> {
               await AppSession.reinitialiserMotDePasse(email);
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Courriel de réinitialisation envoyé si ce compte existe.')),
+                const SnackBar(
+                  content: Text(
+                    'Courriel de réinitialisation envoyé si ce compte existe.',
+                  ),
+                ),
               );
             },
             child: const Text('Mot de passe oublié ?'),

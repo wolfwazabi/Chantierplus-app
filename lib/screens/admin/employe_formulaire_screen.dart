@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
 import '../../services/app_session.dart';
 
 class EmployeFormulaireScreen extends StatefulWidget {
   final String? docId;
   final Map<String, dynamic>? donneesExistantes;
 
-  const EmployeFormulaireScreen({super.key, this.docId, this.donneesExistantes});
+  const EmployeFormulaireScreen({
+    super.key,
+    this.docId,
+    this.donneesExistantes,
+  });
 
   @override
-  State<EmployeFormulaireScreen> createState() => _EmployeFormulaireScreenState();
+  State<EmployeFormulaireScreen> createState() =>
+      _EmployeFormulaireScreenState();
 }
 
 class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
@@ -20,14 +26,16 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
   String? _erreur;
 
   bool get _modeEdition => widget.docId != null;
-  bool get _estProprietaireExistant => widget.donneesExistantes?['estProprietaire'] == true;
+  bool get _estProprietaireExistant =>
+      widget.donneesExistantes?['estProprietaire'] == true;
 
   @override
   void initState() {
     super.initState();
     final d = widget.donneesExistantes;
     _nomCtrl = TextEditingController(text: d?['nom'] ?? '');
-    _pinCtrl = TextEditingController(text: d?['pin'] ?? '');
+    // Le NIP n'est jamais relu : en modification, vide = inchangé.
+    _pinCtrl = TextEditingController();
     _role = d?['role'] ?? 'employe';
   }
 
@@ -42,13 +50,15 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
     final nom = _nomCtrl.text.trim();
     final pin = _pinCtrl.text.trim();
 
-    if (nom.isEmpty || pin.isEmpty) {
+    if (nom.isEmpty || (!_modeEdition && pin.isEmpty)) {
       setState(() => _erreur = 'Veuillez remplir tous les champs.');
       return;
     }
-
-    final companyId = AppSession.current?.companyId;
-    if (companyId == null) {
+    if (pin.isNotEmpty && !RegExp(r'^\d{4,8}$').hasMatch(pin)) {
+      setState(() => _erreur = 'Le NIP doit contenir de 4 à 8 chiffres.');
+      return;
+    }
+    if (AppSession.current?.companyId == null) {
       setState(() => _erreur = 'Aucune compagnie associée à votre compte.');
       return;
     }
@@ -58,39 +68,26 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
       _erreur = null;
     });
 
-    final data = {
-      'nom': nom,
-      'pin': pin,
-      'role': _estProprietaireExistant ? 'admin' : _role,
-    };
-
+    // Validation, unicité du NIP, hachage et protection du propriétaire :
+    // appliqués côté serveur (Cloud Function enregistrerEmploye).
     try {
-      if (_modeEdition) {
-        await FirebaseFirestore.instance.collection('employees').doc(widget.docId).update(data);
-      } else {
-        final existant = await FirebaseFirestore.instance
-            .collection('employees')
-            .where('companyId', isEqualTo: companyId)
-            .where('pin', isEqualTo: pin)
-            .limit(1)
-            .get();
-        if (existant.docs.isNotEmpty) {
-          setState(() {
-            _erreur = 'Ce NIP est déjà utilisé par un autre employé de votre compagnie.';
-            _enCours = false;
-          });
-          return;
-        }
-        await FirebaseFirestore.instance.collection('employees').add({
-          ...data,
-          'companyId': companyId,
-          'estProprietaire': false,
-        });
-      }
+      await FirebaseFunctions.instance.httpsCallable('enregistrerEmploye').call(
+        {
+          'employeeId': widget.docId,
+          'nom': nom,
+          'role': _estProprietaireExistant ? 'admin' : _role,
+          if (pin.isNotEmpty) 'pin': pin,
+        },
+      );
       if (mounted) Navigator.of(context).pop();
-    } catch (e) {
+    } on FirebaseFunctionsException catch (e) {
       setState(() {
-        _erreur = 'Erreur : $e';
+        _erreur = e.message ?? 'Erreur lors de l\'enregistrement.';
+        _enCours = false;
+      });
+    } catch (_) {
+      setState(() {
+        _erreur = 'Erreur lors de l\'enregistrement. Vérifiez votre réseau.';
         _enCours = false;
       });
     }
@@ -99,7 +96,11 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(_modeEdition ? 'Modifier l\'employé' : 'Ajouter un employé')),
+      appBar: AppBar(
+        title: Text(
+          _modeEdition ? 'Modifier l\'employé' : 'Ajouter un employé',
+        ),
+      ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -117,10 +118,14 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
             TextField(
               controller: _pinCtrl,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(
-                labelText: 'NIP',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.lock),
+              obscureText: true,
+              maxLength: 8,
+              decoration: InputDecoration(
+                labelText: _modeEdition
+                    ? 'Nouveau NIP (laisser vide pour conserver)'
+                    : 'NIP (4 à 8 chiffres)',
+                border: const OutlineInputBorder(),
+                prefixIcon: const Icon(Icons.lock),
               ),
             ),
             const SizedBox(height: 16),
@@ -160,14 +165,23 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: _enCours ? null : _enregistrer,
-                style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+                style: FilledButton.styleFrom(
+                  padding: const EdgeInsets.all(16),
+                ),
                 child: _enCours
                     ? const SizedBox(
                         width: 20,
                         height: 20,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
-                    : Text(_modeEdition ? 'Enregistrer les modifications' : 'Créer l\'employé'),
+                    : Text(
+                        _modeEdition
+                            ? 'Enregistrer les modifications'
+                            : 'Créer l\'employé',
+                      ),
               ),
             ),
           ],

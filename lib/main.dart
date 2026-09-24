@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
 import 'firebase_options.dart';
 import 'models/employee.dart';
 import 'services/app_session.dart';
@@ -13,9 +14,7 @@ import 'screens/admin/compagnies_attente_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   if (FirebaseAuth.instance.currentUser == null) {
     await FirebaseAuth.instance.signInAnonymously();
   }
@@ -52,14 +51,18 @@ class ConstructionApp extends StatelessWidget {
             final selectionne = states.contains(WidgetState.selected);
             return TextStyle(
               fontSize: 12,
-              color: selectionne ? const Color(0xFF2F4A34) : const Color(0xFF8A8066),
+              color: selectionne
+                  ? const Color(0xFF2F4A34)
+                  : const Color(0xFF8A8066),
               fontWeight: selectionne ? FontWeight.w600 : FontWeight.normal,
             );
           }),
           iconTheme: WidgetStateProperty.resolveWith((states) {
             final selectionne = states.contains(WidgetState.selected);
             return IconThemeData(
-              color: selectionne ? const Color(0xFF2F4A34) : const Color(0xFF8A8066),
+              color: selectionne
+                  ? const Color(0xFF2F4A34)
+                  : const Color(0xFF8A8066),
             );
           }),
         ),
@@ -138,6 +141,30 @@ class _HomePageState extends State<HomePage> {
       ];
     }
 
+    // Super-admin : compte courriel hors compagnie, gère les inscriptions.
+    if (employee.estSuperAdmin) {
+      return [
+        _OngletInfo(
+          'Calculatrice',
+          Icons.calculate_outlined,
+          Icons.calculate,
+          const CalculatriceScreen(),
+        ),
+        _OngletInfo(
+          'Compagnies',
+          Icons.business_outlined,
+          Icons.business,
+          const CompagniesAttenteScreen(),
+        ),
+        _OngletInfo(
+          'Compte',
+          Icons.person_outline,
+          Icons.person,
+          const CompteScreen(),
+        ),
+      ];
+    }
+
     final estAdmin = employee.role == EmployeeRole.admin;
 
     final onglets = <_OngletInfo>[
@@ -162,29 +189,24 @@ class _HomePageState extends State<HomePage> {
     ];
 
     if (estAdmin) {
-      onglets.add(_OngletInfo(
-        'Admin',
-        Icons.bar_chart_outlined,
-        Icons.bar_chart,
-        const AdminHomeScreen(),
-      ));
+      onglets.add(
+        _OngletInfo(
+          'Admin',
+          Icons.bar_chart_outlined,
+          Icons.bar_chart,
+          const AdminHomeScreen(),
+        ),
+      );
     }
 
-    if (employee.estSuperAdmin) {
-      onglets.add(_OngletInfo(
-        'Compagnies',
-        Icons.business_outlined,
-        Icons.business,
-        const CompagniesAttenteScreen(),
-      ));
-    }
-
-    onglets.add(_OngletInfo(
-      'Compte',
-      Icons.person_outline,
-      Icons.person,
-      const CompteScreen(),
-    ));
+    onglets.add(
+      _OngletInfo(
+        'Compte',
+        Icons.person_outline,
+        Icons.person,
+        const CompteScreen(),
+      ),
+    );
 
     return onglets;
   }
@@ -199,7 +221,9 @@ class _HomePageState extends State<HomePage> {
       valueListenable: AppSession.notifier,
       builder: (context, employee, _) {
         final onglets = _construireOnglets(employee);
-        final indexSecurise = _selectedIndex < onglets.length ? _selectedIndex : 0;
+        final indexSecurise = _selectedIndex < onglets.length
+            ? _selectedIndex
+            : 0;
 
         return Scaffold(
           body: SafeArea(child: onglets[indexSecurise].ecran),
@@ -207,11 +231,13 @@ class _HomePageState extends State<HomePage> {
             selectedIndex: indexSecurise,
             onDestinationSelected: _onItemTapped,
             destinations: onglets
-                .map((o) => NavigationDestination(
-                      icon: Icon(o.icone),
-                      selectedIcon: Icon(o.iconeSelectionne),
-                      label: o.label,
-                    ))
+                .map(
+                  (o) => NavigationDestination(
+                    icon: Icon(o.icone),
+                    selectedIcon: Icon(o.iconeSelectionne),
+                    label: o.label,
+                  ),
+                )
                 .toList(),
           ),
         );

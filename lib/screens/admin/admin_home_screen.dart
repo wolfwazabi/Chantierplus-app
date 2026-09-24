@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
 import 'chantiers_gestion_screen.dart';
@@ -23,9 +24,9 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text('Voir les heures soumises par semaine'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => SemaineListeScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => SemaineListeScreen()));
             },
           ),
         ),
@@ -51,9 +52,9 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text('Ajouter, modifier ou retirer des comptes'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => EmployesListeScreen()),
-              );
+              Navigator.of(
+                context,
+              ).push(MaterialPageRoute(builder: (_) => EmployesListeScreen()));
             },
           ),
         ),

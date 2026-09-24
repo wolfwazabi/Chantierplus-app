@@ -1,19 +1,29 @@
 import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/employee.dart';
 
+/// État de connexion de l'application.
+///
+/// L'identité n'est jamais déduite de données locales : pour un employé, elle
+/// provient du document sessions/{uid} écrit par la Cloud Function
+/// connexionEmploye ; pour un compte courriel, de Firebase Auth (et du claim
+/// superAdmin pour le super-admin).
 class AppSession {
-  static final ValueNotifier<Employee?> notifier = ValueNotifier<Employee?>(null);
+  static final ValueNotifier<Employee?> notifier = ValueNotifier<Employee?>(
+    null,
+  );
   static Employee? get current => notifier.value;
 
   static StreamSubscription<DocumentSnapshot>? _ecouteSuppression;
-  static const _cleEmployeeId = 'employee_id';
-  static const _cleCompanyId = 'company_id';
-  static const _cleIndividuel = 'is_individuel';
+
+  // Anciennes clés (versions précédentes) : effacées au démarrage.
+  static const _anciennesCles = ['employee_id', 'company_id', 'is_individuel'];
 
   static bool get estConnecte => current != null;
   static bool get estSuperAdmin => current?.estSuperAdmin == true;
@@ -22,67 +32,95 @@ class AppSession {
   static bool get estPlusOuAdmin =>
       current?.role == EmployeeRole.admin || current?.role == EmployeeRole.plus;
 
-  static String? get _uid => FirebaseAuth.instance.currentUser?.uid;
+  static FirebaseFirestore get _db => FirebaseFirestore.instance;
+  static FirebaseFunctions get _fonctions => FirebaseFunctions.instance;
 
   // ==================== RECONNEXION AUTOMATIQUE ====================
 
   static Future<void> tenterReconnexionAutomatique() async {
-    final prefs = await SharedPreferences.getInstance();
-
-    if (prefs.getBool(_cleIndividuel) == true) {
-      final user = FirebaseAuth.instance.currentUser;
-      if (user != null && !user.isAnonymous) {
-        try {
-          final doc = await FirebaseFirestore.instance.collection('individus').doc(user.uid).get();
-          notifier.value = Employee(
-            id: user.uid,
-            companyId: null,
-            companyNom: null,
-            nom: doc.exists ? (doc.data()!['nom'] ?? '') : '',
-            role: EmployeeRole.employe,
-            estIndividuel: true,
-          );
-          return;
-        } catch (_) {}
-      }
-      await prefs.remove(_cleIndividuel);
-    }
-
-    final employeeId = prefs.getString(_cleEmployeeId);
-    final companyId = prefs.getString(_cleCompanyId);
-    if (employeeId == null || companyId == null) return;
+    await _effacerAnciennesPrefs();
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
     try {
-      final empDoc = await FirebaseFirestore.instance.collection('employees').doc(employeeId).get();
-      final companyDoc = await FirebaseFirestore.instance.collection('companies').doc(companyId).get();
-
-      if (empDoc.exists && companyDoc.exists && companyDoc.data()!['statut'] == 'approuvee') {
-        final empData = empDoc.data()!;
-        notifier.value = Employee(
-          id: employeeId,
-          companyId: companyId,
-          companyNom: companyDoc.data()!['nomEntreprise'],
-          nom: empData['nom'] ?? '',
-          role: Employee.roleFromString(empData['role']),
-          estProprietaire: empData['estProprietaire'] == true,
-          estSuperAdmin: empData['superAdmin'] == true,
-        );
-        await _ecrireSession(employeeId, companyId);
-        _demarrerEcouteSuppression(employeeId);
+      if (user.isAnonymous) {
+        await _restaurerSessionEmploye(user.uid);
       } else {
-        await _effacerPrefs();
+        await _restaurerCompteCourriel(user);
       }
     } catch (_) {
-      // Pas de réseau au démarrage : on reste déconnecté pour cette session
+      // Pas de réseau ou session invalide : on reste déconnecté.
+      notifier.value = null;
     }
   }
 
+  static Future<void> _restaurerSessionEmploye(String uid) async {
+    final session = await _db.collection('sessions').doc(uid).get();
+    final data = session.data();
+    final employeeId = data?['employeeId'] as String?;
+    final companyId = data?['companyId'] as String?;
+    if (employeeId == null || companyId == null) return;
+
+    // Les règles refusent ces lectures si l'employé a été retiré ou si la
+    // compagnie n'est plus approuvée : l'exception mène à la déconnexion.
+    final empDoc = await _db.collection('employees').doc(employeeId).get();
+    final companyDoc = await _db.collection('companies').doc(companyId).get();
+    if (!empDoc.exists || !companyDoc.exists) return;
+
+    final empData = empDoc.data()!;
+    notifier.value = Employee(
+      id: employeeId,
+      companyId: companyId,
+      companyNom: companyDoc.data()!['nomEntreprise'],
+      nom: empData['nom'] ?? '',
+      role: Employee.roleFromString(empData['role']),
+      estProprietaire: empData['estProprietaire'] == true,
+    );
+    _demarrerEcouteSuppression(employeeId);
+  }
+
+  static Future<void> _restaurerCompteCourriel(User user) async {
+    final jeton = await user.getIdTokenResult(true);
+    if (jeton.claims?['superAdmin'] == true) {
+      notifier.value = _superAdmin(user);
+      return;
+    }
+    final doc = await _db.collection('individus').doc(user.uid).get();
+    notifier.value = Employee(
+      id: user.uid,
+      companyId: null,
+      companyNom: null,
+      nom: doc.exists ? (doc.data()!['nom'] ?? '') : '',
+      role: EmployeeRole.employe,
+      estIndividuel: true,
+    );
+  }
+
+  static Employee _superAdmin(User user) => Employee(
+    id: user.uid,
+    companyId: null,
+    companyNom: null,
+    nom: user.displayName?.isNotEmpty == true
+        ? user.displayName!
+        : (user.email ?? 'Super-admin'),
+    role: EmployeeRole.employe,
+    estSuperAdmin: true,
+  );
+
   // ==================== CONNEXION COMPAGNIE (numéro + NIP) ====================
 
-  static Future<String?> connecterAvecNumeroEtPin(String numeroCompagnie, String pin) async {
+  static Future<String?> connecterAvecNumeroEtPin(
+    String numeroCompagnie,
+    String pin,
+  ) async {
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable('connexionEmploye');
-      final resultat = await callable.call({
+      // La connexion employé exige un compte anonyme (voir connexionEmploye).
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null || !user.isAnonymous) {
+        await FirebaseAuth.instance.signOut();
+        await FirebaseAuth.instance.signInAnonymously();
+      }
+      final resultat = await _fonctions.httpsCallable('connexionEmploye').call({
         'numeroCompagnie': numeroCompagnie,
         'pin': pin,
       });
@@ -95,27 +133,24 @@ class AppSession {
         nom: data['nom'],
         role: Employee.roleFromString(data['role']),
         estProprietaire: data['estProprietaire'] == true,
-        estSuperAdmin: data['estSuperAdmin'] == true,
       );
 
       notifier.value = employee;
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString(_cleEmployeeId, employee.id);
-      await prefs.setString(_cleCompanyId, employee.companyId!);
       _demarrerEcouteSuppression(employee.id);
-
       return null;
     } on FirebaseFunctionsException catch (e) {
       switch (e.code) {
         case 'not-found':
+        case 'resource-exhausted':
+        case 'failed-precondition':
           return e.message ?? 'Numéro de compagnie ou NIP invalide.';
         case 'invalid-argument':
           return 'Veuillez remplir les deux champs.';
         default:
-          return 'Erreur de connexion : ${e.message}';
+          return 'Erreur de connexion. Réessayez plus tard.';
       }
-    } catch (e) {
-      return 'Erreur de connexion : $e';
+    } catch (_) {
+      return 'Erreur de connexion. Vérifiez votre réseau.';
     }
   }
 
@@ -129,8 +164,7 @@ class AppSession {
     required String pinAdmin,
     required String emailAdmin,
   }) async {
-    final callable = FirebaseFunctions.instance.httpsCallable('inscrireCompagnie');
-    final resultat = await callable.call({
+    final resultat = await _fonctions.httpsCallable('inscrireCompagnie').call({
       'nomEntreprise': nomEntreprise,
       'nomLegal': nomLegal,
       'secteur': secteur,
@@ -145,15 +179,24 @@ class AppSession {
   }
 
   // ==================== RÉCUPÉRATION (compagnie) ====================
+  // TODO : les Cloud Functions recupererNumeroCompagnie,
+  // demanderReinitialisationNip et validerReinitialisationNip n'existent pas
+  // encore côté serveur ; ces appels échouent tant qu'elles ne sont pas écrites.
 
   static Future<void> demanderNumeroCompagnie(String email) async {
-    final callable = FirebaseFunctions.instance.httpsCallable('recupererNumeroCompagnie');
-    await callable.call({'email': email});
+    await _fonctions.httpsCallable('recupererNumeroCompagnie').call({
+      'email': email,
+    });
   }
 
-  static Future<void> demanderCodeReinitialisation(String numeroCompagnie, String email) async {
-    final callable = FirebaseFunctions.instance.httpsCallable('demanderReinitialisationNip');
-    await callable.call({'numeroCompagnie': numeroCompagnie, 'email': email});
+  static Future<void> demanderCodeReinitialisation(
+    String numeroCompagnie,
+    String email,
+  ) async {
+    await _fonctions.httpsCallable('demanderReinitialisationNip').call({
+      'numeroCompagnie': numeroCompagnie,
+      'email': email,
+    });
   }
 
   static Future<String?> validerReinitialisation({
@@ -163,8 +206,7 @@ class AppSession {
     required String nouveauPin,
   }) async {
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable('validerReinitialisationNip');
-      await callable.call({
+      await _fonctions.httpsCallable('validerReinitialisationNip').call({
         'numeroCompagnie': numeroCompagnie,
         'email': email,
         'code': code,
@@ -173,38 +215,44 @@ class AppSession {
       return null;
     } on FirebaseFunctionsException catch (e) {
       return e.message ?? 'Erreur de réinitialisation.';
-    } catch (e) {
-      return 'Erreur : $e';
+    } catch (_) {
+      return 'Erreur de réinitialisation. Réessayez plus tard.';
     }
   }
 
-  // ==================== COMPTE INDIVIDUEL (courriel + mot de passe) ====================
+  // ==================== COMPTE COURRIEL (particulier / super-admin) ====================
 
-  static Future<String?> inscrireIndividuel(String nom, String email, String motDePasse) async {
+  static Future<String?> inscrireIndividuel(
+    String nom,
+    String email,
+    String motDePasse,
+  ) async {
     try {
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email.trim(),
         password: motDePasse,
       );
-      final uid = cred.user!.uid;
+      final user = cred.user!;
 
-      await FirebaseFirestore.instance.collection('individus').doc(uid).set({
+      // Le courriel enregistré doit correspondre exactement à celui du jeton
+      // (Firebase le normalise en minuscules) : exigé par les règles.
+      await _db.collection('individus').doc(user.uid).set({
         'nom': nom.trim(),
-        'email': email.trim(),
+        'email': user.email,
       });
 
+      try {
+        await user.sendEmailVerification();
+      } catch (_) {}
+
       notifier.value = Employee(
-        id: uid,
+        id: user.uid,
         companyId: null,
         companyNom: null,
         nom: nom.trim(),
         role: EmployeeRole.employe,
         estIndividuel: true,
       );
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_cleIndividuel, true);
-
       return null;
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
@@ -217,34 +265,33 @@ class AppSession {
         default:
           return e.message ?? 'Erreur d\'inscription.';
       }
-    } catch (e) {
-      return 'Erreur : $e';
+    } catch (_) {
+      return 'Erreur d\'inscription. Réessayez plus tard.';
     }
   }
 
-  static Future<String?> connecterIndividuel(String email, String motDePasse) async {
+  static Future<String?> connecterIndividuel(
+    String email,
+    String motDePasse,
+  ) async {
     try {
+      // Quitter la session employé éventuelle avant de changer de compte.
+      await _supprimerSessionEmploye();
       final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email.trim(),
         password: motDePasse,
       );
-      final uid = cred.user!.uid;
+      final user = cred.user!;
 
-      final doc = await FirebaseFirestore.instance.collection('individus').doc(uid).get();
-      final nom = doc.exists ? (doc.data()!['nom'] ?? '') : '';
+      // Active le claim super-admin si ce compte est celui configuré côté
+      // serveur (refus silencieux pour tous les autres comptes).
+      if (user.emailVerified) {
+        try {
+          await _fonctions.httpsCallable('activerSuperAdmin').call();
+        } catch (_) {}
+      }
 
-      notifier.value = Employee(
-        id: uid,
-        companyId: null,
-        companyNom: null,
-        nom: nom,
-        role: EmployeeRole.employe,
-        estIndividuel: true,
-      );
-
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_cleIndividuel, true);
-
+      await _restaurerCompteCourriel(user);
       return null;
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
@@ -252,11 +299,13 @@ class AppSession {
         case 'wrong-password':
         case 'invalid-credential':
           return 'Courriel ou mot de passe invalide.';
+        case 'too-many-requests':
+          return 'Trop de tentatives. Réessayez plus tard.';
         default:
           return e.message ?? 'Erreur de connexion.';
       }
-    } catch (e) {
-      return 'Erreur : $e';
+    } catch (_) {
+      return 'Erreur de connexion. Réessayez plus tard.';
     }
   }
 
@@ -272,52 +321,46 @@ class AppSession {
   // ==================== DÉCONNEXION ====================
 
   static Future<void> deconnecter() async {
-    final etaitIndividuel = current?.estIndividuel == true;
+    final user = FirebaseAuth.instance.currentUser;
     notifier.value = null;
-    _ecouteSuppression?.cancel();
+    await _ecouteSuppression?.cancel();
     _ecouteSuppression = null;
-    await _effacerPrefs();
 
-    if (etaitIndividuel) {
+    if (user != null && !user.isAnonymous) {
       await FirebaseAuth.instance.signOut();
       await FirebaseAuth.instance.signInAnonymously();
       return;
     }
+    await _supprimerSessionEmploye();
+  }
 
+  static Future<void> _supprimerSessionEmploye() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null || !user.isAnonymous) return;
     try {
-      final uid = _uid;
-      if (uid != null) {
-        await FirebaseFirestore.instance.collection('sessions').doc(uid).delete();
+      await _db.collection('sessions').doc(user.uid).delete();
+    } catch (_) {}
+  }
+
+  static Future<void> _effacerAnciennesPrefs() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      for (final cle in _anciennesCles) {
+        await prefs.remove(cle);
       }
     } catch (_) {}
   }
 
-  static Future<void> _effacerPrefs() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_cleEmployeeId);
-    await prefs.remove(_cleCompanyId);
-    await prefs.remove(_cleIndividuel);
-  }
-
-  static Future<void> _ecrireSession(String employeeId, String companyId) async {
-    final uid = _uid;
-    if (uid == null) return;
-    await FirebaseFirestore.instance.collection('sessions').doc(uid).set({
-      'employeeId': employeeId,
-      'companyId': companyId,
-    });
-  }
-
+  /// Déconnecte l'employé dès que sa fiche disparaît. Une fois l'employé
+  /// supprimé, les règles refusent la lecture : l'erreur déclenche aussi la
+  /// déconnexion.
   static void _demarrerEcouteSuppression(String id) {
     _ecouteSuppression?.cancel();
-    _ecouteSuppression = FirebaseFirestore.instance
-        .collection('employees')
-        .doc(id)
-        .snapshots()
-        .listen((snap) {
-      if (!snap.exists) {
-        deconnecter();
-      }
-    });
+    _ecouteSuppression = _db.collection('employees').doc(id).snapshots().listen(
+      (snap) {
+        if (!snap.exists) deconnecter();
+      },
+      onError: (_) => deconnecter(),
+    );
   }
 }

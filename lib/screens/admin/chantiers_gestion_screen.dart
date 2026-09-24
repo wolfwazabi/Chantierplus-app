@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../services/app_session.dart';
 
 class ChantiersGestionScreen extends StatelessWidget {
@@ -10,13 +11,21 @@ class ChantiersGestionScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Supprimer ce chantier ?'),
-        content: Text('$nom sera retiré de la liste. Les photos/travaux/matériel déjà associés resteront consultables via l\'historique existant.'),
+        content: Text(
+          '$nom sera retiré de la liste. Les photos/travaux/matériel déjà associés resteront consultables via l\'historique existant.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              FirebaseFirestore.instance.collection('chantiers').doc(docId).delete();
+              FirebaseFirestore.instance
+                  .collection('chantiers')
+                  .doc(docId)
+                  .delete();
             },
             child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
           ),
@@ -25,7 +34,11 @@ class ChantiersGestionScreen extends StatelessWidget {
     );
   }
 
-  void _ouvrirFormulaire(BuildContext context, {String? docId, Map<String, dynamic>? donnees}) {
+  void _ouvrirFormulaire(
+    BuildContext context, {
+    String? docId,
+    Map<String, dynamic>? donnees,
+  }) {
     final nomCtrl = TextEditingController(text: donnees?['nom'] ?? '');
     final adresseCtrl = TextEditingController(text: donnees?['adresse'] ?? '');
 
@@ -46,17 +59,26 @@ class ChantiersGestionScreen extends StatelessWidget {
             children: [
               Text(
                 docId == null ? 'Nouveau chantier' : 'Modifier le chantier',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: nomCtrl,
-                decoration: const InputDecoration(labelText: 'Nom du chantier', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Nom du chantier',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 12),
               TextField(
                 controller: adresseCtrl,
-                decoration: const InputDecoration(labelText: 'Adresse', border: OutlineInputBorder()),
+                decoration: const InputDecoration(
+                  labelText: 'Adresse',
+                  border: OutlineInputBorder(),
+                ),
               ),
               const SizedBox(height: 20),
               SizedBox(
@@ -71,16 +93,18 @@ class ChantiersGestionScreen extends StatelessWidget {
                     if (companyId == null) return;
 
                     if (docId == null) {
-                      await FirebaseFirestore.instance.collection('chantiers').add({
-                        'companyId': companyId,
-                        'nom': nom,
-                        'adresse': adresse,
-                      });
+                      await FirebaseFirestore.instance
+                          .collection('chantiers')
+                          .add({
+                            'companyId': companyId,
+                            'nom': nom,
+                            'adresse': adresse,
+                          });
                     } else {
-                      await FirebaseFirestore.instance.collection('chantiers').doc(docId).update({
-                        'nom': nom,
-                        'adresse': adresse,
-                      });
+                      await FirebaseFirestore.instance
+                          .collection('chantiers')
+                          .doc(docId)
+                          .update({'nom': nom, 'adresse': adresse});
                     }
                     if (ctx.mounted) Navigator.pop(ctx);
                   },
@@ -115,10 +139,18 @@ class ChantiersGestionScreen extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final docs = snapshot.data!.docs.toList()
-                  ..sort((a, b) => ((a.data() as Map)['nom'] ?? '').compareTo((b.data() as Map)['nom'] ?? ''));
+                  ..sort(
+                    (a, b) => ((a.data() as Map)['nom'] ?? '').compareTo(
+                      (b.data() as Map)['nom'] ?? '',
+                    ),
+                  );
 
                 if (docs.isEmpty) {
-                  return const Center(child: Text('Aucun chantier. Ajoutez-en un avec le bouton +.'));
+                  return const Center(
+                    child: Text(
+                      'Aucun chantier. Ajoutez-en un avec le bouton +.',
+                    ),
+                  );
                 }
 
                 return ListView.builder(
@@ -127,20 +159,37 @@ class ChantiersGestionScreen extends StatelessWidget {
                     final doc = docs[index];
                     final data = doc.data() as Map<String, dynamic>;
                     return ListTile(
-                      leading: const Icon(Icons.construction, color: Colors.orange),
+                      leading: const Icon(
+                        Icons.construction,
+                        color: Colors.orange,
+                      ),
                       title: Text(data['nom'] ?? ''),
                       subtitle: Text(data['adresse'] ?? ''),
                       trailing: PopupMenuButton<String>(
                         onSelected: (v) {
                           if (v == 'modifier') {
-                            _ouvrirFormulaire(context, docId: doc.id, donnees: data);
+                            _ouvrirFormulaire(
+                              context,
+                              docId: doc.id,
+                              donnees: data,
+                            );
                           } else if (v == 'supprimer') {
-                            _confirmerSuppression(context, doc.id, data['nom'] ?? '');
+                            _confirmerSuppression(
+                              context,
+                              doc.id,
+                              data['nom'] ?? '',
+                            );
                           }
                         },
                         itemBuilder: (ctx) => const [
-                          PopupMenuItem(value: 'modifier', child: Text('Modifier')),
-                          PopupMenuItem(value: 'supprimer', child: Text('Supprimer')),
+                          PopupMenuItem(
+                            value: 'modifier',
+                            child: Text('Modifier'),
+                          ),
+                          PopupMenuItem(
+                            value: 'supprimer',
+                            child: Text('Supprimer'),
+                          ),
                         ],
                       ),
                     );

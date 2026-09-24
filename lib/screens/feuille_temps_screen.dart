@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 
-const Chantier chantierAucun = Chantier(id: '_aucun', companyId: '', nom: 'Aucun (jour non travaillé)', adresse: '');
+const Chantier chantierAucun = Chantier(
+  id: '_aucun',
+  companyId: '',
+  nom: 'Aucun (jour non travaillé)',
+  adresse: '',
+);
 
 class JourTravail {
   final String nomJour;
@@ -60,7 +66,11 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
 
   static DateTime _trouverLundi(DateTime date) {
     final diff = date.weekday - DateTime.monday;
-    return DateTime(date.year, date.month, date.day).subtract(Duration(days: diff));
+    return DateTime(
+      date.year,
+      date.month,
+      date.day,
+    ).subtract(Duration(days: diff));
   }
 
   static String _isoDate(DateTime d) {
@@ -70,7 +80,8 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     return '$aa-$mm-$jj';
   }
 
-  String _docId(String employeeId) => '${employeeId}_${_isoDate(_lundiDeLaSemaine)}';
+  String _docId(String employeeId) =>
+      '${employeeId}_${_isoDate(_lundiDeLaSemaine)}';
 
   @override
   void initState() {
@@ -114,10 +125,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           .collection('chantiers')
           .where('companyId', isEqualTo: companyId)
           .get();
-      final liste = snap.docs
-          .map((d) => Chantier.fromFirestore(d.id, d.data()))
-          .toList()
-        ..sort((a, b) => a.nom.compareTo(b.nom));
+      final liste =
+          snap.docs.map((d) => Chantier.fromFirestore(d.id, d.data())).toList()
+            ..sort((a, b) => a.nom.compareTo(b.nom));
       if (mounted) setState(() => _chantiers = liste);
     } catch (_) {}
   }
@@ -151,7 +161,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
         final joursData = List<Map<String, dynamic>>.from(data['jours'] ?? []);
         for (int i = 0; i < _jours.length && i < joursData.length; i++) {
           final jd = joursData[i];
-          _jours[i].chantier = jd['estAucun'] == true ? chantierAucun : _trouverChantierParId(jd['chantierId']);
+          _jours[i].chantier = jd['estAucun'] == true
+              ? chantierAucun
+              : _trouverChantierParId(jd['chantierId']);
           _jours[i].projetTexte = jd['chantierNom'] ?? '';
           if (jd['heureDebutMinutes'] != null) {
             final m = jd['heureDebutMinutes'] as int;
@@ -162,7 +174,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
             _jours[i].heureFin = TimeOfDay(hour: m ~/ 60, minute: m % 60);
           }
           if (jd['tempsVoyagementMinutes'] != null) {
-            _jours[i].tempsVoyagement = Duration(minutes: jd['tempsVoyagementMinutes'] as int);
+            _jours[i].tempsVoyagement = Duration(
+              minutes: jd['tempsVoyagementMinutes'] as int,
+            );
           }
           _jours[i].pauseMatin = jd['pauseMatin'] ?? true;
           _jours[i].diner = jd['diner'] ?? true;
@@ -187,13 +201,24 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
 
   bool get _semaineVerrouillee {
     final mardiSuivant = _lundiDeLaSemaine.add(const Duration(days: 8));
-    final dateVerrouillage = DateTime(mardiSuivant.year, mardiSuivant.month, mardiSuivant.day, 18);
+    final dateVerrouillage = DateTime(
+      mardiSuivant.year,
+      mardiSuivant.month,
+      mardiSuivant.day,
+      18,
+    );
     return !DateTime.now().isBefore(dateVerrouillage);
   }
 
-  Future<void> _choisirHeure(JourTravail jour, bool debut, bool verrouillee) async {
+  Future<void> _choisirHeure(
+    JourTravail jour,
+    bool debut,
+    bool verrouillee,
+  ) async {
     if (verrouillee) return;
-    final initial = (debut ? jour.heureDebut : jour.heureFin) ?? const TimeOfDay(hour: 8, minute: 0);
+    final initial =
+        (debut ? jour.heureDebut : jour.heureFin) ??
+        const TimeOfDay(hour: 8, minute: 0);
     var dateTemp = DateTime(2024, 1, 1, initial.hour, initial.minute);
 
     final resultat = await showModalBottomSheet<DateTime>(
@@ -205,7 +230,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
             children: [
               Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(debut ? 'Heure de début' : 'Heure de fin', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  debut ? 'Heure de début' : 'Heure de fin',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
               ),
               SizedBox(
                 height: 200,
@@ -220,7 +251,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                 padding: const EdgeInsets.all(12),
                 child: SizedBox(
                   width: double.infinity,
-                  child: FilledButton(onPressed: () => Navigator.pop(ctx, dateTemp), child: const Text('Confirmer')),
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx, dateTemp),
+                    child: const Text('Confirmer'),
+                  ),
                 ),
               ),
             ],
@@ -254,7 +288,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
             children: [
               const Padding(
                 padding: EdgeInsets.all(12),
-                child: Text('Temps de voyagement', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                child: Text(
+                  'Temps de voyagement',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
               ),
               SizedBox(
                 height: 200,
@@ -268,7 +305,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                 padding: const EdgeInsets.all(12),
                 child: SizedBox(
                   width: double.infinity,
-                  child: FilledButton(onPressed: () => Navigator.pop(ctx, temp), child: const Text('Confirmer')),
+                  child: FilledButton(
+                    onPressed: () => Navigator.pop(ctx, temp),
+                    child: const Text('Confirmer'),
+                  ),
                 ),
               ),
             ],
@@ -282,10 +322,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     }
   }
 
-  double get _totalSemaine => _jours.fold(0.0, (total, j) => total + (j.heuresTravaillees ?? 0));
+  double get _totalSemaine =>
+      _jours.fold(0.0, (total, j) => total + (j.heuresTravaillees ?? 0));
 
-  Duration get _totalVoyagementSemaine =>
-      _jours.fold(Duration.zero, (total, j) => total + (j.tempsVoyagement ?? Duration.zero));
+  Duration get _totalVoyagementSemaine => _jours.fold(
+    Duration.zero,
+    (total, j) => total + (j.tempsVoyagement ?? Duration.zero),
+  );
 
   String _formatDureeAffichage(Duration? d) {
     if (d == null || d.inMinutes == 0) return '--';
@@ -295,8 +338,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     return '${h}h${m.toString().padLeft(2, '0')}';
   }
 
-  int get _nombreJoursActifs =>
-      _jours.where((j) => (j.estRempli && !j.verrouilleLocalement) || j.modifieApresVerrouillage).length;
+  int get _nombreJoursActifs => _jours
+      .where(
+        (j) =>
+            (j.estRempli && !j.verrouilleLocalement) ||
+            j.modifieApresVerrouillage,
+      )
+      .length;
 
   Future<bool> _sauvegarderDocument() async {
     final employee = AppSession.current;
@@ -306,36 +354,51 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     final joursData = _jours.map((j) {
       return {
         'nomJour': j.nomJour,
-        'chantierId': (j.chantier != null && !j.estAucun) ? j.chantier!.id : null,
-        'chantierNom': _estIndividuel ? j.projetTexte : (j.estAucun ? 'Jour non travaillé' : j.chantier?.nom),
+        'chantierId': (j.chantier != null && !j.estAucun)
+            ? j.chantier!.id
+            : null,
+        'chantierNom': _estIndividuel
+            ? j.projetTexte
+            : (j.estAucun ? 'Jour non travaillé' : j.chantier?.nom),
         'estAucun': j.estAucun,
-        'heureDebutMinutes': j.heureDebut != null ? j.heureDebut!.hour * 60 + j.heureDebut!.minute : null,
-        'heureFinMinutes': j.heureFin != null ? j.heureFin!.hour * 60 + j.heureFin!.minute : null,
+        'heureDebutMinutes': j.heureDebut != null
+            ? j.heureDebut!.hour * 60 + j.heureDebut!.minute
+            : null,
+        'heureFinMinutes': j.heureFin != null
+            ? j.heureFin!.hour * 60 + j.heureFin!.minute
+            : null,
         'pauseMatin': j.pauseMatin,
         'diner': j.diner,
         'heuresTravaillees': j.heuresTravaillees,
         'tempsVoyagementMinutes': j.tempsVoyagement?.inMinutes,
         'verrouille': j.verrouilleLocalement || j.estRempli,
-        if (j.modifieApresVerrouillage) 'modifieApresVerrouillageLe': DateTime.now().toIso8601String(),
+        if (j.modifieApresVerrouillage)
+          'modifieApresVerrouillageLe': DateTime.now().toIso8601String(),
       };
     }).toList();
 
     try {
-      await FirebaseFirestore.instance.collection('feuilles_temps').doc(_docId(employee.id)).set({
-        if (companyId != null) 'companyId': companyId,
-        'estIndividuel': _estIndividuel,
-        'employeeId': employee.id,
-        'employeeNom': employee.nom,
-        'lundiDate': _isoDate(_lundiDeLaSemaine),
-        'jours': joursData,
-        'totalHeures': _totalSemaine,
-        'dateModification': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      await FirebaseFirestore.instance
+          .collection('feuilles_temps')
+          .doc(_docId(employee.id))
+          .set({
+            if (companyId != null) 'companyId': companyId,
+            'estIndividuel': _estIndividuel,
+            'employeeId': employee.id,
+            'employeeNom': employee.nom,
+            'lundiDate': _isoDate(_lundiDeLaSemaine),
+            'jours': joursData,
+            'totalHeures': _totalSemaine,
+            'dateModification': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true));
       return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur lors de la sauvegarde : $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text('Erreur lors de la sauvegarde : $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
       return false;
@@ -346,7 +409,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     final joursSaisis = _jours.where((j) => j.estRempli);
     if (joursSaisis.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Veuillez remplir au moins une journée.'), backgroundColor: Colors.red),
+        const SnackBar(
+          content: Text('Veuillez remplir au moins une journée.'),
+          backgroundColor: Colors.red,
+        ),
       );
       return;
     }
@@ -364,7 +430,12 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       });
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${_nombreJoursActifs >= 2 ? 'Journées soumises' : 'Journée soumise'} : ${_totalSemaine.toStringAsFixed(2)}h au total'), backgroundColor: Colors.green),
+          SnackBar(
+            content: Text(
+              '${_nombreJoursActifs >= 2 ? 'Journées soumises' : 'Journée soumise'} : ${_totalSemaine.toStringAsFixed(2)}h au total',
+            ),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     }
@@ -395,20 +466,32 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Feuille de temps', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Feuille de temps',
+                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 12),
                   Card(
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
                       child: Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          IconButton(icon: const Icon(Icons.chevron_left), onPressed: () => _changerSemaine(-1)),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_left),
+                            onPressed: () => _changerSemaine(-1),
+                          ),
                           Text(
                             'Semaine du ${_formatDateCourte(_lundiDeLaSemaine)} au ${_formatDateCourte(dimanche)}',
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          IconButton(icon: const Icon(Icons.chevron_right), onPressed: () => _changerSemaine(1)),
+                          IconButton(
+                            icon: const Icon(Icons.chevron_right),
+                            onPressed: () => _changerSemaine(1),
+                          ),
                         ],
                       ),
                     ),
@@ -426,7 +509,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                             Expanded(
                               child: Text(
                                 'Connectez-vous (onglet "Se connecter") pour saisir vos heures.',
-                                style: TextStyle(color: Colors.black87, fontSize: 13),
+                                style: TextStyle(
+                                  color: Colors.black87,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
@@ -458,7 +544,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                             Expanded(
                               child: Text(
                                 'Cette semaine est verrouillée (limite : mardi 18h00). Contactez votre superviseur pour toute correction.',
-                                style: TextStyle(color: Colors.black54, fontSize: 13),
+                                style: TextStyle(
+                                  color: Colors.black54,
+                                  fontSize: 13,
+                                ),
                               ),
                             ),
                           ],
@@ -467,7 +556,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                     ),
                   ],
                   const SizedBox(height: 16),
-                  ..._jours.map((jour) => _carteJour(jour, verrouillee, individuel)),
+                  ..._jours.map(
+                    (jour) => _carteJour(jour, verrouillee, individuel),
+                  ),
                   const SizedBox(height: 8),
                   Card(
                     color: Colors.blue.shade50,
@@ -478,16 +569,40 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Total de la semaine', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                              Text('${_totalSemaine.toStringAsFixed(2)} h', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                              const Text(
+                                'Total de la semaine',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              Text(
+                                '${_totalSemaine.toStringAsFixed(2)} h',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
                             ],
                           ),
                           const Divider(height: 20),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              const Text('Voyagement total', style: TextStyle(fontSize: 14, color: Colors.black54)),
-                              Text(_formatDureeAffichage(_totalVoyagementSemaine), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                              const Text(
+                                'Voyagement total',
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  color: Colors.black54,
+                                ),
+                              ),
+                              Text(
+                                _formatDureeAffichage(_totalVoyagementSemaine),
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                             ],
                           ),
                         ],
@@ -498,25 +613,39 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: (verrouillee || _envoiSemaineEnCours) ? null : _soumettreSemaine,
+                      onPressed: (verrouillee || _envoiSemaineEnCours)
+                          ? null
+                          : _soumettreSemaine,
                       icon: _envoiSemaineEnCours
-                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
                           : const Icon(Icons.check_circle),
                       label: Text(
                         pasConnecte
                             ? 'Connectez-vous pour soumettre'
                             : (!individuel && _semaineVerrouillee
-                                ? 'Semaine verrouillée'
-                                : '${individuel ? 'Enregistrer' : 'Soumettre'} ${_nombreJoursActifs >= 2 ? 'les journées' : 'la journée'}'),
+                                  ? 'Semaine verrouillée'
+                                  : '${individuel ? 'Enregistrer' : 'Soumettre'} ${_nombreJoursActifs >= 2 ? 'les journées' : 'la journée'}'),
                       ),
-                      style: FilledButton.styleFrom(padding: const EdgeInsets.all(16)),
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.all(16),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
             if (_chargement)
-              Container(color: Colors.black12, child: const Center(child: CircularProgressIndicator())),
+              Container(
+                color: Colors.black12,
+                child: const Center(child: CircularProgressIndicator()),
+              ),
           ],
         );
       },
@@ -529,7 +658,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
         margin: const EdgeInsets.only(bottom: 12),
         child: ListTile(
           leading: const Icon(Icons.check_circle, color: Colors.green),
-          title: Text(jour.nomJour, style: const TextStyle(fontWeight: FontWeight.bold)),
+          title: Text(
+            jour.nomJour,
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
           subtitle: Text(
             jour.estAucun
                 ? 'Jour non travaillé'
@@ -555,13 +687,28 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(jour.nomJour, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                Text(
+                  jour.nomJour,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 if (jour.estAucun)
-                  const Text('--', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))
+                  const Text(
+                    '--',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
+                  )
                 else if (jour.heuresTravaillees != null)
                   Text(
                     '${jour.heuresTravaillees!.toStringAsFixed(2)} h',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.shade800),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.orange.shade800,
+                    ),
                   ),
               ],
             ),
@@ -594,10 +741,18 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                     child: Text('Aucun (jour non travaillé)'),
                   ),
                   ..._chantiers.map((c) {
-                    return DropdownMenuItem(value: c, child: Text('${c.nom}\n${c.adresse}', style: const TextStyle(fontSize: 13)));
+                    return DropdownMenuItem(
+                      value: c,
+                      child: Text(
+                        '${c.nom}\n${c.adresse}',
+                        style: const TextStyle(fontSize: 13),
+                      ),
+                    );
                   }),
                 ],
-                onChanged: verrouillee ? null : (valeur) => setState(() => jour.chantier = valeur),
+                onChanged: verrouillee
+                    ? null
+                    : (valeur) => setState(() => jour.chantier = valeur),
               ),
             if (!jour.estAucun) ...[
               const SizedBox(height: 10),
@@ -624,7 +779,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
               ),
               const SizedBox(height: 8),
               InkWell(
-                onTap: verrouillee ? null : () => _choisirVoyagement(jour, verrouillee),
+                onTap: verrouillee
+                    ? null
+                    : () => _choisirVoyagement(jour, verrouillee),
                 child: InputDecorator(
                   decoration: InputDecoration(
                     labelText: 'Temps de voyagement',
@@ -634,7 +791,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                     filled: verrouillee,
                     fillColor: verrouillee ? Colors.grey.shade200 : null,
                   ),
-                  child: Text(_formatDureeAffichage(jour.tempsVoyagement), style: TextStyle(color: verrouillee ? Colors.grey : null)),
+                  child: Text(
+                    _formatDureeAffichage(jour.tempsVoyagement),
+                    style: TextStyle(color: verrouillee ? Colors.grey : null),
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -643,9 +803,18 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   Expanded(
                     child: CheckboxListTile(
                       value: jour.pauseMatin,
-                      onChanged: verrouillee ? null : (val) => setState(() => jour.pauseMatin = val ?? false),
-                      title: const Text('Pause matin', style: TextStyle(fontSize: 13)),
-                      subtitle: const Text('15 min', style: TextStyle(fontSize: 11)),
+                      onChanged: verrouillee
+                          ? null
+                          : (val) =>
+                                setState(() => jour.pauseMatin = val ?? false),
+                      title: const Text(
+                        'Pause matin',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      subtitle: const Text(
+                        '15 min',
+                        style: TextStyle(fontSize: 11),
+                      ),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
@@ -654,9 +823,17 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   Expanded(
                     child: CheckboxListTile(
                       value: jour.diner,
-                      onChanged: verrouillee ? null : (val) => setState(() => jour.diner = val ?? false),
-                      title: const Text('Dîner', style: TextStyle(fontSize: 13)),
-                      subtitle: const Text('30 min', style: TextStyle(fontSize: 11)),
+                      onChanged: verrouillee
+                          ? null
+                          : (val) => setState(() => jour.diner = val ?? false),
+                      title: const Text(
+                        'Dîner',
+                        style: TextStyle(fontSize: 13),
+                      ),
+                      subtitle: const Text(
+                        '30 min',
+                        style: TextStyle(fontSize: 11),
+                      ),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
                       controlAffinity: ListTileControlAffinity.leading,
@@ -687,7 +864,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           filled: desactive,
           fillColor: desactive ? Colors.grey.shade200 : null,
         ),
-        child: Text(valeur, style: TextStyle(color: desactive ? Colors.grey : null)),
+        child: Text(
+          valeur,
+          style: TextStyle(color: desactive ? Colors.grey : null),
+        ),
       ),
     );
   }

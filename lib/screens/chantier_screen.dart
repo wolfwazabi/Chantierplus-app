@@ -1,8 +1,10 @@
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
+
 import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
@@ -50,10 +52,16 @@ class _ChantierScreenState extends State<ChantierScreen> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final chantiers = snapshot.data!.docs
-                .map((d) => Chantier.fromFirestore(d.id, d.data() as Map<String, dynamic>))
-                .toList()
-              ..sort((a, b) => a.nom.compareTo(b.nom));
+            final chantiers =
+                snapshot.data!.docs
+                    .map(
+                      (d) => Chantier.fromFirestore(
+                        d.id,
+                        d.data() as Map<String, dynamic>,
+                      ),
+                    )
+                    .toList()
+                  ..sort((a, b) => a.nom.compareTo(b.nom));
 
             if (chantiers.isEmpty) {
               return const Center(
@@ -67,7 +75,8 @@ class _ChantierScreenState extends State<ChantierScreen> {
               );
             }
 
-            if (_chantierSelectionne == null || !chantiers.any((c) => c.id == _chantierSelectionne!.id)) {
+            if (_chantierSelectionne == null ||
+                !chantiers.any((c) => c.id == _chantierSelectionne!.id)) {
               _chantierSelectionne = chantiers.first;
             }
 
@@ -153,7 +162,11 @@ class _PhotosTab extends StatefulWidget {
   final String chantierId;
   final String companyId;
   final bool connecte;
-  const _PhotosTab({required this.chantierId, required this.companyId, required this.connecte});
+  const _PhotosTab({
+    required this.chantierId,
+    required this.companyId,
+    required this.connecte,
+  });
 
   @override
   State<_PhotosTab> createState() => _PhotosTabState();
@@ -184,7 +197,8 @@ class _PhotosTabState extends State<_PhotosTab> {
   Future<void> _uploaderUnePhoto(XFile image) async {
     final Uint8List bytes = await image.readAsBytes();
     final nomFichier = '${DateTime.now().millisecondsSinceEpoch}_${image.name}';
-    final chemin = 'chantiers/${widget.companyId}/${widget.chantierId}/photos/$nomFichier';
+    final chemin =
+        'chantiers/${widget.companyId}/${widget.chantierId}/photos/$nomFichier';
 
     final ref = FirebaseStorage.instance.ref().child(chemin);
     await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
@@ -200,7 +214,10 @@ class _PhotosTabState extends State<_PhotosTab> {
   }
 
   Future<void> _supprimerPhoto(String docId, String cheminStorage) async {
-    await FirebaseFirestore.instance.collection('chantier_photos').doc(docId).delete();
+    await FirebaseFirestore.instance
+        .collection('chantier_photos')
+        .doc(docId)
+        .delete();
     try {
       await FirebaseStorage.instance.ref().child(cheminStorage).delete();
     } catch (_) {}
@@ -215,12 +232,16 @@ class _PhotosTabState extends State<_PhotosTab> {
           child: SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
-              onPressed: (!widget.connecte || _enversEnCours) ? null : _ajouterPhotos,
+              onPressed: (!widget.connecte || _enversEnCours)
+                  ? null
+                  : _ajouterPhotos,
               icon: const Icon(Icons.add_a_photo),
               label: Text(
                 !widget.connecte
                     ? 'Connectez-vous pour ajouter des photos'
-                    : (_enversEnCours ? 'Envoi en cours... ${(_progression * 100).toInt()}%' : 'Ajouter des photos'),
+                    : (_enversEnCours
+                          ? 'Envoi en cours... ${(_progression * 100).toInt()}%'
+                          : 'Ajouter des photos'),
               ),
             ),
           ),
@@ -247,7 +268,9 @@ class _PhotosTabState extends State<_PhotosTab> {
               }
               final docs = snapshot.data!.docs;
               if (docs.isEmpty) {
-                return const Center(child: Text('Aucune photo pour ce chantier.'));
+                return const Center(
+                  child: Text('Aucune photo pour ce chantier.'),
+                );
               }
               return GridView.builder(
                 padding: const EdgeInsets.all(12),
@@ -261,7 +284,12 @@ class _PhotosTabState extends State<_PhotosTab> {
                   final doc = docs[index];
                   final data = doc.data() as Map<String, dynamic>;
                   return GestureDetector(
-                    onLongPress: widget.connecte ? () => _confirmerSuppression(doc.id, data['cheminStorage']) : null,
+                    onLongPress: widget.connecte
+                        ? () => _confirmerSuppression(
+                            doc.id,
+                            data['cheminStorage'],
+                          )
+                        : null,
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: Image.network(data['url'], fit: BoxFit.cover),
@@ -283,7 +311,10 @@ class _PhotosTabState extends State<_PhotosTab> {
         title: const Text('Supprimer la photo ?'),
         content: const Text('Cette action est irréversible.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
@@ -334,7 +365,9 @@ class _ListeTabState extends State<_ListeTab> {
   bool _envoiEnCours = false;
   bool _afficherHistorique = false;
 
-  Future<void> _choisirPhoto({required void Function(XFile, Uint8List) onChoisie}) async {
+  Future<void> _choisirPhoto({
+    required void Function(XFile, Uint8List) onChoisie,
+  }) async {
     final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (ctx) => SafeArea(
@@ -357,7 +390,10 @@ class _ListeTabState extends State<_ListeTab> {
     );
     if (source == null) return;
     final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: source, imageQuality: 80);
+    final XFile? image = await picker.pickImage(
+      source: source,
+      imageQuality: 80,
+    );
     if (image == null) return;
     final bytes = await image.readAsBytes();
     onChoisie(image, bytes);
@@ -373,7 +409,8 @@ class _ListeTabState extends State<_ListeTab> {
   Future<String?> _uploaderPhoto(XFile photo) async {
     final bytes = await photo.readAsBytes();
     final nomFichier = '${DateTime.now().millisecondsSinceEpoch}_${photo.name}';
-    final chemin = 'chantiers/${widget.companyId}/${widget.chantierId}/${widget.collection}/$nomFichier';
+    final chemin =
+        'chantiers/${widget.companyId}/${widget.chantierId}/${widget.collection}/$nomFichier';
     final ref = FirebaseStorage.instance.ref().child(chemin);
     await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
     return await ref.getDownloadURL();
@@ -418,14 +455,22 @@ class _ListeTabState extends State<_ListeTab> {
   }
 
   Future<void> _marquerComplete(String docId, bool complete) async {
-    await FirebaseFirestore.instance.collection(widget.collection).doc(docId).update({
-      'complete': complete,
-      'dateComplete': complete ? FieldValue.serverTimestamp() : FieldValue.delete(),
-    });
+    await FirebaseFirestore.instance
+        .collection(widget.collection)
+        .doc(docId)
+        .update({
+          'complete': complete,
+          'dateComplete': complete
+              ? FieldValue.serverTimestamp()
+              : FieldValue.delete(),
+        });
   }
 
   Future<void> _supprimerEntree(String docId) async {
-    await FirebaseFirestore.instance.collection(widget.collection).doc(docId).delete();
+    await FirebaseFirestore.instance
+        .collection(widget.collection)
+        .doc(docId)
+        .delete();
   }
 
   void _confirmerSuppression(String docId) {
@@ -435,7 +480,10 @@ class _ListeTabState extends State<_ListeTab> {
         title: const Text('Supprimer cette entrée ?'),
         content: const Text('Cette action est irréversible.'),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
@@ -450,7 +498,9 @@ class _ListeTabState extends State<_ListeTab> {
 
   void _ouvrirEdition(String docId, Map<String, dynamic> data) {
     final texteCtrl = TextEditingController(text: data['texte'] ?? '');
-    final quantiteCtrl = TextEditingController(text: data['quantite']?.toString() ?? '');
+    final quantiteCtrl = TextEditingController(
+      text: data['quantite']?.toString() ?? '',
+    );
     XFile? nouvellePhoto;
     Uint8List? nouvelApercu;
     String? photoUrlActuelle = data['photoUrl'];
@@ -472,11 +522,17 @@ class _ListeTabState extends State<_ListeTab> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text('Modifier l\'entrée', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Modifier l\'entrée',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: texteCtrl,
-                    decoration: const InputDecoration(border: OutlineInputBorder(), labelText: 'Description'),
+                    decoration: const InputDecoration(
+                      border: OutlineInputBorder(),
+                      labelText: 'Description',
+                    ),
                   ),
                   if (widget.avecQuantite) ...[
                     const SizedBox(height: 12),
@@ -497,7 +553,12 @@ class _ListeTabState extends State<_ListeTab> {
                           padding: const EdgeInsets.only(right: 8),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(6),
-                            child: Image.memory(nouvelApercu!, width: 48, height: 48, fit: BoxFit.cover),
+                            child: Image.memory(
+                              nouvelApercu!,
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         )
                       else if (photoUrlActuelle != null)
@@ -505,16 +566,23 @@ class _ListeTabState extends State<_ListeTab> {
                           padding: const EdgeInsets.only(right: 8),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(6),
-                            child: Image.network(photoUrlActuelle, width: 48, height: 48, fit: BoxFit.cover),
+                            child: Image.network(
+                              photoUrlActuelle,
+                              width: 48,
+                              height: 48,
+                              fit: BoxFit.cover,
+                            ),
                           ),
                         ),
                       OutlinedButton.icon(
-                        onPressed: () => _choisirPhoto(onChoisie: (photo, bytes) {
-                          setModalState(() {
-                            nouvellePhoto = photo;
-                            nouvelApercu = bytes;
-                          });
-                        }),
+                        onPressed: () => _choisirPhoto(
+                          onChoisie: (photo, bytes) {
+                            setModalState(() {
+                              nouvellePhoto = photo;
+                              nouvelApercu = bytes;
+                            });
+                          },
+                        ),
                         icon: const Icon(Icons.camera_alt, size: 18),
                         label: const Text('Changer la photo'),
                       ),
@@ -532,7 +600,9 @@ class _ListeTabState extends State<_ListeTab> {
                           updateData['quantite'] = quantiteCtrl.text.trim();
                         }
                         if (nouvellePhoto != null) {
-                          updateData['photoUrl'] = await _uploaderPhoto(nouvellePhoto!);
+                          updateData['photoUrl'] = await _uploaderPhoto(
+                            nouvellePhoto!,
+                          );
                         }
                         await FirebaseFirestore.instance
                             .collection(widget.collection)
@@ -611,13 +681,22 @@ class _ListeTabState extends State<_ListeTab> {
                       children: [
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
-                          child: Image.memory(_photoApercu!, width: 48, height: 48, fit: BoxFit.cover),
+                          child: Image.memory(
+                            _photoApercu!,
+                            width: 48,
+                            height: 48,
+                            fit: BoxFit.cover,
+                          ),
                         ),
                         Positioned(
                           top: -6,
                           right: -6,
                           child: IconButton(
-                            icon: const Icon(Icons.cancel, size: 18, color: Colors.red),
+                            icon: const Icon(
+                              Icons.cancel,
+                              size: 18,
+                              color: Colors.red,
+                            ),
                             onPressed: _retirerPhoto,
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
@@ -629,24 +708,35 @@ class _ListeTabState extends State<_ListeTab> {
                   ],
                   OutlinedButton.icon(
                     onPressed: connecte
-                        ? () => _choisirPhoto(onChoisie: (photo, bytes) {
+                        ? () => _choisirPhoto(
+                            onChoisie: (photo, bytes) {
                               setState(() {
                                 _photoChoisie = photo;
                                 _photoApercu = bytes;
                               });
-                            })
+                            },
+                          )
                         : null,
                     icon: const Icon(Icons.camera_alt, size: 18),
-                    label: Text(_photoApercu == null ? 'Ajouter une photo' : 'Changer la photo'),
+                    label: Text(
+                      _photoApercu == null
+                          ? 'Ajouter une photo'
+                          : 'Changer la photo',
+                    ),
                   ),
                   const Spacer(),
                   FilledButton.icon(
-                    onPressed: (!connecte || _envoiEnCours) ? null : _ajouterEntree,
+                    onPressed: (!connecte || _envoiEnCours)
+                        ? null
+                        : _ajouterEntree,
                     icon: _envoiEnCours
                         ? const SizedBox(
                             width: 16,
                             height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
                           )
                         : const Icon(Icons.add),
                     label: const Text('Ajouter'),
@@ -682,12 +772,23 @@ class _ListeTabState extends State<_ListeTab> {
                 children: [
                   Text(
                     _afficherHistorique ? 'Historique' : 'Liste active',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.grey),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey,
+                    ),
                   ),
                   TextButton.icon(
-                    onPressed: () => setState(() => _afficherHistorique = !_afficherHistorique),
-                    icon: Icon(_afficherHistorique ? Icons.list : Icons.history),
-                    label: Text(_afficherHistorique ? 'Voir la liste active' : 'Voir l\'historique'),
+                    onPressed: () => setState(
+                      () => _afficherHistorique = !_afficherHistorique,
+                    ),
+                    icon: Icon(
+                      _afficherHistorique ? Icons.list : Icons.history,
+                    ),
+                    label: Text(
+                      _afficherHistorique
+                          ? 'Voir la liste active'
+                          : 'Voir l\'historique',
+                    ),
                   ),
                 ],
               ),
@@ -719,7 +820,9 @@ class _ListeTabState extends State<_ListeTab> {
               if (docs.isEmpty) {
                 return Center(
                   child: Text(
-                    _afficherHistorique ? 'Aucun historique pour ce chantier.' : 'Aucune entrée active pour ce chantier.',
+                    _afficherHistorique
+                        ? 'Aucun historique pour ce chantier.'
+                        : 'Aucune entrée active pour ce chantier.',
                     style: TextStyle(color: Colors.grey.shade600),
                   ),
                 );
@@ -740,25 +843,39 @@ class _ListeTabState extends State<_ListeTab> {
                             onTap: () => _voirPhotoPleinEcran(photoUrl),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(6),
-                              child: Image.network(photoUrl, width: 44, height: 44, fit: BoxFit.cover),
+                              child: Image.network(
+                                photoUrl,
+                                width: 44,
+                                height: 44,
+                                fit: BoxFit.cover,
+                              ),
                             ),
                           )
-                        : Icon(widget.icone, color: complete ? Colors.grey : Colors.orange),
+                        : Icon(
+                            widget.icone,
+                            color: complete ? Colors.grey : Colors.orange,
+                          ),
                     title: Text(
                       data['texte'] ?? '',
                       style: TextStyle(
-                        decoration: complete ? TextDecoration.lineThrough : null,
+                        decoration: complete
+                            ? TextDecoration.lineThrough
+                            : null,
                         color: complete ? Colors.grey : null,
                       ),
                     ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        if (quantite != null && quantite.isNotEmpty) Text('Quantité : $quantite'),
+                        if (quantite != null && quantite.isNotEmpty)
+                          Text('Quantité : $quantite'),
                         if (complete && dateComplete != null)
                           Text(
                             'Réglé le ${_formatDate(dateComplete)}',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                            ),
                           ),
                       ],
                     ),
@@ -778,16 +895,30 @@ class _ListeTabState extends State<_ListeTab> {
                             }
                           },
                           itemBuilder: (ctx) => [
-                            const PopupMenuItem(value: 'modifier', child: Text('Modifier')),
+                            const PopupMenuItem(
+                              value: 'modifier',
+                              child: Text('Modifier'),
+                            ),
                             if (!complete)
-                              PopupMenuItem(value: 'complete', child: Text(widget.libelleComplete))
+                              PopupMenuItem(
+                                value: 'complete',
+                                child: Text(widget.libelleComplete),
+                              )
                             else
-                              PopupMenuItem(value: 'actif', child: Text(widget.libelleActif)),
+                              PopupMenuItem(
+                                value: 'actif',
+                                child: Text(widget.libelleActif),
+                              ),
                           ],
                         ),
                         IconButton(
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          onPressed: connecte ? () => _confirmerSuppression(doc.id) : null,
+                          icon: const Icon(
+                            Icons.delete_outline,
+                            color: Colors.red,
+                          ),
+                          onPressed: connecte
+                              ? () => _confirmerSuppression(doc.id)
+                              : null,
                         ),
                       ],
                     ),

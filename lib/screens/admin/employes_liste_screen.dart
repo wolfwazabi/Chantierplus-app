@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+
 import '../../services/app_session.dart';
 import 'employe_formulaire_screen.dart';
 
@@ -35,13 +37,43 @@ class EmployesListeScreen extends StatelessWidget {
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Retirer cet employé ?'),
-        content: Text('$nom sera immédiatement déconnecté et ne pourra plus se reconnecter.'),
+        content: Text(
+          '$nom sera immédiatement déconnecté et ne pourra plus se reconnecter.',
+        ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Annuler')),
           TextButton(
-            onPressed: () {
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () async {
               Navigator.pop(ctx);
-              FirebaseFirestore.instance.collection('employees').doc(docId).delete();
+              // Protection du propriétaire et nettoyage des sessions : côté serveur.
+              try {
+                await FirebaseFunctions.instance
+                    .httpsCallable('supprimerEmploye')
+                    .call({'employeeId': docId});
+              } on FirebaseFunctionsException catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(e.message ?? 'Erreur lors du retrait.'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              } catch (_) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Erreur lors du retrait. Vérifiez votre réseau.',
+                      ),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              }
             },
             child: const Text('Retirer', style: TextStyle(color: Colors.red)),
           ),
@@ -71,10 +103,16 @@ class EmployesListeScreen extends StatelessWidget {
                   return const Center(child: CircularProgressIndicator());
                 }
                 final docs = snapshot.data!.docs.toList()
-                  ..sort((a, b) => ((a.data() as Map)['nom'] ?? '').compareTo((b.data() as Map)['nom'] ?? ''));
+                  ..sort(
+                    (a, b) => ((a.data() as Map)['nom'] ?? '').compareTo(
+                      (b.data() as Map)['nom'] ?? '',
+                    ),
+                  );
 
                 if (docs.isEmpty) {
-                  return const Center(child: Text('Aucun employé pour l\'instant.'));
+                  return const Center(
+                    child: Text('Aucun employé pour l\'instant.'),
+                  );
                 }
                 return ListView.builder(
                   itemCount: docs.length,
@@ -82,8 +120,8 @@ class EmployesListeScreen extends StatelessWidget {
                     final doc = docs[index];
                     final data = doc.data() as Map<String, dynamic>;
                     final nom = data['nom'] ?? '';
-                    final numero = data['numeroEntreprise'] ?? '';
                     final estProprietaire = data['estProprietaire'] == true;
+                    final estMoi = doc.id == AppSession.current?.id;
 
                     return ListTile(
                       leading: CircleAvatar(
@@ -111,9 +149,15 @@ class EmployesListeScreen extends StatelessWidget {
                           }
                         },
                         itemBuilder: (ctx) => [
-                          const PopupMenuItem(value: 'modifier', child: Text('Modifier')),
-                          if (!estProprietaire)
-                            const PopupMenuItem(value: 'supprimer', child: Text('Retirer')),
+                          const PopupMenuItem(
+                            value: 'modifier',
+                            child: Text('Modifier'),
+                          ),
+                          if (!estProprietaire && !estMoi)
+                            const PopupMenuItem(
+                              value: 'supprimer',
+                              child: Text('Retirer'),
+                            ),
                         ],
                       ),
                     );

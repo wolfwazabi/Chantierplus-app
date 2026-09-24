@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../services/app_session.dart';
 
 class EmployeHistoriqueScreen extends StatelessWidget {
   final String employeeId;
   final String employeeNom;
-  const EmployeHistoriqueScreen({super.key, required this.employeeId, required this.employeeNom});
+  const EmployeHistoriqueScreen({
+    super.key,
+    required this.employeeId,
+    required this.employeeNom,
+  });
 
   String _formatSemaine(String lundiIso) {
     final lundi = DateTime.parse(lundiIso);
@@ -32,13 +37,19 @@ class EmployeHistoriqueScreen extends StatelessWidget {
           }
           final docs = snapshot.data!.docs.toList()
             ..sort((a, b) {
-              final da = (a.data() as Map<String, dynamic>)['lundiDate'] as String? ?? '';
-              final db = (b.data() as Map<String, dynamic>)['lundiDate'] as String? ?? '';
+              final da =
+                  (a.data() as Map<String, dynamic>)['lundiDate'] as String? ??
+                  '';
+              final db =
+                  (b.data() as Map<String, dynamic>)['lundiDate'] as String? ??
+                  '';
               return db.compareTo(da);
             });
 
           if (docs.isEmpty) {
-            return const Center(child: Text('Aucune feuille de temps pour cet employé.'));
+            return const Center(
+              child: Text('Aucune feuille de temps pour cet employé.'),
+            );
           }
 
           return ListView.builder(
@@ -47,10 +58,14 @@ class EmployeHistoriqueScreen extends StatelessWidget {
               final doc = docs[index];
               final data = doc.data() as Map<String, dynamic>;
               final lundiDate = data['lundiDate'] as String? ?? '';
-              final totalHeures = (data['totalHeures'] as num?)?.toDouble() ?? 0;
+              final totalHeures =
+                  (data['totalHeures'] as num?)?.toDouble() ?? 0;
 
               return ListTile(
-                leading: const Icon(Icons.calendar_month, color: const Color(0xFF8A3B24)),
+                leading: const Icon(
+                  Icons.calendar_month,
+                  color: const Color(0xFF8A3B24),
+                ),
                 title: Text(_formatSemaine(lundiDate)),
                 subtitle: Text('Total : ${totalHeures.toStringAsFixed(2)} h'),
                 trailing: const Icon(Icons.chevron_right),
@@ -59,7 +74,9 @@ class EmployeHistoriqueScreen extends StatelessWidget {
                     MaterialPageRoute(
                       builder: (_) => _JourDetailScreen(
                         titre: _formatSemaine(lundiDate),
-                        jours: List<Map<String, dynamic>>.from(data['jours'] ?? []),
+                        jours: List<Map<String, dynamic>>.from(
+                          data['jours'] ?? [],
+                        ),
                       ),
                     ),
                   );
@@ -110,14 +127,20 @@ class _JourDetailScreen extends StatelessWidget {
           ],
           rows: jours.map((j) {
             final heures = (j['heuresTravaillees'] as num?)?.toDouble();
-            return DataRow(cells: [
-              DataCell(Text(j['nomJour'] ?? '')),
-              DataCell(Text(j['chantierNom'] ?? '-')),
-              DataCell(Text(_formatHeure(j['heureDebutMinutes'] as int?))),
-              DataCell(Text(_formatHeure(j['heureFinMinutes'] as int?))),
-              DataCell(Text(_formatDuree(j['tempsVoyagementMinutes'] as int?))),
-              DataCell(Text(heures != null ? heures.toStringAsFixed(2) : '-')),
-            ]);
+            return DataRow(
+              cells: [
+                DataCell(Text(j['nomJour'] ?? '')),
+                DataCell(Text(j['chantierNom'] ?? '-')),
+                DataCell(Text(_formatHeure(j['heureDebutMinutes'] as int?))),
+                DataCell(Text(_formatHeure(j['heureFinMinutes'] as int?))),
+                DataCell(
+                  Text(_formatDuree(j['tempsVoyagementMinutes'] as int?)),
+                ),
+                DataCell(
+                  Text(heures != null ? heures.toStringAsFixed(2) : '-'),
+                ),
+              ],
+            );
           }).toList(),
         ),
       ),

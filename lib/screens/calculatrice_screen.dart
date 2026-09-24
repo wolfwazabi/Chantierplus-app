@@ -1,4 +1,5 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 
 enum _Mode { charpente, beton, conversion, materiaux }
@@ -65,7 +66,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   }
 
   bool get _operandeVide =>
-      _feet == null && _inches == null && _fracNum == null && _entreeCharpente.isEmpty;
+      _feet == null &&
+      _inches == null &&
+      _fracNum == null &&
+      _entreeCharpente.isEmpty;
 
   void _finaliserFraction() {
     if (_enAttenteDenominateur && _entreeCharpente.isNotEmpty) {
@@ -139,7 +143,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   }
 
   String _formatResultat(double v) {
-    return _uniteUtiliseeDansFormule ? _formatPiedsPoucesFraction(v) : _formatDecimal(v);
+    return _uniteUtiliseeDansFormule
+        ? _formatPiedsPoucesFraction(v)
+        : _formatDecimal(v);
   }
 
   void _appuyerChiffreCharpente(String chiffre) {
@@ -167,7 +173,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   void _effacerDernierCharpente() {
     setState(() {
       if (_entreeCharpente.isNotEmpty) {
-        _entreeCharpente = _entreeCharpente.substring(0, _entreeCharpente.length - 1);
+        _entreeCharpente = _entreeCharpente.substring(
+          0,
+          _entreeCharpente.length - 1,
+        );
       } else if (_enAttenteDenominateur) {
         _entreeCharpente = _fracNum?.toString() ?? '';
         _fracNum = null;
@@ -284,9 +293,12 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _finaliserFraction();
 
       if (_operandeVide) {
-        if (_operateurEnAttente != null && _formulePrecedente.trim().isNotEmpty) {
+        if (_operateurEnAttente != null &&
+            _formulePrecedente.trim().isNotEmpty) {
           final trimmed = _formulePrecedente.trimRight();
-          final sansOperateur = trimmed.substring(0, trimmed.length - 1).trimRight();
+          final sansOperateur = trimmed
+              .substring(0, trimmed.length - 1)
+              .trimRight();
           _formulePrecedente = '$sansOperateur $op ';
           _operateurEnAttente = op;
         }
@@ -297,7 +309,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       final texteOperande = _texteOperandeEnCours().trim();
 
       if (_accumulateur != null && _operateurEnAttente != null) {
-        _accumulateur = _appliquerOperation(_accumulateur!, valeur, _operateurEnAttente!);
+        _accumulateur = _appliquerOperation(
+          _accumulateur!,
+          valeur,
+          _operateurEnAttente!,
+        );
       } else {
         _accumulateur = valeur;
       }
@@ -339,7 +355,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       if (!_operandeVide) {
         final v = _valeurOperandeCourant();
         if (_accumulateur != null && _operateurEnAttente != null) {
-          valeurInterieure = _appliquerOperation(_accumulateur!, v, _operateurEnAttente!);
+          valeurInterieure = _appliquerOperation(
+            _accumulateur!,
+            v,
+            _operateurEnAttente!,
+          );
         } else {
           valeurInterieure = v;
         }
@@ -349,14 +369,20 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         valeurInterieure = 0;
       }
 
-      _formulePrecedente += texteOperande.isNotEmpty ? '$texteOperande) ' : ') ';
+      _formulePrecedente += texteOperande.isNotEmpty
+          ? '$texteOperande) '
+          : ') ';
 
       final frame = _pileParentheses.removeLast();
       final accExterieur = frame.$1;
       final opExterieur = frame.$2;
       double resultatGroupe = valeurInterieure;
       if (opExterieur != null) {
-        resultatGroupe = _appliquerOperation(accExterieur ?? 0, resultatGroupe, opExterieur);
+        resultatGroupe = _appliquerOperation(
+          accExterieur ?? 0,
+          resultatGroupe,
+          opExterieur,
+        );
       }
       _accumulateur = resultatGroupe;
       _operateurEnAttente = null;
@@ -382,12 +408,17 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _conversionExtra = null;
       _finaliserFraction();
       double? resultat;
-      String formuleAffichee = (_formulePrecedente + _texteOperandeEnCours()).trim();
+      String formuleAffichee = (_formulePrecedente + _texteOperandeEnCours())
+          .trim();
 
       if (!_operandeVide) {
         final valeur = _valeurOperandeCourant();
         if (_accumulateur != null && _operateurEnAttente != null) {
-          resultat = _appliquerOperation(_accumulateur!, valeur, _operateurEnAttente!);
+          resultat = _appliquerOperation(
+            _accumulateur!,
+            valeur,
+            _operateurEnAttente!,
+          );
         } else {
           resultat = valeur;
         }
@@ -578,7 +609,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Historique', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const Text(
+                        'Historique',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
                       if (_historique.isNotEmpty)
                         TextButton(
                           onPressed: () {
@@ -592,15 +629,29 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 ),
                 Expanded(
                   child: _historique.isEmpty
-                      ? const Center(child: Text('Aucun calcul pour l\'instant.'))
+                      ? const Center(
+                          child: Text('Aucun calcul pour l\'instant.'),
+                        )
                       : ListView.builder(
                           controller: scrollController,
                           itemCount: _historique.length,
                           itemBuilder: (ctx, i) {
                             final entree = _historique[i];
                             return ListTile(
-                              title: Text(entree['formule'] ?? '', style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                              subtitle: Text(entree['resultat'] ?? '', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                              title: Text(
+                                entree['formule'] ?? '',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              subtitle: Text(
+                                entree['resultat'] ?? '',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                ),
+                              ),
                             );
                           },
                         ),
@@ -873,7 +924,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             _mode == _Mode.charpente ? _ecranCharpente() : _ecranAutre(),
             const SizedBox(height: 8),
             Expanded(
-              child: _mode == _Mode.charpente ? _clavierCharpente() : _clavierAutre(),
+              child: _mode == _Mode.charpente
+                  ? _clavierCharpente()
+                  : _clavierAutre(),
             ),
           ],
         ),
@@ -908,9 +961,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           backgroundColor: actif ? _boutonRouille : _boutonOperateur,
           foregroundColor: _texteClaire,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
         ),
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+        child: Text(
+          label,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+        ),
       ),
     );
   }
@@ -935,12 +993,24 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                   if (_pitch != null)
                     Text(
                       'PITCH ${_pitch!.toStringAsFixed(2)}/12',
-                      style: const TextStyle(color: _texteLCD, fontSize: 11, fontFamily: 'monospace', letterSpacing: 1),
+                      style: const TextStyle(
+                        color: _texteLCD,
+                        fontSize: 11,
+                        fontFamily: 'monospace',
+                        letterSpacing: 1,
+                      ),
                     ),
                   if (_memoire != null)
                     const Padding(
                       padding: EdgeInsets.only(left: 8),
-                      child: Text('M', style: TextStyle(color: _texteLCD, fontSize: 12, fontWeight: FontWeight.bold)),
+                      child: Text(
+                        'M',
+                        style: TextStyle(
+                          color: _texteLCD,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -956,8 +1026,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               child: Align(
                 alignment: Alignment.centerRight,
                 child: Text(
-                  _afficherEnPieds ? _formatPiedsPoucesFraction(_diag!) : _formatPoucesFraction(_diag!),
-                  style: const TextStyle(color: Color(0xFF3D5A3F), fontSize: 13, fontFamily: 'monospace'),
+                  _afficherEnPieds
+                      ? _formatPiedsPoucesFraction(_diag!)
+                      : _formatPoucesFraction(_diag!),
+                  style: const TextStyle(
+                    color: Color(0xFF3D5A3F),
+                    fontSize: 13,
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
             ),
@@ -965,7 +1041,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           if (_resultatFinal != null)
             GestureDetector(
               onTap: _uniteUtiliseeDansFormule
-                  ? () => setState(() => _resultatFormuleEnPieds = !_resultatFormuleEnPieds)
+                  ? () => setState(
+                      () => _resultatFormuleEnPieds = !_resultatFormuleEnPieds,
+                    )
                   : null,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
@@ -973,10 +1051,15 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 child: Text(
                   _uniteUtiliseeDansFormule
                       ? (_resultatFormuleEnPieds
-                          ? _formatPiedsPoucesFraction(_resultatFinal!)
-                          : _formatPoucesFraction(_resultatFinal!))
+                            ? _formatPiedsPoucesFraction(_resultatFinal!)
+                            : _formatPoucesFraction(_resultatFinal!))
                       : _formatDecimal(_resultatFinal!),
-                  style: const TextStyle(color: _texteLCD, fontSize: 38, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
+                  style: const TextStyle(
+                    color: _texteLCD,
+                    fontSize: 38,
+                    fontWeight: FontWeight.w700,
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
             )
@@ -989,7 +1072,12 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                   (_formulePrecedente + _texteOperandeEnCours()).trim().isEmpty
                       ? '0'
                       : (_formulePrecedente + _texteOperandeEnCours()),
-                  style: const TextStyle(color: _texteLCD, fontSize: 26, fontWeight: FontWeight.w600, fontFamily: 'monospace'),
+                  style: const TextStyle(
+                    color: _texteLCD,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w600,
+                    fontFamily: 'monospace',
+                  ),
                 ),
               ),
             ),
@@ -999,7 +1087,16 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: _conversionExtra!
-                    .map((l) => Text(l, style: const TextStyle(color: Color(0xFF3D5A3F), fontSize: 14, fontFamily: 'monospace')))
+                    .map(
+                      (l) => Text(
+                        l,
+                        style: const TextStyle(
+                          color: Color(0xFF3D5A3F),
+                          fontSize: 14,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    )
                     .toList(),
               ),
             ),
@@ -1020,7 +1117,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheMemoireGrande('RUN', _run, () => _stocker('run')),
                 _toucheMemoireGrande('RISE', _rise, () => _stocker('rise')),
                 _toucheMemoireDiagGrande(),
-                _toucheFonctionGrande('AC', _toutEffacerCharpente, effacer: true),
+                _toucheFonctionGrande(
+                  'AC',
+                  _toutEffacerCharpente,
+                  effacer: true,
+                ),
               ],
             ),
           ),
@@ -1031,7 +1132,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheFonctionGrande('Pi', _committerFeet, claire: true),
                 _toucheFonctionGrande('Po', _committerPouces, claire: true),
                 _toucheFonctionGrande('/', _committerSeizieme, claire: true),
-                _toucheFonctionGrande('⌫', _effacerDernierCharpente, claire: true),
+                _toucheFonctionGrande(
+                  '⌫',
+                  _effacerDernierCharpente,
+                  claire: true,
+                ),
               ],
             ),
           ),
@@ -1067,7 +1172,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheChiffreGrande('7'),
                 _toucheChiffreGrande('8'),
                 _toucheChiffreGrande('9'),
-                _toucheFonctionGrande('÷', () => _appuyerOperateurCharpente('÷'), operateur: true),
+                _toucheFonctionGrande(
+                  '÷',
+                  () => _appuyerOperateurCharpente('÷'),
+                  operateur: true,
+                ),
               ],
             ),
           ),
@@ -1078,7 +1187,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheChiffreGrande('4'),
                 _toucheChiffreGrande('5'),
                 _toucheChiffreGrande('6'),
-                _toucheFonctionGrande('×', () => _appuyerOperateurCharpente('×'), operateur: true),
+                _toucheFonctionGrande(
+                  '×',
+                  () => _appuyerOperateurCharpente('×'),
+                  operateur: true,
+                ),
               ],
             ),
           ),
@@ -1089,7 +1202,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheChiffreGrande('1'),
                 _toucheChiffreGrande('2'),
                 _toucheChiffreGrande('3'),
-                _toucheFonctionGrande('−', () => _appuyerOperateurCharpente('-'), operateur: true),
+                _toucheFonctionGrande(
+                  '−',
+                  () => _appuyerOperateurCharpente('-'),
+                  operateur: true,
+                ),
               ],
             ),
           ),
@@ -1099,8 +1216,16 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               children: [
                 _toucheChiffreGrande('0'),
                 _toucheChiffreGrande('.'),
-                _toucheFonctionGrande('=', _appuyerEgalCharpente, rouille: true),
-                _toucheFonctionGrande('+', () => _appuyerOperateurCharpente('+'), operateur: true),
+                _toucheFonctionGrande(
+                  '=',
+                  _appuyerEgalCharpente,
+                  rouille: true,
+                ),
+                _toucheFonctionGrande(
+                  '+',
+                  () => _appuyerOperateurCharpente('+'),
+                  operateur: true,
+                ),
               ],
             ),
           ),
@@ -1109,7 +1234,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  Widget _toucheMemoireGrande(String label, double? valeur, VoidCallback onTap) {
+  Widget _toucheMemoireGrande(
+    String label,
+    double? valeur,
+    VoidCallback onTap,
+  ) {
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.all(3),
@@ -1119,16 +1248,30 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             backgroundColor: _boutonRouille,
             foregroundColor: _texteClaire,
             padding: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(label, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(valeur == null ? '—' : _formatPoucesFraction(valeur), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(
+                  valeur == null ? '—' : _formatPoucesFraction(valeur),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
               ],
             ),
           ),
@@ -1147,18 +1290,32 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             backgroundColor: _boutonRouille,
             foregroundColor: _texteClaire,
             padding: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
           child: FittedBox(
             fit: BoxFit.scaleDown,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Text('DIAG', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                const Text(
+                  'DIAG',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
                 const SizedBox(height: 2),
-                Text(_diag == null ? '—' : _formatPoucesFraction(_diag!), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(
+                  _diag == null ? '—' : _formatPoucesFraction(_diag!),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
                 if (_pitchDegres != null)
-                  Text('${_pitchDegres!.toStringAsFixed(1)}°', style: const TextStyle(fontSize: 10)),
+                  Text(
+                    '${_pitchDegres!.toStringAsFixed(1)}°',
+                    style: const TextStyle(fontSize: 10),
+                  ),
               ],
             ),
           ),
@@ -1167,7 +1324,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  Widget _toucheExtraPetite(String label, VoidCallback onTap, {bool rouille = false}) {
+  Widget _toucheExtraPetite(
+    String label,
+    VoidCallback onTap, {
+    bool rouille = false,
+  }) {
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.all(3),
@@ -1177,9 +1338,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             backgroundColor: rouille ? _boutonRouille : _boutonOperateur,
             foregroundColor: _texteClaire,
             padding: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
-          child: Text(label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+          ),
         ),
       ),
     );
@@ -1195,15 +1361,27 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             backgroundColor: _boutonChiffreBg,
             foregroundColor: _boutonChiffreTexte,
             side: const BorderSide(color: _boutonChiffreBorder),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-          child: Text(chiffre, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+          child: Text(
+            chiffre,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+          ),
         ),
       ),
     );
   }
 
-  Widget _toucheFonctionGrande(String label, VoidCallback onTap, {bool operateur = false, bool claire = false, bool effacer = false, bool rouille = false}) {
+  Widget _toucheFonctionGrande(
+    String label,
+    VoidCallback onTap, {
+    bool operateur = false,
+    bool claire = false,
+    bool effacer = false,
+    bool rouille = false,
+  }) {
     Color bg;
     Color fg;
     if (effacer) {
@@ -1231,9 +1409,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             backgroundColor: bg,
             foregroundColor: fg,
             side: claire ? const BorderSide(color: _boutonChiffreBorder) : null,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-          child: Text(label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+          ),
         ),
       ),
     );
@@ -1255,34 +1438,58 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              _termine ? 'Résultat' : (_etapes.isNotEmpty ? _etapes[_etape] : ''),
-              style: const TextStyle(color: _texteLCD, fontSize: 13, fontWeight: FontWeight.w600),
+              _termine
+                  ? 'Résultat'
+                  : (_etapes.isNotEmpty ? _etapes[_etape] : ''),
+              style: const TextStyle(
+                color: _texteLCD,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
           const SizedBox(height: 8),
           if (!_termine)
             Text(
               _saisie.isEmpty ? '0' : _saisie,
-              style: const TextStyle(color: _texteLCD, fontSize: 40, fontWeight: FontWeight.w700, fontFamily: 'monospace'),
+              style: const TextStyle(
+                color: _texteLCD,
+                fontSize: 40,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'monospace',
+              ),
             ),
           if (_termine) ...[
             Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 _resultatTitre ?? '',
-                style: const TextStyle(color: _texteLCD, fontSize: 14, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  color: _texteLCD,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
             const SizedBox(height: 6),
             ..._resultatLignes.map(
               (l) => Align(
                 alignment: Alignment.centerLeft,
-                child: Text(l, style: const TextStyle(color: _texteLCD, fontSize: 20, fontWeight: FontWeight.w700)),
+                child: Text(
+                  l,
+                  style: const TextStyle(
+                    color: _texteLCD,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
             if (estLineaire)
               GestureDetector(
-                onTap: () => setState(() => _resultatAutreEnPieds = !_resultatAutreEnPieds),
+                onTap: () => setState(
+                  () => _resultatAutreEnPieds = !_resultatAutreEnPieds,
+                ),
                 child: Padding(
                   padding: const EdgeInsets.only(top: 6),
                   child: Align(
@@ -1291,7 +1498,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       _resultatAutreEnPieds
                           ? _formatPiedsPoucesFraction(_resultatAutreLineaire!)
                           : _formatPoucesFraction(_resultatAutreLineaire!),
-                      style: const TextStyle(color: _texteLCD, fontSize: 20, fontWeight: FontWeight.w700),
+                      style: const TextStyle(
+                        color: _texteLCD,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
@@ -1313,8 +1524,18 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _toucheUnite('Pi', 'pi', _uniteBeton, (u) => setState(() => _uniteBeton = u)),
-                  _toucheUnite('Po', 'po', _uniteBeton, (u) => setState(() => _uniteBeton = u)),
+                  _toucheUnite(
+                    'Pi',
+                    'pi',
+                    _uniteBeton,
+                    (u) => setState(() => _uniteBeton = u),
+                  ),
+                  _toucheUnite(
+                    'Po',
+                    'po',
+                    _uniteBeton,
+                    (u) => setState(() => _uniteBeton = u),
+                  ),
                 ],
               ),
             ),
@@ -1326,11 +1547,36 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _toucheUnite('Pi', 'pi', _uniteConversion, (u) => setState(() => _uniteConversion = u)),
-                  _toucheUnite('Po', 'po', _uniteConversion, (u) => setState(() => _uniteConversion = u)),
-                  _toucheUnite('M', 'm', _uniteConversion, (u) => setState(() => _uniteConversion = u)),
-                  _toucheUnite('CM', 'cm', _uniteConversion, (u) => setState(() => _uniteConversion = u)),
-                  _toucheUnite('MM', 'mm', _uniteConversion, (u) => setState(() => _uniteConversion = u)),
+                  _toucheUnite(
+                    'Pi',
+                    'pi',
+                    _uniteConversion,
+                    (u) => setState(() => _uniteConversion = u),
+                  ),
+                  _toucheUnite(
+                    'Po',
+                    'po',
+                    _uniteConversion,
+                    (u) => setState(() => _uniteConversion = u),
+                  ),
+                  _toucheUnite(
+                    'M',
+                    'm',
+                    _uniteConversion,
+                    (u) => setState(() => _uniteConversion = u),
+                  ),
+                  _toucheUnite(
+                    'CM',
+                    'cm',
+                    _uniteConversion,
+                    (u) => setState(() => _uniteConversion = u),
+                  ),
+                  _toucheUnite(
+                    'MM',
+                    'mm',
+                    _uniteConversion,
+                    (u) => setState(() => _uniteConversion = u),
+                  ),
                 ],
               ),
             ),
@@ -1384,7 +1630,12 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  Widget _toucheUnite(String label, String valeur, String actuel, ValueChanged<String> onChanged) {
+  Widget _toucheUnite(
+    String label,
+    String valeur,
+    String actuel,
+    ValueChanged<String> onChanged,
+  ) {
     final actif = actuel == valeur;
     return Expanded(
       child: Padding(
@@ -1396,9 +1647,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             foregroundColor: actif ? _texteClaire : _boutonChiffreTexte,
             padding: EdgeInsets.zero,
             side: actif ? null : const BorderSide(color: _boutonChiffreBorder),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
           ),
-          child: Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+          ),
         ),
       ),
     );
@@ -1414,15 +1670,27 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             backgroundColor: _boutonChiffreBg,
             foregroundColor: _boutonChiffreTexte,
             side: const BorderSide(color: _boutonChiffreBorder),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-          child: Text(chiffre, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600)),
+          child: Text(
+            chiffre,
+            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w600),
+          ),
         ),
       ),
     );
   }
 
-  Widget _toucheFonctionAutre(String label, VoidCallback onTap, {bool rouille = false, bool claire = false, bool effacer = false, bool vide = false}) {
+  Widget _toucheFonctionAutre(
+    String label,
+    VoidCallback onTap, {
+    bool rouille = false,
+    bool claire = false,
+    bool effacer = false,
+    bool vide = false,
+  }) {
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.all(3),
@@ -1432,18 +1700,25 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             backgroundColor: vide
                 ? Colors.transparent
                 : rouille
-                    ? _boutonRouille
-                    : effacer
-                        ? _boutonEffacer
-                        : claire
-                            ? _boutonChiffreBg
-                            : _boutonOperateur,
+                ? _boutonRouille
+                : effacer
+                ? _boutonEffacer
+                : claire
+                ? _boutonChiffreBg
+                : _boutonOperateur,
             foregroundColor: claire ? _boutonChiffreTexte : _texteClaire,
-            side: (claire && !vide) ? const BorderSide(color: _boutonChiffreBorder) : null,
+            side: (claire && !vide)
+                ? const BorderSide(color: _boutonChiffreBorder)
+                : null,
             elevation: vide ? 0 : 1,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
           ),
-          child: Text(label, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          child: Text(
+            label,
+            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+          ),
         ),
       ),
     );
