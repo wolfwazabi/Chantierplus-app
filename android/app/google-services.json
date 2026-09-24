@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "328147837496",
+    "project_id": "boreal-8cd7c",
+    "storage_bucket": "boreal-8cd7c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:328147837496:android:5c6a24aa83327f923cfccd",
+        "android_client_info": {
+          "package_name": "com.example.construction_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAI6eCJKu0OP9E8SUGYvlVQr1ArW3t5kwM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
