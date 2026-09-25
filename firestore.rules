@@ -27,10 +27,6 @@ rules_version = '2';
 // Coût : sessions + employees + companies (+ chantiers) = 4 documents au
 // maximum par requête ; les get()/exists() d'un même chemin sont mis en cache
 // durant une évaluation et ne comptent qu'une fois.
-//
-// COMPATIBILITÉ : les blocs marqués [ANCIENNES VERSIONS] existent pour les
-// versions de l'app antérieures à la connexion par courriel. À retirer quand
-// elles ne sont plus en circulation.
 // =============================================================================
 
 service cloud.firestore {
@@ -115,11 +111,8 @@ service cloud.firestore {
         && get(cheminProprioApp()).data.employeeId == employeeId;
     }
 
-    // Pouvoirs du Proprio : seulement avec une session ouverte par courriel.
     function estProprioApp() {
-      return estEmployeActif()
-        && session().get('methode', '') == 'courriel'
-        && estLeProprioApp(session().employeeId);
+      return estEmployeActif() && estLeProprioApp(session().employeeId);
     }
 
     // ------------------------------------------------------------- Validation
@@ -179,17 +172,8 @@ service cloud.firestore {
     match /sessions/{uid} {
       allow get: if estAuth() && request.auth.uid == uid;
       allow delete: if estAuth() && request.auth.uid == uid;
-
-      // [ANCIENNES VERSIONS] À la reconnexion, elles réécrivent leur session
-      // avec les mêmes identifiants. Permis seulement sans changement
-      // d'identité (la méthode de connexion disparaît : perte des pouvoirs
-      // du Proprio, jamais de gain).
-      allow update: if estAuth() && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['employeeId', 'companyId'])
-        && request.resource.data.employeeId == resource.data.employeeId
-        && request.resource.data.companyId == resource.data.companyId;
-
-      allow list, create: if false;
+      // Création/modification : jamais depuis le client (sinon usurpation).
+      allow list, create, update: if false;
     }
 
     // --------------------------------------------------------------- Compagnies
@@ -202,57 +186,26 @@ service cloud.firestore {
 
     // ----------------------------------------------------------------- Employés
 
-    // Les NIP sont stockés en HMAC (pinHash) par les Cloud Functions.
-    // estProprietaire, courriel et pinHash ne sont jamais
-    // modifiables par le client.
+    // Aucune écriture client : les Cloud Functions enregistrerEmploye et
+    // supprimerEmploye valident tout (NIP haché, courriel unique, seul le
+    // super-admin de la compagnie gère les admins, super-admin protégé).
     match /employees/{employeeId} {
       allow get: if membreDe(resource.data.companyId)
         && (employeeId == session().employeeId || moi().role == 'admin');
       allow list: if adminDe(resource.data.companyId);
-
-      // [ANCIENNES VERSIONS] Gestion des employés directement depuis l'app,
-      // avec un NIP en clair que le déclencheur securiserEmploye remplace
-      // aussitôt par son empreinte. La nouvelle app passe par les fonctions
-      // enregistrerEmploye / supprimerEmploye.
-      allow create: if adminDe(request.resource.data.companyId)
-        && champsPermis(request.resource.data, ['companyId', 'nom', 'pin', 'role', 'estProprietaire'])
-        && request.resource.data.estProprietaire == false
-        && request.resource.data.role in ['admin', 'plus', 'employe']
-        && texte(request.resource.data.nom, 1, 100)
-        && request.resource.data.pin is string
-        && request.resource.data.pin.matches('[0-9]{4,8}');
-
-      allow update: if adminDe(resource.data.companyId)
-        && champsModifiesPermis(['nom', 'pin', 'role'])
-        && request.resource.data.role in ['admin', 'plus', 'employe']
-        && texte(request.resource.data.nom, 1, 100)
-        && (!request.resource.data.keys().hasAny(['pin'])
-            || (request.resource.data.pin is string
-                && request.resource.data.pin.matches('[0-9]{4,8}')))
-        // Le super-admin de la compagnie reste admin ; le rôle du Proprio ne change pas.
-        && (resource.data.get('estProprietaire', false) != true
-            || request.resource.data.role == 'admin')
-        && (!estLeProprioApp(employeeId)
-            || request.resource.data.role == resource.data.role);
-
-      allow delete: if adminDe(resource.data.companyId)
-        && employeeId != session().employeeId
-        && resource.data.get('estProprietaire', false) != true
-        && !estLeProprioApp(employeeId);
+      allow write: if false;
     }
 
     // -------------------------------------------------------------- Particuliers
 
     match /individus/{uid} {
       allow get: if estIndividu() && request.auth.uid == uid;
-      // Courriel comparé en minuscules : les anciennes versions l'enregistrent
-      // tel que saisi, alors que le jeton le normalise.
+      // Courriel identique à celui du jeton (l'app enregistre user.email).
       allow create, update: if estIndividu()
         && request.auth.uid == uid
         && champsPermis(request.resource.data, ['nom', 'email'])
         && texte(request.resource.data.nom, 1, 100)
-        && request.resource.data.email is string
-        && request.resource.data.email.lower() == request.auth.token.email.lower();
+        && request.resource.data.email == request.auth.token.email;
       allow list, delete: if false;
     }
 

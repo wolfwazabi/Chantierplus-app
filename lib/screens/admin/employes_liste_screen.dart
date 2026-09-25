@@ -113,6 +113,11 @@ class EmployesListeScreen extends StatelessWidget {
                     final nom = data['nom'] ?? '';
                     final estProprietaire = data['estProprietaire'] == true;
                     final estMoi = doc.id == AppSession.current?.id;
+                    // Seul le super-admin de la compagnie gère les autres admins.
+                    final gerable =
+                        estMoi ||
+                        data['role'] != 'admin' ||
+                        AppSession.estProprietaire;
 
                     return ListTile(
                       leading: CircleAvatar(
@@ -127,56 +132,44 @@ class EmployesListeScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(_libelleRole(data)),
-                          if ((data['courriel'] as String?)?.isNotEmpty == true)
-                            Text(
-                              data['courriel'],
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
-                            )
-                          else
-                            const Text(
-                              'Courriel à ajouter',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.orange,
-                              ),
+                          Text(
+                            data['courriel'] ?? '',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
                             ),
-                          if (data['nipRefuse'] == true)
-                            const Text(
-                              'NIP refusé (déjà utilisé) : envoyez-lui un nouveau NIP',
-                              style: TextStyle(fontSize: 12, color: Colors.red),
-                            ),
-                        ],
-                      ),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (valeur) {
-                          if (valeur == 'modifier') {
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (_) => EmployeFormulaireScreen(
-                                  docId: doc.id,
-                                  donneesExistantes: data,
-                                ),
-                              ),
-                            );
-                          } else if (valeur == 'supprimer') {
-                            _confirmerSuppression(context, doc.id, nom);
-                          }
-                        },
-                        itemBuilder: (ctx) => [
-                          const PopupMenuItem(
-                            value: 'modifier',
-                            child: Text('Modifier'),
                           ),
-                          if (!estProprietaire && !estMoi)
-                            const PopupMenuItem(
-                              value: 'supprimer',
-                              child: Text('Retirer'),
-                            ),
                         ],
                       ),
+                      trailing: !gerable
+                          ? null
+                          : PopupMenuButton<String>(
+                              onSelected: (valeur) {
+                                if (valeur == 'modifier') {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => EmployeFormulaireScreen(
+                                        docId: doc.id,
+                                        donneesExistantes: data,
+                                      ),
+                                    ),
+                                  );
+                                } else if (valeur == 'supprimer') {
+                                  _confirmerSuppression(context, doc.id, nom);
+                                }
+                              },
+                              itemBuilder: (ctx) => [
+                                const PopupMenuItem(
+                                  value: 'modifier',
+                                  child: Text('Modifier'),
+                                ),
+                                if (!estProprietaire && !estMoi)
+                                  const PopupMenuItem(
+                                    value: 'supprimer',
+                                    child: Text('Retirer'),
+                                  ),
+                              ],
+                            ),
                     );
                   },
                 );

@@ -78,9 +78,10 @@ class _CompteScreenState extends State<CompteScreen> {
     final courriel = _courrielCtrl.text.trim();
     final pin = _pinCtrl.text.trim();
 
-    if (numero.isEmpty || pin.isEmpty) {
+    if (numero.isEmpty || courriel.isEmpty || pin.isEmpty) {
       setState(
-        () => _erreur = 'Entrez votre numéro de compagnie et votre NIP.',
+        () => _erreur =
+            'Entrez votre numéro de compagnie, votre courriel et votre NIP.',
       );
       return;
     }
@@ -507,8 +508,6 @@ class _CompteScreenState extends State<CompteScreen> {
           autocorrect: false,
           decoration: const InputDecoration(
             labelText: 'Courriel',
-            helperText: 'Laissez vide si votre employeur ne l\'a pas encore enregistré.',
-            helperMaxLines: 2,
             border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.email_outlined),
           ),

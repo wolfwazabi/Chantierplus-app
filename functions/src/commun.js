@@ -16,22 +16,19 @@ const db = getFirestore();
 // ATTENTION : changer cette clé invalide tous les NIP existants.
 const PIN_PEPPER = defineSecret("PIN_PEPPER");
 
-// App Check : en mode « surveillance » tant que d'anciennes versions de l'app
-// (sans App Check) sont en circulation. Passer à true pour l'imposer.
+// App Check : en mode « surveillance » (appels sans jeton journalisés) tant
+// que les applications ne sont pas enregistrées dans la console App Check.
+// Passer à true ensuite pour refuser tout appel sans attestation.
 const APP_CHECK_OBLIGATOIRE = defineBoolean("APP_CHECK_OBLIGATOIRE", {default: false});
 
-// Régions : Montréal pour tout ; us-central1 seulement pour les fonctions
-// appelées par les anciennes versions de l'app (à retirer ensuite).
+// Toutes les fonctions sont à Montréal, comme la base Firestore.
 const REGION = "northamerica-northeast1";
-const REGIONS_AVEC_ANCIENNES_VERSIONS = [REGION, "us-central1"];
 
 const ROLES = ["admin", "plus", "employe"];
 const ROLES_GESTION = ["admin", "plus"];
 
-// NIP : 4 chiffres acceptés pour les NIP existants ; 6 minimum pour tout
-// nouveau NIP choisi ou généré.
-const FORMAT_NIP_EXISTANT = /^\d{4,8}$/;
-const FORMAT_NIP_NOUVEAU = /^\d{6,8}$/;
+// NIP : 6 à 8 chiffres.
+const FORMAT_NIP = /^\d{6,8}$/;
 const FORMAT_NUMERO = /^\d{1,10}$/;
 const FORMAT_COURRIEL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,}$/;
 
@@ -63,7 +60,7 @@ function courriel(valeur, champ = "courriel") {
 
 function nouveauNip(valeur, champ = "NIP") {
   const v = texte(valeur, champ, {min: 6, max: 8});
-  if (!FORMAT_NIP_NOUVEAU.test(v)) {
+  if (!FORMAT_NIP.test(v)) {
     throw new HttpsError("invalid-argument", "Le NIP doit contenir de 6 à 8 chiffres.");
   }
   return v;
@@ -88,23 +85,6 @@ function egalConstant(a, b) {
 function nombreAleatoire(chiffres) {
   const max = 10 ** chiffres;
   return String(crypto.randomInt(0, max)).padStart(chiffres, "0");
-}
-
-/**
- * NIP aléatoire de 6 chiffres, évitant ceux déjà présents dans la compagnie
- * (pour ne pas rendre ambiguë la connexion « NIP seul » des anciennes
- * versions). Personne n'est informé des valeurs écartées : aucune fuite.
- */
-async function genererNipUnique(companyId) {
-  for (let essai = 0; essai < 20; essai++) {
-    const pin = nombreAleatoire(6);
-    const pris = await db.collection("employees")
-        .where("companyId", "==", companyId)
-        .where("pinHash", "==", hacherNip(companyId, pin))
-        .limit(1).get();
-    if (pris.empty) return pin;
-  }
-  throw new HttpsError("internal", "Impossible de générer un NIP. Réessayez.");
 }
 
 // -----------------------------------------------------------------------------
@@ -184,8 +164,7 @@ async function contexteEmploye(request) {
     employe,
     companyId: session.companyId,
     compagnie: compSnap.data(),
-    // Pouvoirs du Proprio : seulement avec une session ouverte par courriel.
-    estProprioApp: idProprioApp === empSnap.id && session.methode === "courriel",
+    estProprioApp: idProprioApp === empSnap.id,
     idProprioApp,
   };
 }
@@ -265,9 +244,9 @@ async function supprimerSessionsDe(employeeId, saufUid = null) {
 
 module.exports = {
   db, FieldValue, Timestamp, logger,
-  PIN_PEPPER, APP_CHECK_OBLIGATOIRE, REGION, REGIONS_AVEC_ANCIENNES_VERSIONS,
-  ROLES, ROLES_GESTION, FORMAT_NIP_EXISTANT, FORMAT_NUMERO,
-  texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire, genererNipUnique,
+  PIN_PEPPER, APP_CHECK_OBLIGATOIRE, REGION,
+  ROLES, ROLES_GESTION, FORMAT_NIP, FORMAT_NUMERO,
+  texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire,
   empreinte, empreinteIp, verifierAppCheck, exigerAuth, exigerAnonyme,
   proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp,
   limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,

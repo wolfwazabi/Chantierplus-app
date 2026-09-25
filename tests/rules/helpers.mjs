@@ -77,12 +77,11 @@ export async function semer(env) {
     await d('employees/adminB', emp('B', 'Admin B', 'admin', { estProprietaire: true }));
     await d('employees/adminP', emp('P', 'Admin P', 'admin', { estProprietaire: true }));
 
-    const session = (employeeId, companyId, methode = 'courriel') => ({ employeeId, companyId, methode });
+    const session = (employeeId, companyId) => ({ employeeId, companyId });
     await d('sessions/uid-adminA', session('adminA', 'A'));
     await d('sessions/uid-plusA', session('plusA', 'A'));
-    await d('sessions/uid-empA', session('empA', 'A', 'nip'));
+    await d('sessions/uid-empA', session('empA', 'A'));
     await d('sessions/uid-superA', session('superA', 'A'));
-    await d('sessions/uid-superA-nip', session('superA', 'A', 'nip'));
     await d('sessions/uid-usurpateur', { ...session('usurpateur', 'A'), proprioApp: true });
     await d('sessions/uid-adminB', session('adminB', 'B'));
     await d('sessions/uid-adminP', session('adminP', 'P'));

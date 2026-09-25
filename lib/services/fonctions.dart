@@ -1,9 +1,6 @@
 import 'package:cloud_functions/cloud_functions.dart';
 
-/// Accès aux Cloud Functions, hébergées à Montréal.
-///
-/// Les anciennes versions de l'app appellent us-central1 (région par défaut) ;
-/// les fonctions dont elles ont besoin y restent déployées en parallèle.
+/// Accès aux Cloud Functions, hébergées à Montréal (comme la base Firestore).
 class Fonctions {
   static const region = 'northamerica-northeast1';
 

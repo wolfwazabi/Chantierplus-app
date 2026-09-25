@@ -9,14 +9,13 @@ import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
 import {
-  addDoc, collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, updateDoc, where,
+  collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, where,
 } from 'firebase/firestore';
 import { initializeApp as initAdmin } from 'firebase-admin/app';
 import { getFirestore as getAdminDb } from 'firebase-admin/firestore';
 
 const PROJET = 'demo-construction-rules';
-const MONTREAL = 'northamerica-northeast1';
-const ANCIENNE_REGION = 'us-central1';
+const REGION = 'northamerica-northeast1';
 const PEPPER_EMULATEUR = 'cle-de-test-emulateur-seulement'; // functions/.secret.local
 process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
 
@@ -26,13 +25,13 @@ const hacher = (companyId, pin) => createHmac('sha256', PEPPER_EMULATEUR).update
 const apps = [];
 let compteur = 0;
 
-/** Un « appareil » client isolé (sa propre session Auth). */
-async function appareil(region = MONTREAL) {
+/** Un « appareil » client isolé (sa propre session Auth anonyme). */
+async function appareil() {
   const app = initializeApp({ projectId: PROJET, apiKey: 'demo-key', appId: 'demo' }, `client-${compteur++}`);
   apps.push(app);
   const auth = getAuth(app);
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
-  const fns = getFunctions(app, region);
+  const fns = getFunctions(app, REGION);
   connectFunctionsEmulator(fns, '127.0.0.1', 5001);
   const db = getFirestore(app);
   connectFirestoreEmulator(db, '127.0.0.1', 8080);
@@ -40,9 +39,9 @@ async function appareil(region = MONTREAL) {
   return { auth, db, appeler: (nom, data) => httpsCallable(fns, nom)(data).then((r) => r.data) };
 }
 
-async function connecter(numero, pin, courriel, region = MONTREAL) {
-  const a = await appareil(region);
-  const profil = await a.appeler('connexionEmploye', { numeroCompagnie: numero, pin, ...(courriel && { courriel }) });
+async function connecter(numero, courriel, pin) {
+  const a = await appareil();
+  const profil = await a.appeler('connexionEmploye', { numeroCompagnie: numero, courriel, pin });
   return { ...a, profil };
 }
 
@@ -68,12 +67,10 @@ async function dernierCourriel(a, sujetContient = '') {
 
 const extraire = (texte, etiquette) => texte.match(new RegExp(`${etiquette} : (\\d+)`))?.[1];
 
-async function attendre(condition) {
-  for (let i = 0; i < 50; i++) {
-    if (await condition()) return;
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  assert.fail('condition jamais atteinte');
+async function nipRecu(courriel, sujet = 'accès') {
+  const msg = await dernierCourriel(courriel, sujet);
+  assert.ok(msg, `courriel « ${sujet} » attendu pour ${courriel}`);
+  return extraire(msg.texte, 'NIP');
 }
 
 const viderLimites = async () =>
@@ -81,7 +78,7 @@ const viderLimites = async () =>
 
 const inscription = (over = {}) => ({
   nomEntreprise: 'Construction Test', nomLegal: 'Construction Test inc.', secteur: 'Entrepreneur général',
-  nombreEmployes: 12, telephone: '514-555-0000', nomAdmin: 'Proprio', pinAdmin: '1234',
+  nombreEmployes: 12, telephone: '514-555-0000', nomAdmin: 'Proprio Compagnie', pinAdmin: '123456',
   emailAdmin: 'Proprio@Exemple.ca', ...over,
 });
 
@@ -97,26 +94,27 @@ beforeEach(viderLimites);
 after(async () => { await Promise.all(apps.map((a) => deleteApp(a))); });
 
 // =============================================================================
-describe('Proprio, inscription et approbation', () => {
+describe('Proprio de l\'app, inscription et approbation', () => {
   test('mise en place : compagnie du Proprio (approuvée, config/proprio_app posé à la console)', async () => {
     const a = await appareil();
     ({ numero: numeroS } = await a.appeler('inscrireCompagnie',
-      inscription({ nomEntreprise: 'Boréal', nomAdmin: 'Super', emailAdmin: 'super@exemple.ca', pinAdmin: '246810' })));
+      inscription({ nomEntreprise: 'Boréal', nomAdmin: 'Le Proprio', emailAdmin: 'proprio-app@exemple.ca', pinAdmin: '246810' })));
     const comp = (await adminDb.collection('companies').where('numero', '==', numeroS).get()).docs[0];
     await comp.ref.update({ statut: 'approuvee' });
-    const proprio = (await adminDb.collection('employees').where('companyId', '==', comp.id).get()).docs[0];
-    await adminDb.collection('config').doc('proprio_app').set({ employeeId: proprio.id });
+    const fiche = (await adminDb.collection('employees').where('companyId', '==', comp.id).get()).docs[0];
+    await adminDb.collection('config').doc('proprio_app').set({ employeeId: fiche.id });
   });
 
-  test('inscription : validations (NIP, courriel, longueur)', async () => {
+  test('inscription : validations (NIP de 6 à 8 chiffres, courriel, longueur)', async () => {
     const a = await appareil();
-    await rejette(a.appeler('inscrireCompagnie', inscription({ pinAdmin: 'abcd' })), 'invalid-argument');
+    await rejette(a.appeler('inscrireCompagnie', inscription({ pinAdmin: '1234' })), 'invalid-argument');
+    await rejette(a.appeler('inscrireCompagnie', inscription({ pinAdmin: 'abcdef' })), 'invalid-argument');
     await rejette(a.appeler('inscrireCompagnie', inscription({ emailAdmin: 'pas-un-courriel' })), 'invalid-argument');
     await rejette(a.appeler('inscrireCompagnie', inscription({ nomEntreprise: 'x'.repeat(500) })), 'invalid-argument');
   });
 
-  test('inscription (ancienne région) : compagnie en attente, propriétaire haché, courriel reçu', async () => {
-    const a = await appareil(ANCIENNE_REGION);
+  test('inscription : compagnie en attente, super-admin avec NIP haché, courriel reçu', async () => {
+    const a = await appareil();
     ({ numero } = await a.appeler('inscrireCompagnie', inscription()));
     const comp = (await adminDb.collection('companies').where('numero', '==', numero).get()).docs[0];
     companyId = comp.id;
@@ -127,40 +125,33 @@ describe('Proprio, inscription et approbation', () => {
     const p = emps.docs[0].data();
     proprioId = emps.docs[0].id;
     assert.equal(p.estProprietaire, true);
+    assert.equal(p.role, 'admin');
     assert.equal(p.courriel, 'proprio@exemple.ca');
     assert.equal(p.pin, undefined, 'le NIP ne doit jamais être stocké en clair');
-    assert.equal(p.pinHash, hacher(companyId, '1234'));
-
-    const msg = await dernierCourriel('proprio@exemple.ca', numero);
-    assert.ok(msg, 'courriel de confirmation attendu');
+    assert.equal(p.pinHash, hacher(companyId, '123456'));
+    assert.ok(await dernierCourriel('proprio@exemple.ca', numero), 'courriel de confirmation attendu');
   });
 
   test('connexion refusée tant que la compagnie est en attente', async () => {
     const a = await appareil();
-    await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '1234' }), 'not-found');
+    await rejette(a.appeler('connexionEmploye',
+      { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '123456' }), 'not-found');
   });
 
-  test('Proprio par NIP seul : pas de pouvoirs ; un admin ordinaire non plus', async () => {
-    const parNip = await connecter(numeroS, '246810');
-    assert.equal(parNip.profil.estProprioApp, false);
-    await rejette(parNip.appeler('approuverCompagnie', { companyId, approuver: true }), 'permission-denied');
-    await assert.rejects(getDocs(collection(parNip.db, 'companies')));
-  });
-
-  test('un champ superAdmin sur une autre fiche ne donne aucun pouvoir', async () => {
+  test('un champ superAdmin/proprioApp sur une autre fiche ne donne aucun pouvoir de Proprio', async () => {
     const comp = (await adminDb.collection('companies').where('numero', '==', numeroS).get()).docs[0];
     await adminDb.collection('employees').add({
       companyId: comp.id, nom: 'Usurpateur', role: 'admin', courriel: 'usurpateur@exemple.ca',
-      superAdmin: true, pinHash: hacher(comp.id, '112233'),
+      superAdmin: true, proprioApp: true, pinHash: hacher(comp.id, '112233'),
     });
-    const u = await connecter(numeroS, '112233', 'usurpateur@exemple.ca');
+    const u = await connecter(numeroS, 'usurpateur@exemple.ca', '112233');
     assert.equal(u.profil.estProprioApp, false);
     await rejette(u.appeler('approuverCompagnie', { companyId, approuver: true }), 'permission-denied');
     await assert.rejects(getDocs(collection(u.db, 'companies')));
   });
 
-  test('Proprio par courriel : approuve une seule fois ; le propriétaire est avisé', async () => {
-    const s = await connecter(numeroS, '246810', 'super@exemple.ca');
+  test('Proprio : approuve une seule fois ; le super-admin de la compagnie est avisé', async () => {
+    const s = await connecter(numeroS, 'proprio-app@exemple.ca', '246810');
     assert.equal(s.profil.estProprioApp, true);
     assert.ok((await getDocs(collection(s.db, 'companies'))).size >= 2);
     await rejette(s.appeler('approuverCompagnie', { companyId, approuver: 'oui' }), 'invalid-argument');
@@ -168,32 +159,38 @@ describe('Proprio, inscription et approbation', () => {
     await rejette(s.appeler('approuverCompagnie', { companyId, approuver: false }), 'failed-precondition');
     assert.ok(await dernierCourriel('proprio@exemple.ca', 'approuvée'));
   });
+
+  test('un super-admin de compagnie n\'est pas le Proprio de l\'app', async () => {
+    const p = await connecter(numero, 'proprio@exemple.ca', '123456');
+    assert.equal(p.profil.estProprioApp, false);
+    await rejette(p.appeler('approuverCompagnie', { companyId, approuver: true }), 'permission-denied');
+  });
 });
 
 // =============================================================================
 describe('Connexion employé', () => {
-  test('courriel + NIP : session « courriel », profil propriétaire', async () => {
-    const e = await connecter(numero, '1234', 'PROPRIO@exemple.ca');
+  test('courriel + NIP : session créée, profil super-admin', async () => {
+    const e = await connecter(numero, 'PROPRIO@exemple.ca', '123456');
     assert.equal(e.profil.estProprietaire, true);
     assert.equal(e.profil.role, 'admin');
     assert.equal(e.profil.courriel, 'proprio@exemple.ca');
     const session = await getDoc(doc(e.db, 'sessions', e.auth.currentUser.uid));
-    assert.equal(session.data().methode, 'courriel');
+    assert.equal(session.data().employeeId, e.profil.id);
   });
 
-  test('[anciennes versions] NIP seul en us-central1 : OK si le NIP est unique', async () => {
-    const e = await connecter(numero, '1234', null, ANCIENNE_REGION);
-    assert.equal(e.profil.id, proprioId);
+  test('courriel obligatoire : le NIP seul est refusé', async () => {
+    const a = await appareil();
+    await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, pin: '123456' }), 'invalid-argument');
   });
 
   test('erreurs : même message générique (numéro, courriel ou NIP faux)', async () => {
     const a = await appareil();
     const messages = [];
     for (const essai of [
-      { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '9999' },
-      { numeroCompagnie: numero, courriel: 'inconnu@exemple.ca', pin: '1234' },
-      { numeroCompagnie: '999999', courriel: 'proprio@exemple.ca', pin: '1234' },
-      { numeroCompagnie: numero, pin: '9999' },
+      { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '999999' },
+      { numeroCompagnie: numero, courriel: 'inconnu@exemple.ca', pin: '123456' },
+      { numeroCompagnie: '999999', courriel: 'proprio@exemple.ca', pin: '123456' },
+      { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '1234' },
     ]) {
       await assert.rejects(a.appeler('connexionEmploye', essai), (e) => {
         assert.equal(e.code, 'functions/not-found');
@@ -203,42 +200,15 @@ describe('Connexion employé', () => {
     }
     assert.equal(new Set(messages).size, 1, 'les messages ne doivent pas révéler ce qui existe');
   });
-
-  test('migration paresseuse : un ancien NIP en clair fonctionne puis est haché', async () => {
-    const ref = await adminDb.collection('employees').add({ companyId, nom: 'Ancien', role: 'employe', pin: '4321' });
-    const e = await connecter(numero, '4321');
-    assert.equal(e.profil.id, ref.id);
-    const apres = (await ref.get()).data();
-    assert.equal(apres.pin, undefined);
-    assert.equal(apres.pinHash, hacher(companyId, '4321'));
-  });
-
-  test('NIP seul ambigu (partagé par 2 employés) : courriel exigé', async () => {
-    const h = hacher(companyId, '777777');
-    await adminDb.collection('employees').add({ companyId, nom: 'Jumeau 1', role: 'employe', courriel: 'j1@exemple.ca', pinHash: h });
-    await adminDb.collection('employees').add({ companyId, nom: 'Jumeau 2', role: 'employe', courriel: 'j2@exemple.ca', pinHash: h });
-    const a = await appareil();
-    await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, pin: '777777' }), 'failed-precondition');
-    const j2 = await connecter(numero, '777777', 'j2@exemple.ca');
-    assert.equal(j2.profil.nom, 'Jumeau 2');
-  });
-
-  test('config/securite : la connexion par NIP seul peut être désactivée', async () => {
-    await adminDb.collection('config').doc('securite').set({ connexionNipSeulAutorisee: false });
-    const a = await appareil();
-    await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, pin: '1234' }), 'failed-precondition');
-    await connecter(numero, '1234', 'proprio@exemple.ca');
-    await adminDb.collection('config').doc('securite').delete();
-  });
 });
 
 // =============================================================================
 describe('Création d\'employés : NIP aléatoire envoyé par courriel', () => {
-  let proprio;
-  before(async () => { proprio = await connecter(numero, '1234', 'proprio@exemple.ca'); });
+  let superAdmin;
+  before(async () => { superAdmin = await connecter(numero, 'proprio@exemple.ca', '123456'); });
 
   test('création : nom + courriel + rôle → NIP de 6 chiffres envoyé à l\'employé', async () => {
-    const r = await proprio.appeler('enregistrerEmploye', { nom: 'Jean Tremblay', courriel: 'Jean@Exemple.ca', role: 'employe' });
+    const r = await superAdmin.appeler('enregistrerEmploye', { nom: 'Jean Tremblay', courriel: 'Jean@Exemple.ca', role: 'employe' });
     jeanId = r.id;
     assert.equal(r.courrielEnvoye, true);
     assert.equal(r.nipTemporaire, undefined, 'le NIP ne doit pas être retourné à l\'admin');
@@ -251,44 +221,109 @@ describe('Création d\'employés : NIP aléatoire envoyé par courriel', () => {
     assert.equal(fiche.estProprietaire, false);
   });
 
-  test('refus : courriel en double, courriel manquant, rôle invalide, non-admin', async () => {
-    await rejette(proprio.appeler('enregistrerEmploye', { nom: 'Double', courriel: 'jean@exemple.ca', role: 'employe' }), 'already-exists');
-    await rejette(proprio.appeler('enregistrerEmploye', { nom: 'Sans', role: 'employe' }), 'invalid-argument');
-    await rejette(proprio.appeler('enregistrerEmploye', { nom: 'X', courriel: 'x@exemple.ca', role: 'patron' }), 'invalid-argument');
-    const jean = await connecter(numero, nipJean, 'jean@exemple.ca');
-    await rejette(jean.appeler('enregistrerEmploye', { nom: 'Pirate', courriel: 'p@exemple.ca', role: 'admin' }), 'permission-denied');
+  test('refus : courriel en double, courriel manquant, rôle invalide, employé non admin', async () => {
+    await rejette(superAdmin.appeler('enregistrerEmploye', { nom: 'Double', courriel: 'jean@exemple.ca', role: 'employe' }), 'already-exists');
+    await rejette(superAdmin.appeler('enregistrerEmploye', { nom: 'Sans', role: 'employe' }), 'invalid-argument');
+    await rejette(superAdmin.appeler('enregistrerEmploye', { nom: 'X', courriel: 'x@exemple.ca', role: 'patron' }), 'invalid-argument');
+    const jean = await connecter(numero, 'jean@exemple.ca', nipJean);
+    await rejette(jean.appeler('enregistrerEmploye', { nom: 'Pirate', courriel: 'p@exemple.ca', role: 'employe' }), 'permission-denied');
     await rejette(jean.appeler('supprimerEmploye', { employeeId: proprioId }), 'permission-denied');
     await assert.rejects(getDocs(query(collection(jean.db, 'employees'), where('companyId', '==', companyId))));
   });
 
-  test('modification : NIP conservé ; le propriétaire reste admin', async () => {
-    await proprio.appeler('enregistrerEmploye', { employeeId: jeanId, nom: 'Jean Tremblay', courriel: 'jean@exemple.ca', role: 'plus' });
+  test('modification : NIP conservé ; le super-admin reste admin', async () => {
+    await superAdmin.appeler('enregistrerEmploye', { employeeId: jeanId, nom: 'Jean Tremblay', courriel: 'jean@exemple.ca', role: 'plus' });
     assert.equal((await adminDb.collection('employees').doc(jeanId).get()).data().role, 'plus');
-    await connecter(numero, nipJean, 'jean@exemple.ca');
-    await proprio.appeler('enregistrerEmploye', { employeeId: proprioId, nom: 'Proprio', courriel: 'proprio@exemple.ca', role: 'employe' });
+    await connecter(numero, 'jean@exemple.ca', nipJean);
+    await superAdmin.appeler('enregistrerEmploye', { employeeId: proprioId, nom: 'Proprio Compagnie', courriel: 'proprio@exemple.ca', role: 'admin' });
     assert.equal((await adminDb.collection('employees').doc(proprioId).get()).data().role, 'admin');
   });
 
   test('nouveau NIP envoyé par l\'admin : l\'ancien ne fonctionne plus, sessions coupées', async () => {
-    const jean = await connecter(numero, nipJean, 'jean@exemple.ca');
-    await proprio.appeler('enregistrerEmploye',
+    const jean = await connecter(numero, 'jean@exemple.ca', nipJean);
+    await superAdmin.appeler('enregistrerEmploye',
       { employeeId: jeanId, nom: 'Jean Tremblay', courriel: 'jean@exemple.ca', role: 'plus', envoyerNouveauNip: true });
-    const msg = await dernierCourriel('jean@exemple.ca', 'nouveau NIP');
-    const nouveau = extraire(msg.texte, 'NIP');
+    const nouveau = await nipRecu('jean@exemple.ca', 'nouveau NIP');
     assert.notEqual(nouveau, nipJean);
     const a = await appareil();
     await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, courriel: 'jean@exemple.ca', pin: nipJean }), 'not-found');
     await assert.rejects(getDoc(doc(jean.db, 'companies', companyId)), 'ancienne session coupée');
     nipJean = nouveau;
-    await connecter(numero, nipJean, 'jean@exemple.ca');
+    await connecter(numero, 'jean@exemple.ca', nipJean);
+  });
+});
+
+// =============================================================================
+describe('Admins : seul le super-admin de la compagnie les gère', () => {
+  let superAdmin; let admin; let adminId; let admin2Id; let employeId;
+
+  before(async () => {
+    superAdmin = await connecter(numero, 'proprio@exemple.ca', '123456');
+  });
+
+  test('le super-admin nomme des admins', async () => {
+    ({ id: adminId } = await superAdmin.appeler('enregistrerEmploye', { nom: 'Bureau Un', courriel: 'bureau1@exemple.ca', role: 'admin' }));
+    ({ id: admin2Id } = await superAdmin.appeler('enregistrerEmploye', { nom: 'Bureau Deux', courriel: 'bureau2@exemple.ca', role: 'admin' }));
+    admin = await connecter(numero, 'bureau1@exemple.ca', await nipRecu('bureau1@exemple.ca'));
+    assert.equal(admin.profil.role, 'admin');
+    assert.equal(admin.profil.estProprietaire, false);
+  });
+
+  test('un admin gère les employés et contremaîtres', async () => {
+    ({ id: employeId } = await admin.appeler('enregistrerEmploye', { nom: 'Paul', courriel: 'paul@exemple.ca', role: 'employe' }));
+    await admin.appeler('enregistrerEmploye', { employeeId: employeId, nom: 'Paul Roy', courriel: 'paul@exemple.ca', role: 'plus' });
+    assert.equal((await adminDb.collection('employees').doc(employeId).get()).data().role, 'plus');
+  });
+
+  test('un admin ne peut pas nommer un admin (création ou promotion)', async () => {
+    await rejette(admin.appeler('enregistrerEmploye', { nom: 'Intrus', courriel: 'intrus@exemple.ca', role: 'admin' }), 'permission-denied');
+    await rejette(admin.appeler('enregistrerEmploye',
+      { employeeId: employeId, nom: 'Paul Roy', courriel: 'paul@exemple.ca', role: 'admin' }), 'permission-denied');
+    assert.equal((await adminDb.collection('employees').doc(employeId).get()).data().role, 'plus');
+  });
+
+  test('un admin ne peut ni modifier, ni rétrograder, ni retirer un autre admin', async () => {
+    await rejette(admin.appeler('enregistrerEmploye',
+      { employeeId: admin2Id, nom: 'Renommé', courriel: 'bureau2@exemple.ca', role: 'admin' }), 'permission-denied');
+    await rejette(admin.appeler('enregistrerEmploye',
+      { employeeId: admin2Id, nom: 'Bureau Deux', courriel: 'bureau2@exemple.ca', role: 'employe' }), 'permission-denied');
+    await rejette(admin.appeler('enregistrerEmploye',
+      { employeeId: admin2Id, nom: 'Bureau Deux', courriel: 'bureau2@exemple.ca', role: 'admin', envoyerNouveauNip: true }), 'permission-denied');
+    await rejette(admin.appeler('supprimerEmploye', { employeeId: admin2Id }), 'permission-denied');
+    assert.ok((await adminDb.collection('employees').doc(admin2Id).get()).exists);
+  });
+
+  test('un admin modifie sa propre fiche, mais pas son rôle', async () => {
+    await admin.appeler('enregistrerEmploye', { employeeId: adminId, nom: 'Bureau Un (Marie)', courriel: 'bureau1@exemple.ca', role: 'admin' });
+    assert.equal((await adminDb.collection('employees').doc(adminId).get()).data().nom, 'Bureau Un (Marie)');
+    await rejette(admin.appeler('enregistrerEmploye',
+      { employeeId: adminId, nom: 'Bureau Un', courriel: 'bureau1@exemple.ca', role: 'employe' }), 'permission-denied');
+  });
+
+  test('un admin ne peut pas toucher au super-admin', async () => {
+    await rejette(admin.appeler('enregistrerEmploye',
+      { employeeId: proprioId, nom: 'Piraté', courriel: 'proprio@exemple.ca', role: 'admin' }), 'permission-denied');
+    await rejette(admin.appeler('supprimerEmploye', { employeeId: proprioId }), 'failed-precondition');
+  });
+
+  test('un admin retire un employé', async () => {
+    assert.deepEqual(await admin.appeler('supprimerEmploye', { employeeId: employeId }), { ok: true });
+  });
+
+  test('le super-admin rétrograde et retire des admins ; il ne peut pas se retirer', async () => {
+    await superAdmin.appeler('enregistrerEmploye', { employeeId: admin2Id, nom: 'Bureau Deux', courriel: 'bureau2@exemple.ca', role: 'plus' });
+    assert.equal((await adminDb.collection('employees').doc(admin2Id).get()).data().role, 'plus');
+    assert.deepEqual(await superAdmin.appeler('supprimerEmploye', { employeeId: adminId }), { ok: true });
+    await assert.rejects(getDoc(doc(admin.db, 'companies', companyId)), 'admin retiré : accès coupé');
+    await rejette(superAdmin.appeler('supprimerEmploye', { employeeId: proprioId }), 'failed-precondition');
   });
 });
 
 // =============================================================================
 describe('NIP : changement par l\'employé et récupération', () => {
   test('changerNip : NIP actuel exigé, 6 chiffres minimum, autres appareils déconnectés', async () => {
-    const autreAppareil = await connecter(numero, nipJean, 'jean@exemple.ca');
-    const jean = await connecter(numero, nipJean, 'jean@exemple.ca');
+    const autreAppareil = await connecter(numero, 'jean@exemple.ca', nipJean);
+    const jean = await connecter(numero, 'jean@exemple.ca', nipJean);
     await rejette(jean.appeler('changerNip', { nipActuel: '000000', nouveauNip: '135790' }), 'permission-denied');
     await rejette(jean.appeler('changerNip', { nipActuel: nipJean, nouveauNip: '1357' }), 'invalid-argument');
     assert.deepEqual(await jean.appeler('changerNip', { nipActuel: nipJean, nouveauNip: '135790' }), { ok: true });
@@ -296,31 +331,34 @@ describe('NIP : changement par l\'employé et récupération', () => {
     assert.ok((await getDoc(doc(jean.db, 'companies', companyId))).exists(), 'appareil courant conservé');
     await assert.rejects(getDoc(doc(autreAppareil.db, 'companies', companyId)), 'autre appareil déconnecté');
     assert.ok(await dernierCourriel('jean@exemple.ca', 'modifié'));
-    await connecter(numero, '135790', 'jean@exemple.ca');
+    await connecter(numero, 'jean@exemple.ca', '135790');
   });
 
-  test('changerNip : un NIP déjà pris par un collègue est accepté (aucune fuite)', async () => {
-    const jean = await connecter(numero, nipJean, 'jean@exemple.ca');
-    assert.deepEqual(await jean.appeler('changerNip', { nipActuel: nipJean, nouveauNip: '777777' }), { ok: true });
-    nipJean = '777777';
-    await connecter(numero, nipJean, 'jean@exemple.ca');
+  test('changerNip : un NIP identique à celui d\'un collègue est accepté (aucune fuite)', async () => {
+    const jean = await connecter(numero, 'jean@exemple.ca', nipJean);
+    assert.deepEqual(await jean.appeler('changerNip', { nipActuel: nipJean, nouveauNip: '123456' }), { ok: true });
+    nipJean = '123456';
+    const j = await connecter(numero, 'jean@exemple.ca', '123456');
+    assert.equal(j.profil.id, jeanId);
+    const p = await connecter(numero, 'proprio@exemple.ca', '123456');
+    assert.equal(p.profil.id, proprioId);
   });
 
-  test('NIP oublié : code par courriel, 5 essais, nouveau NIP, sessions coupées', async () => {
-    const jean = await connecter(numero, nipJean, 'jean@exemple.ca');
-    const a = await appareil(ANCIENNE_REGION);
+  test('NIP oublié : code par courriel, usage unique, sessions coupées', async () => {
+    const jean = await connecter(numero, 'jean@exemple.ca', nipJean);
+    const a = await appareil();
     assert.deepEqual(await a.appeler('demanderReinitialisationNip', { numeroCompagnie: numero, email: 'jean@exemple.ca' }), { ok: true });
     const code = extraire((await dernierCourriel('jean@exemple.ca', 'réinitialisation')).texte, 'Votre code de réinitialisation');
     assert.match(code, /^\d{6}$/);
     const essai = (c, pin = '864209') =>
       a.appeler('validerReinitialisationNip', { numeroCompagnie: numero, email: 'jean@exemple.ca', code: c, nouveauPin: pin });
-    await rejette(essai('000000'), 'permission-denied');
+    await rejette(essai(code === '000000' ? '000001' : '000000'), 'permission-denied');
     await rejette(essai(code, '12'), 'invalid-argument');
     assert.deepEqual(await essai(code), { ok: true });
-    await rejette(essai(code), 'permission-denied'); // code à usage unique
+    await rejette(essai(code), 'permission-denied');
     await assert.rejects(getDoc(doc(jean.db, 'companies', companyId)), 'sessions coupées');
     nipJean = '864209';
-    await connecter(numero, nipJean, 'jean@exemple.ca');
+    await connecter(numero, 'jean@exemple.ca', nipJean);
   });
 
   test('NIP oublié : code bloqué après 5 mauvais essais', async () => {
@@ -350,103 +388,49 @@ describe('NIP : changement par l\'employé et récupération', () => {
 });
 
 // =============================================================================
-describe('Retrait, protections et isolation', () => {
-  let proprio;
-  before(async () => { proprio = await connecter(numero, '1234', 'proprio@exemple.ca'); });
-
-  test('propriétaire et Proprio : ne peuvent pas être retirés', async () => {
-    const { id: adminId, nipTemporaire } = await proprio.appeler('enregistrerEmploye',
-      { nom: 'Second admin', courriel: 'admin2@exemple.ca', role: 'admin' });
-    assert.equal(nipTemporaire, undefined);
-    const nip = extraire((await dernierCourriel('admin2@exemple.ca', 'accès')).texte, 'NIP');
-    const second = await connecter(numero, nip, 'admin2@exemple.ca');
-    assert.equal(second.profil.id, adminId);
-    await rejette(second.appeler('supprimerEmploye', { employeeId: proprioId }), 'failed-precondition');
-    await rejette(proprio.appeler('supprimerEmploye', { employeeId: proprioId }), 'failed-precondition');
-  });
-
+describe('Retrait et isolation', () => {
   test('retrait d\'un employé : fiche et sessions supprimées, accès coupé', async () => {
-    const jean = await connecter(numero, nipJean, 'jean@exemple.ca');
-    await proprio.appeler('supprimerEmploye', { employeeId: jeanId });
+    const superAdmin = await connecter(numero, 'proprio@exemple.ca', '123456');
+    const jean = await connecter(numero, 'jean@exemple.ca', nipJean);
+    await superAdmin.appeler('supprimerEmploye', { employeeId: jeanId });
     assert.equal((await adminDb.collection('employees').doc(jeanId).get()).exists, false);
     assert.equal((await adminDb.collection('sessions').where('employeeId', '==', jeanId).get()).size, 0);
     await assert.rejects(getDoc(doc(jean.db, 'companies', companyId)));
   });
 
-  test('isolation : l\'admin d\'une autre compagnie ne touche pas à ces employés', async () => {
+  test('isolation : le super-admin d\'une autre compagnie ne touche pas à ces employés', async () => {
     const a = await appareil();
     const { numero: numeroB } = await a.appeler('inscrireCompagnie',
       inscription({ nomEntreprise: 'Bêta', emailAdmin: 'b@exemple.ca', pinAdmin: '135791' }));
     const compB = (await adminDb.collection('companies').where('numero', '==', numeroB).get()).docs[0];
     await compB.ref.update({ statut: 'approuvee' });
-    const adminB = await connecter(numeroB, '135791', 'b@exemple.ca');
+    const adminB = await connecter(numeroB, 'b@exemple.ca', '135791');
 
     await rejette(adminB.appeler('enregistrerEmploye',
       { employeeId: proprioId, nom: 'Piraté', courriel: 'p@exemple.ca', role: 'employe' }), 'not-found');
+    await rejette(adminB.appeler('supprimerEmploye', { employeeId: proprioId }), 'not-found');
     await assert.rejects(getDocs(query(collection(adminB.db, 'employees'), where('companyId', '==', companyId))));
     await assert.rejects(getDoc(doc(adminB.db, 'companies', companyId)));
   });
 });
 
 // =============================================================================
-describe('Compatibilité : anciennes versions de l\'app', () => {
-  let proprio;
-  before(async () => { proprio = await connecter(numero, '1234', null, ANCIENNE_REGION); });
-
-  test('l\'ancien écran employés écrit un NIP en clair : haché aussitôt par le serveur', async () => {
-    const ref = await addDoc(collection(proprio.db, 'employees'),
-      { companyId, nom: 'Ancien écran', pin: '5678', role: 'employe', estProprietaire: false });
-    await attendre(async () => (await adminDb.collection('employees').doc(ref.id).get()).data().pin === undefined);
-    assert.equal((await adminDb.collection('employees').doc(ref.id).get()).data().pinHash, hacher(companyId, '5678'));
-    const e = await connecter(numero, '5678', null, ANCIENNE_REGION);
-    assert.equal(e.profil.id, ref.id);
-  });
-
-  test('NIP en double saisi par l\'ancien écran : refusé sans bloquer le collègue', async () => {
-    const ref = await addDoc(collection(proprio.db, 'employees'),
-      { companyId, nom: 'Doublon', pin: '5678', role: 'employe', estProprietaire: false });
-    await attendre(async () => (await adminDb.collection('employees').doc(ref.id).get()).data().nipRefuse === true);
-    const fiche = (await adminDb.collection('employees').doc(ref.id).get()).data();
-    assert.equal(fiche.pin, undefined);
-    assert.equal(fiche.pinHash, undefined);
-    const e = await connecter(numero, '5678', null, ANCIENNE_REGION);
-    assert.equal(e.profil.nom, 'Ancien écran');
-  });
-
-  test('l\'ancien écran modifie un employé (nom, NIP, rôle) → OK et haché', async () => {
-    const emp = (await adminDb.collection('employees').where('nom', '==', 'Ancien écran').get()).docs[0];
-    await updateDoc(doc(proprio.db, 'employees', emp.id), { nom: 'Ancien écran', pin: '2468', role: 'plus' });
-    await attendre(async () => (await emp.ref.get()).data().pinHash === hacher(companyId, '2468'));
-    assert.equal((await emp.ref.get()).data().pin, undefined);
-  });
-});
-
-// =============================================================================
-describe('Migration et limites', () => {
-  test('migrerNips : Proprio (courriel) seulement', async () => {
-    const ref = await adminDb.collection('employees').add({ companyId, nom: 'Reste', role: 'employe', pin: '3690' });
-    const p = await connecter(numero, '1234', 'proprio@exemple.ca');
-    await rejette(p.appeler('migrerNips'), 'permission-denied');
-    const s = await connecter(numeroS, '246810', 'super@exemple.ca');
-    // Le déclencheur peut avoir haché ce NIP avant la migration : seul l'état final compte.
-    assert.equal(typeof (await s.appeler('migrerNips')).migres, 'number');
-    await attendre(async () => (await ref.get()).data().pin === undefined);
-    assert.equal((await ref.get()).data().pinHash, hacher(companyId, '3690'));
-  });
-
-  test('force brute : blocage après 10 échecs par IP', async () => {
+describe('Limites anti-force brute', () => {
+  test('connexion : blocage après 10 échecs par IP', async () => {
     const a = await appareil();
     for (let i = 0; i < 10; i++) {
-      await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: `90${i}0` }), 'not-found');
+      await rejette(a.appeler('connexionEmploye',
+        { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: `90000${i}` }), 'not-found');
     }
-    await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '1234' }), 'resource-exhausted');
+    await rejette(a.appeler('connexionEmploye',
+      { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '123456' }), 'resource-exhausted');
   });
 
   test('changerNip : 5 tentatives par jour au maximum', async () => {
-    const e = await connecter(numero, '1234', 'proprio@exemple.ca');
+    const e = await connecter(numero, 'proprio@exemple.ca', '123456');
     for (let i = 0; i < 5; i++) {
-      await rejette(e.appeler('changerNip', { nipActuel: '000000', nouveauNip: '123456' }), 'permission-denied');
+      await rejette(e.appeler('changerNip', { nipActuel: '000000', nouveauNip: '654321' }), 'permission-denied');
     }
-    await rejette(e.appeler('changerNip', { nipActuel: '1234', nouveauNip: '123456' }), 'resource-exhausted');
+    await rejette(e.appeler('changerNip', { nipActuel: '123456', nouveauNip: '654321' }), 'resource-exhausted');
   });
 });

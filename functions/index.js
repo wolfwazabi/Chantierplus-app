@@ -3,12 +3,10 @@ initializeApp();
 
 const {setGlobalOptions} = require("firebase-functions/v2");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
-const {onDocumentWritten} = require("firebase-functions/v2/firestore");
 const {
-  db, FieldValue, Timestamp, logger,
-  PIN_PEPPER, REGION, REGIONS_AVEC_ANCIENNES_VERSIONS,
-  ROLES, FORMAT_NIP_EXISTANT, FORMAT_NUMERO,
-  texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire, genererNipUnique,
+  db, FieldValue, Timestamp,
+  PIN_PEPPER, REGION, ROLES, FORMAT_NIP, FORMAT_NUMERO,
+  texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire,
   empreinte, empreinteIp, verifierAppCheck, exigerAnonyme,
   proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp,
   limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,
@@ -17,12 +15,11 @@ const {RESEND_API_KEY, envoyerCourriel, courrielConfigure, NOM_APP} = require(".
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
-// Fonctions appelées par les anciennes versions de l'app : aussi en us-central1.
-const COMPAT = {region: REGIONS_AVEC_ANCIENNES_VERSIONS};
 const SECRETS_NIP = [PIN_PEPPER];
 const SECRETS_NIP_COURRIEL = [PIN_PEPPER, RESEND_API_KEY];
 
 const MESSAGE_CONNEXION_INVALIDE = "Numéro de compagnie, courriel ou NIP invalide.";
+const MESSAGE_ADMINS_RESERVES = "Seul le super-admin de la compagnie peut nommer, modifier ou retirer un admin.";
 
 function compagniesApprouvees(numero) {
   return db.collection("companies")
@@ -33,37 +30,19 @@ function compagniesApprouvees(numero) {
 }
 
 // =============================================================================
-// Connexion employé
+// Connexion employé : numéro de compagnie + courriel + NIP
 // =============================================================================
 
-/**
- * Deux modes :
- *  - numéro + courriel + NIP (nouvelle app) : identifie l'employé sans
- *    ambiguïté ; seul mode donnant accès aux pouvoirs du Proprio ;
- *  - numéro + NIP (anciennes versions) : accepté seulement si le NIP désigne
- *    un seul employé, et désactivable via config/securite
- *    { connexionNipSeulAutorisee: false } quand les anciennes versions auront
- *    disparu.
- */
-exports.connexionEmploye = onCall({...COMPAT, secrets: SECRETS_NIP}, async (request) => {
+exports.connexionEmploye = onCall({secrets: SECRETS_NIP}, async (request) => {
   verifierAppCheck(request, "connexionEmploye");
   const auth = exigerAnonyme(request);
   const d = request.data || {};
   const numero = texte(d.numeroCompagnie, "numéro de compagnie", {max: 10});
+  const adresse = courriel(d.courriel);
   const pin = texte(d.pin, "NIP", {max: 32});
-  const avecCourriel = typeof d.courriel === "string" && d.courriel.trim() !== "";
-  const adresse = avecCourriel ? courriel(d.courriel) : null;
 
   const limiteIp = limiteur(`ip_${empreinteIp(request)}`, 10, 15 * MINUTE);
   await limiteIp.verifier();
-
-  if (!adresse) {
-    const config = await db.collection("config").doc("securite").get();
-    if (config.exists && config.data().connexionNipSeulAutorisee === false) {
-      throw new HttpsError("failed-precondition",
-          "Entrez votre courriel pour vous connecter. Mettez l'application à jour au besoin.");
-    }
-  }
 
   // Message unique pour tous les échecs : ne pas révéler ce qui existe.
   const echouer = async (limiteCompagnie) => {
@@ -72,7 +51,7 @@ exports.connexionEmploye = onCall({...COMPAT, secrets: SECRETS_NIP}, async (requ
     throw new HttpsError("not-found", MESSAGE_CONNEXION_INVALIDE);
   };
 
-  if (!FORMAT_NUMERO.test(numero) || !FORMAT_NIP_EXISTANT.test(pin)) await echouer();
+  if (!FORMAT_NUMERO.test(numero) || !FORMAT_NIP.test(pin)) await echouer();
 
   const compSnap = await compagniesApprouvees(numero);
   if (compSnap.empty) await echouer();
@@ -81,46 +60,20 @@ exports.connexionEmploye = onCall({...COMPAT, secrets: SECRETS_NIP}, async (requ
   const limiteCompagnie = limiteur(`co_${compagnie.id}`, 30, 15 * MINUTE);
   await limiteCompagnie.verifier();
 
-  const employes = db.collection("employees").where("companyId", "==", compagnie.id);
-  const hash = hacherNip(compagnie.id, pin);
-  // Migration paresseuse d'un NIP encore stocké en clair (données anciennes).
-  const migrer = (doc) => doc.ref.update({pinHash: hash, pin: FieldValue.delete()});
-  let employe = null;
-
-  if (adresse) {
-    const snap = await employes.where("courriel", "==", adresse).limit(2).get();
-    if (snap.size === 1) {
-      const e = snap.docs[0].data();
-      if (egalConstant(e.pinHash, hash)) {
-        employe = snap.docs[0];
-      } else if (typeof e.pin === "string" && egalConstant(e.pin, pin)) {
-        await migrer(snap.docs[0]);
-        employe = snap.docs[0];
-      }
-    }
-  } else {
-    let snap = await employes.where("pinHash", "==", hash).limit(2).get();
-    if (snap.empty) {
-      snap = await employes.where("pin", "==", pin).limit(2).get();
-      if (snap.size === 1) await migrer(snap.docs[0]);
-    }
-    if (snap.size > 1) {
-      await limiteIp.compter();
-      throw new HttpsError("failed-precondition",
-          "Connectez-vous avec votre courriel. Mettez l'application à jour au besoin.");
-    }
-    if (snap.size === 1) employe = snap.docs[0];
-  }
-
+  const snap = await db.collection("employees")
+      .where("companyId", "==", compagnie.id)
+      .where("courriel", "==", adresse)
+      .limit(2)
+      .get();
+  const employe = snap.size === 1 &&
+    egalConstant(snap.docs[0].data().pinHash, hacherNip(compagnie.id, pin)) ? snap.docs[0] : null;
   if (!employe) await echouer(limiteCompagnie);
 
   const data = employe.data();
-  const methode = adresse ? "courriel" : "nip";
-  const estProprioApp = methode === "courriel" && (await proprioAppId()) === employe.id;
+  const estProprioApp = (await proprioAppId()) === employe.id;
   await db.collection("sessions").doc(auth.uid).set({
     employeeId: employe.id,
     companyId: compagnie.id,
-    methode,
     // Indicatif pour l'interface seulement : les règles et les fonctions
     // revérifient config/proprio_app à chaque requête.
     proprioApp: estProprioApp,
@@ -131,7 +84,7 @@ exports.connexionEmploye = onCall({...COMPAT, secrets: SECRETS_NIP}, async (requ
   return {
     id: employe.id,
     nom: data.nom || "",
-    courriel: data.courriel || null,
+    courriel: data.courriel,
     role: ROLES.includes(data.role) ? data.role : "employe",
     estProprietaire: data.estProprietaire === true,
     estProprioApp,
@@ -144,7 +97,7 @@ exports.connexionEmploye = onCall({...COMPAT, secrets: SECRETS_NIP}, async (requ
 // Inscription et approbation des compagnies
 // =============================================================================
 
-exports.inscrireCompagnie = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, async (request) => {
+exports.inscrireCompagnie = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
   verifierAppCheck(request, "inscrireCompagnie");
   exigerAnonyme(request);
   const d = request.data || {};
@@ -153,13 +106,9 @@ exports.inscrireCompagnie = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, a
   const nomLegal = texte(d.nomLegal, "nom légal", {max: 200});
   const secteur = texte(d.secteur, "secteur", {max: 100});
   const telephone = texte(d.telephone, "téléphone", {min: 0, max: 30});
-  const nomAdmin = texte(d.nomAdmin, "nom de l'administrateur", {max: 100});
+  const nomAdmin = texte(d.nomAdmin, "nom du super-admin", {max: 100});
   const emailAdmin = courriel(d.emailAdmin);
-  // 4 chiffres encore acceptés : les anciennes versions ne valident pas le format.
-  const pinAdmin = texte(d.pinAdmin, "NIP", {min: 4, max: 8});
-  if (!FORMAT_NIP_EXISTANT.test(pinAdmin)) {
-    throw new HttpsError("invalid-argument", "Le NIP doit contenir de 4 à 8 chiffres.");
-  }
+  const pinAdmin = nouveauNip(d.pinAdmin);
   let nombreEmployes = null;
   if (d.nombreEmployes !== undefined && d.nombreEmployes !== null) {
     if (!Number.isInteger(d.nombreEmployes) || d.nombreEmployes < 1 || d.nombreEmployes > 100000) {
@@ -175,7 +124,7 @@ exports.inscrireCompagnie = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, a
   const companyRef = db.collection("companies").doc();
   const employeRef = db.collection("employees").doc();
 
-  // Tout ou rien : compteur, compagnie, propriétaire et données privées.
+  // Tout ou rien : compteur, compagnie, super-admin et données privées.
   const numero = await db.runTransaction(async (t) => {
     const compteur = await t.get(compteurRef);
     const nouveau = (compteur.exists ? compteur.data().dernierNumero : 1000) + 1;
@@ -191,6 +140,7 @@ exports.inscrireCompagnie = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, a
       dateCreation: FieldValue.serverTimestamp(),
     });
     t.set(db.collection("companies_prive").doc(companyRef.id), {emailAdmin, proprietaireId: employeRef.id});
+    // Le propriétaire de la compagnie en est le super-admin.
     t.set(employeRef, {
       companyId: companyRef.id,
       nom: nomAdmin,
@@ -216,7 +166,7 @@ exports.inscrireCompagnie = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, a
   return {numero};
 });
 
-exports.approuverCompagnie = onCall({...COMPAT, secrets: [RESEND_API_KEY]}, async (request) => {
+exports.approuverCompagnie = onCall({secrets: [RESEND_API_KEY]}, async (request) => {
   verifierAppCheck(request, "approuverCompagnie");
   const ctx = await contexteProprioApp(request);
   const companyId = texte(request.data?.companyId, "companyId", {max: 128});
@@ -258,11 +208,10 @@ exports.approuverCompagnie = onCall({...COMPAT, secrets: [RESEND_API_KEY]}, asyn
 });
 
 // =============================================================================
-// Gestion des employés (admin de la compagnie)
+// Gestion des employés (admins de la compagnie)
 // =============================================================================
 
 async function envoyerNip(employe, pin, compagnie, nouveau) {
-  if (!employe.courriel) return false;
   return envoyerCourriel({
     a: employe.courriel,
     sujet: nouveau ? `Votre accès à ${NOM_APP}` : `Votre nouveau NIP — ${NOM_APP}`,
@@ -283,6 +232,10 @@ async function envoyerNip(employe, pin, compagnie, nouveau) {
  * aléatoire est généré et envoyé par courriel à l'employé (création, ou
  * modification avec envoyerNouveauNip). Si le courriel ne peut pas partir
  * (Resend non configuré), le NIP est retourné une seule fois à l'admin.
+ *
+ * Seul le super-admin de la compagnie (estProprietaire) peut nommer un admin,
+ * modifier un admin ou changer le rôle d'un admin. Un admin peut modifier sa
+ * propre fiche (nom, courriel), mais pas son rôle.
  */
 exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
   verifierAppCheck(request, "enregistrerEmploye");
@@ -293,10 +246,12 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
   const adresse = courriel(d.courriel);
   if (!ROLES.includes(d.role)) throw new HttpsError("invalid-argument", "Rôle invalide.");
   const nouveauNipDemande = !employeeId || d.envoyerNouveauNip === true;
+  const appelantSuperAdmin = ctx.employe.estProprietaire === true;
 
   const employes = db.collection("employees");
   const ref = employeeId ? employes.doc(employeeId) : employes.doc();
-  const pin = nouveauNipDemande ? await genererNipUnique(ctx.companyId) : null;
+  const soiMeme = ref.id === ctx.employeeId;
+  const pin = nouveauNipDemande ? nombreAleatoire(6) : null;
 
   const enregistre = await db.runTransaction(async (t) => {
     let existant = null;
@@ -313,10 +268,15 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
       throw new HttpsError("already-exists", "Ce courriel est déjà utilisé par un autre employé de votre compagnie.");
     }
 
-    // Le super-admin de la compagnie reste admin ; le rôle du Proprio ne change que par lui-même.
-    let role = d.role;
-    if (existant?.estProprietaire === true) role = "admin";
-    if (ref.id === ctx.idProprioApp && ref.id !== ctx.employeeId) role = existant.role;
+    // Le super-admin de la compagnie reste admin.
+    const role = existant?.estProprietaire === true ? "admin" : d.role;
+    if (soiMeme && role !== existant.role) {
+      throw new HttpsError("permission-denied", "Vous ne pouvez pas changer votre propre rôle.");
+    }
+    const toucheUnAdmin = role === "admin" || existant?.role === "admin";
+    if (toucheUnAdmin && !soiMeme && !appelantSuperAdmin) {
+      throw new HttpsError("permission-denied", MESSAGE_ADMINS_RESERVES);
+    }
 
     const maj = {nom, courriel: adresse, role};
     if (pin) {
@@ -324,7 +284,7 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
       maj.pinModifieLe = FieldValue.serverTimestamp();
     }
     if (existant) {
-      t.update(ref, {...maj, pin: FieldValue.delete(), nipRefuse: FieldValue.delete()});
+      t.update(ref, maj);
     } else {
       t.set(ref, {...maj, companyId: ctx.companyId, estProprietaire: false});
     }
@@ -332,7 +292,7 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
   });
 
   if (!pin) return {id: ref.id};
-  if (employeeId) await supprimerSessionsDe(ref.id);
+  if (employeeId) await supprimerSessionsDe(ref.id, soiMeme ? ctx.uid : null);
   const envoye = await envoyerNip(enregistre, pin, ctx.compagnie, !employeeId);
   return envoye ? {id: ref.id, courrielEnvoye: true} : {id: ref.id, courrielEnvoye: false, nipTemporaire: pin};
 });
@@ -351,12 +311,17 @@ exports.supprimerEmploye = onCall(async (request) => {
     if (!snap.exists || snap.data().companyId !== ctx.companyId) {
       throw new HttpsError("not-found", "Employé introuvable.");
     }
-    if (snap.data().estProprietaire === true || employeeId === ctx.idProprioApp) {
+    const cible = snap.data();
+    if (cible.estProprietaire === true || employeeId === ctx.idProprioApp) {
       throw new HttpsError("failed-precondition", "Le super-admin de la compagnie ne peut pas être retiré.");
+    }
+    if (cible.role === "admin" && ctx.employe.estProprietaire !== true) {
+      throw new HttpsError("permission-denied", MESSAGE_ADMINS_RESERVES);
     }
     t.delete(ref);
   });
   await supprimerSessionsDe(employeeId);
+  await db.collection("reinitialisations_nip").doc(employeeId).delete();
   return {ok: true};
 });
 
@@ -375,31 +340,27 @@ exports.changerNip = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => 
   await limite.compter();
 
   const e = ctx.employe;
-  const actuelValide = egalConstant(e.pinHash, hacherNip(ctx.companyId, actuel)) ||
-    (typeof e.pin === "string" && egalConstant(e.pin, actuel));
-  if (!actuelValide) throw new HttpsError("permission-denied", "NIP actuel invalide.");
+  if (!egalConstant(e.pinHash, hacherNip(ctx.companyId, actuel))) {
+    throw new HttpsError("permission-denied", "NIP actuel invalide.");
+  }
 
-  // Aucune vérification d'unicité : un refus révélerait le NIP d'un collègue.
   await db.collection("employees").doc(ctx.employeeId).update({
     pinHash: hacherNip(ctx.companyId, nouveau),
-    pin: FieldValue.delete(),
     pinModifieLe: FieldValue.serverTimestamp(),
   });
   // Déconnecte les autres appareils.
   await supprimerSessionsDe(ctx.employeeId, ctx.uid);
 
-  if (e.courriel) {
-    await envoyerCourriel({
-      a: e.courriel,
-      sujet: `Votre NIP a été modifié — ${NOM_APP}`,
-      lignes: [
-        `Bonjour ${e.nom},`,
-        "Le NIP de votre compte vient d'être modifié.",
-        "Si vous n'êtes pas à l'origine de ce changement, utilisez « NIP oublié ? » " +
-          "dans l'application et avertissez votre employeur.",
-      ],
-    });
-  }
+  await envoyerCourriel({
+    a: e.courriel,
+    sujet: `Votre NIP a été modifié — ${NOM_APP}`,
+    lignes: [
+      `Bonjour ${e.nom},`,
+      "Le NIP de votre compte vient d'être modifié.",
+      "Si vous n'êtes pas à l'origine de ce changement, utilisez « NIP oublié ? » " +
+        "dans l'application et avertissez votre employeur.",
+    ],
+  });
   return {ok: true};
 });
 
@@ -407,18 +368,18 @@ function hacherCode(employeeId, code) {
   return hacherNip(`reinit:${employeeId}`, code);
 }
 
-async function exigerCourrielDisponible() {
+function exigerCourrielDisponible() {
   if (!courrielConfigure()) {
     throw new HttpsError("unavailable", "Service de courriel temporairement indisponible. Contactez votre employeur.");
   }
 }
 
 /** Envoie les numéros de compagnie liés à un courriel. Réponse identique dans tous les cas. */
-exports.recupererNumeroCompagnie = onCall({...COMPAT, secrets: [RESEND_API_KEY]}, async (request) => {
+exports.recupererNumeroCompagnie = onCall({secrets: [RESEND_API_KEY]}, async (request) => {
   verifierAppCheck(request, "recupererNumeroCompagnie");
   exigerAnonyme(request);
   const adresse = courriel(request.data?.email);
-  await exigerCourrielDisponible();
+  exigerCourrielDisponible();
 
   const limiteIp = limiteur(`rec_ip_${empreinteIp(request)}`, 5, HEURE);
   const limiteAdresse = limiteur(`rec_${empreinte(adresse)}`, 3, HEURE);
@@ -446,12 +407,12 @@ exports.recupererNumeroCompagnie = onCall({...COMPAT, secrets: [RESEND_API_KEY]}
   return {ok: true};
 });
 
-exports.demanderReinitialisationNip = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, async (request) => {
+exports.demanderReinitialisationNip = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
   verifierAppCheck(request, "demanderReinitialisationNip");
   exigerAnonyme(request);
   const numero = texte(request.data?.numeroCompagnie, "numéro de compagnie", {max: 10});
   const adresse = courriel(request.data?.email);
-  await exigerCourrielDisponible();
+  exigerCourrielDisponible();
 
   const limiteIp = limiteur(`reinit_ip_${empreinteIp(request)}`, 5, HEURE);
   const limiteAdresse = limiteur(`reinit_${empreinte(`${numero}:${adresse}`)}`, 3, HEURE);
@@ -487,7 +448,7 @@ exports.demanderReinitialisationNip = onCall({...COMPAT, secrets: SECRETS_NIP_CO
   return {ok: true};
 });
 
-exports.validerReinitialisationNip = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, async (request) => {
+exports.validerReinitialisationNip = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
   verifierAppCheck(request, "validerReinitialisationNip");
   exigerAnonyme(request);
   const numero = texte(request.data?.numeroCompagnie, "numéro de compagnie", {max: 10});
@@ -525,8 +486,6 @@ exports.validerReinitialisationNip = onCall({...COMPAT, secrets: SECRETS_NIP_COU
     t.delete(resetRef);
     t.update(employe.ref, {
       pinHash: hacherNip(compagnie.id, nouveau),
-      pin: FieldValue.delete(),
-      nipRefuse: FieldValue.delete(),
       pinModifieLe: FieldValue.serverTimestamp(),
     });
     return true;
@@ -544,75 +503,4 @@ exports.validerReinitialisationNip = onCall({...COMPAT, secrets: SECRETS_NIP_COU
     ],
   });
   return {ok: true};
-});
-
-// =============================================================================
-// Compatibilité avec les anciennes versions de l'app
-// =============================================================================
-
-/**
- * Les anciennes versions écrivent directement dans employees (règles
- * restreintes), avec un NIP en clair. Ce déclencheur le remplace aussitôt par
- * son empreinte. Si ce NIP est déjà celui d'un autre employé de la compagnie,
- * il est refusé (nipRefuse) pour ne pas bloquer la connexion de l'autre.
- * Supprime aussi les sessions et codes d'un employé retiré.
- */
-exports.securiserEmploye = onDocumentWritten(
-    {document: "employees/{employeeId}", secrets: SECRETS_NIP},
-    async (event) => {
-      const id = event.params.employeeId;
-      const apres = event.data?.after?.exists ? event.data.after.data() : null;
-
-      if (!apres) {
-        await supprimerSessionsDe(id);
-        await db.collection("reinitialisations_nip").doc(id).delete();
-        return;
-      }
-      if (typeof apres.pin !== "string" || typeof apres.companyId !== "string") return;
-
-      const pinHash = hacherNip(apres.companyId, apres.pin.trim());
-      const doublons = await db.collection("employees")
-          .where("companyId", "==", apres.companyId)
-          .where("pinHash", "==", pinHash)
-          .limit(2).get();
-      const conflit = doublons.docs.some((doc) => doc.id !== id);
-      const ref = event.data.after.ref;
-
-      if (conflit) {
-        logger.warn("NIP en double refusé (ancienne version)", {employeeId: id});
-        await ref.update({pin: FieldValue.delete(), pinHash: FieldValue.delete(), nipRefuse: true});
-      } else {
-        await ref.update({
-          pin: FieldValue.delete(),
-          pinHash,
-          nipRefuse: FieldValue.delete(),
-          pinModifieLe: FieldValue.serverTimestamp(),
-        });
-      }
-    });
-
-/** Migration unique : remplace tout NIP stocké en clair par son empreinte. */
-exports.migrerNips = onCall({secrets: SECRETS_NIP, timeoutSeconds: 540}, async (request) => {
-  await contexteProprioApp(request);
-  let migres = 0;
-  let curseur = null;
-  for (;;) {
-    let q = db.collection("employees").orderBy("__name__").limit(300);
-    if (curseur) q = q.startAfter(curseur);
-    const page = await q.get();
-    if (page.empty) break;
-    const batch = db.batch();
-    let n = 0;
-    for (const doc of page.docs) {
-      const {pin, companyId} = doc.data();
-      if (typeof pin === "string" && typeof companyId === "string") {
-        batch.update(doc.ref, {pinHash: hacherNip(companyId, pin.trim()), pin: FieldValue.delete()});
-        n++;
-      }
-    }
-    if (n > 0) await batch.commit();
-    migres += n;
-    curseur = page.docs[page.docs.length - 1];
-  }
-  return {migres};
 });

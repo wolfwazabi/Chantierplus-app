@@ -41,7 +41,6 @@ dependencies:
   flutter_local_notifications: ^22.3.0
   firebase_messaging: ^16.6.0
   firebase_auth: ^6.6.1
-  shared_preferences: ^2.5.5
   cloud_functions: ^6.4.0
   firebase_app_check: ^0.4.8
   file_picker: ^13.1.0

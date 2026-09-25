@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/employee.dart';
 import 'fonctions.dart';
@@ -21,9 +20,6 @@ class AppSession {
 
   static StreamSubscription<DocumentSnapshot>? _ecouteSuppression;
 
-  // Clés des versions précédentes : effacées au démarrage.
-  static const _anciennesCles = ['employee_id', 'company_id', 'is_individuel'];
-
   static bool get estConnecte => current != null;
   static bool get estProprioApp => current?.estProprioApp == true;
   static bool get estAdmin => current?.role == EmployeeRole.admin;
@@ -36,7 +32,6 @@ class AppSession {
   // ==================== RECONNEXION AUTOMATIQUE ====================
 
   static Future<void> tenterReconnexionAutomatique() async {
-    await _effacerAnciennesPrefs();
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
@@ -74,8 +69,7 @@ class AppSession {
       estProprietaire: emp['estProprietaire'] == true,
       // Indicatif pour l'interface (écrit par le serveur à la connexion) ; les
       // règles et les fonctions revérifient config/proprio_app à chaque requête.
-      estProprioApp:
-          session?['proprioApp'] == true && session?['methode'] == 'courriel',
+      estProprioApp: session?['proprioApp'] == true,
     );
     _demarrerEcouteSuppression(employeeId);
   }
@@ -94,8 +88,7 @@ class AppSession {
 
   // ==================== CONNEXION COMPAGNIE ====================
 
-  /// Connexion par numéro de compagnie + courriel + NIP. Le courriel peut être
-  /// vide pour un employé dont l'employeur ne l'a pas encore enregistré.
+  /// Connexion par numéro de compagnie + courriel + NIP.
   static Future<String?> connecterEmploye({
     required String numeroCompagnie,
     required String courriel,
@@ -110,7 +103,7 @@ class AppSession {
       }
       final data = await Fonctions.appeler('connexionEmploye', {
         'numeroCompagnie': numeroCompagnie,
-        if (courriel.isNotEmpty) 'courriel': courriel,
+        'courriel': courriel,
         'pin': pin,
       });
 
@@ -320,15 +313,6 @@ class AppSession {
     if (user == null || !user.isAnonymous) return;
     try {
       await _db.collection('sessions').doc(user.uid).delete();
-    } catch (_) {}
-  }
-
-  static Future<void> _effacerAnciennesPrefs() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      for (final cle in _anciennesCles) {
-        await prefs.remove(cle);
-      }
     } catch (_) {}
   }
 

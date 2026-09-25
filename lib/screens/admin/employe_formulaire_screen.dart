@@ -33,6 +33,11 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
   String? _erreur;
 
   bool get _modeEdition => widget.docId != null;
+  bool get _estMoi =>
+      widget.docId != null && widget.docId == AppSession.current?.id;
+
+  /// Seul le super-admin de la compagnie nomme, modifie ou retire un admin.
+  bool get _peutGererAdmins => AppSession.estProprietaire;
   bool get _estProprietaireExistant =>
       widget.donneesExistantes?['estProprietaire'] == true;
 
@@ -180,10 +185,6 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final sansCourriel =
-        _modeEdition &&
-        (widget.donneesExistantes?['courriel'] as String?)?.isNotEmpty != true;
-
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -215,14 +216,6 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
                 prefixIcon: Icon(Icons.email_outlined),
               ),
             ),
-            if (sansCourriel) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Cet employé n\'a pas encore de courriel : ajoutez-le pour qu\'il puisse '
-                'recevoir son NIP et se connecter avec la nouvelle version de l\'application.',
-                style: TextStyle(fontSize: 13, color: Colors.orange),
-              ),
-            ],
             if (!_modeEdition) ...[
               const SizedBox(height: 8),
               const Text(
@@ -231,7 +224,12 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
               ),
             ],
             const SizedBox(height: 16),
-            if (_estProprietaireExistant)
+            if (_estMoi && !_estProprietaireExistant)
+              const Text(
+                'Vous ne pouvez pas changer votre propre rôle.',
+                style: TextStyle(fontSize: 13),
+              )
+            else if (_estProprietaireExistant)
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -247,10 +245,15 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
               const Text('Rôle', style: TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               SegmentedButton<String>(
-                segments: const [
-                  ButtonSegment(value: 'employe', label: Text('Employé')),
-                  ButtonSegment(value: 'plus', label: Text('Contremaître')),
-                  ButtonSegment(value: 'admin', label: Text('Admin')),
+                segments: [
+                  const ButtonSegment(value: 'employe', label: Text('Employé')),
+                  const ButtonSegment(
+                    value: 'plus',
+                    label: Text('Contremaître'),
+                  ),
+                  // Seul le super-admin de la compagnie nomme des admins.
+                  if (_peutGererAdmins)
+                    const ButtonSegment(value: 'admin', label: Text('Admin')),
                 ],
                 selected: {_role},
                 onSelectionChanged: (nouveauSet) {

@@ -51,15 +51,12 @@ describe('Sessions', () => {
     await assertFails(setDoc(doc(ctxDe('uid-nouveau'), 'sessions/uid-nouveau'), { employeeId: 'adminA', companyId: 'A' }));
   });
 
-  test('le client ne peut pas changer d\'identité ni se donner la méthode courriel', async () => {
+  test('le client ne peut pas modifier sa session, même à l\'identique', async () => {
     const ref = doc(ctxDe('uid-empA'), 'sessions/uid-empA');
     await assertFails(updateDoc(ref, { employeeId: 'adminA' }));
     await assertFails(setDoc(ref, { employeeId: 'empA', companyId: 'B' }));
-    await assertFails(setDoc(ref, { employeeId: 'empA', companyId: 'A', methode: 'courriel' }));
-  });
-
-  test('[anciennes versions] réécriture identique de la session → OK', async () => {
-    await assertSucceeds(setDoc(doc(ctxDe('uid-empA'), 'sessions/uid-empA'), { employeeId: 'empA', companyId: 'A' }));
+    await assertFails(setDoc(ref, { employeeId: 'empA', companyId: 'A' }));
+    await assertFails(updateDoc(ref, { proprioApp: true }));
   });
 
   test('lecture de sa propre session → OK ; celle d\'un autre ou la liste → refusée', async () => {
@@ -100,15 +97,10 @@ describe('Compagnies et Proprio', () => {
     await assertFails(getDocs(collection(ctxDe('uid-adminA'), 'companies')));
   });
 
-  test('Proprio connecté par courriel : liste et lit toutes les compagnies', async () => {
+  test('Proprio : liste et lit toutes les compagnies', async () => {
     const d = ctxDe('uid-superA');
     await assertSucceeds(getDocs(query(collection(d, 'companies'), orderBy('dateCreation', 'desc'))));
     await assertSucceeds(getDoc(doc(d, 'companies/P')));
-  });
-
-  test('Proprio connecté par NIP seul : aucun pouvoir Proprio', async () => {
-    await assertFails(getDocs(collection(ctxDe('uid-superA-nip'), 'companies')));
-    await assertFails(getDoc(doc(ctxDe('uid-superA-nip'), 'companies/B')));
   });
 
   test('un seul Proprio : le champ superAdmin sur une fiche ou une session ne donne rien', async () => {
@@ -151,48 +143,21 @@ describe('Employés', () => {
     await assertFails(getDoc(doc(d, 'employees/adminB')));
   });
 
-  test('[anciennes versions] admin : crée un employé avec NIP en clair → OK', async () => {
-    await assertSucceeds(addDoc(collection(ctxDe('uid-adminA'), 'employees'),
-      { companyId: 'A', nom: 'Nouveau', pin: '4321', role: 'employe', estProprietaire: false }));
-  });
-
-  test('[anciennes versions] création refusée : non-admin, autre compagnie, propriétaire, Proprio, courriel, NIP invalide', async () => {
-    const ok = { companyId: 'A', nom: 'N', pin: '4321', role: 'employe', estProprietaire: false };
-    await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'employees'), ok));
-    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, companyId: 'B' }));
-    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, estProprietaire: true }));
-    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, superAdmin: true }));
-    await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'employees/empA'), { superAdmin: true }));
-    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, courriel: 'x@x.ca' }));
-    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, pin: '12' }));
-    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, pinHash: 'h' }));
-    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, role: 'patron' }));
-  });
-
-  test('[anciennes versions] admin : modifie nom/NIP/rôle → OK', async () => {
-    await assertSucceeds(updateDoc(doc(ctxDe('uid-adminA'), 'employees/empA'), { nom: 'Emp A2', pin: '5555', role: 'plus' }));
-  });
-
-  test('[anciennes versions] modification refusée : propriétaire rétrogradé, Proprio, champs protégés', async () => {
+  test('aucune écriture client, même par un admin (tout passe par les Cloud Functions)', async () => {
     const d = ctxDe('uid-adminA');
-    await assertFails(updateDoc(doc(d, 'employees/adminA'), { nom: 'Admin A', pin: '1111', role: 'employe' }));
-    await assertFails(updateDoc(doc(d, 'employees/superA'), { nom: 'Super A', pin: '1111', role: 'employe' }));
+    const fiche = { companyId: 'A', nom: 'N', courriel: 'n@a.ca', role: 'employe', estProprietaire: false };
+    await assertFails(addDoc(collection(d, 'employees'), fiche));
+    await assertFails(addDoc(collection(d, 'employees'), { ...fiche, pin: '123456' }));
+    await assertFails(setDoc(doc(d, 'employees/nouveau'), fiche));
+    await assertFails(updateDoc(doc(d, 'employees/empA'), { nom: 'Renommé' }));
+    await assertFails(updateDoc(doc(d, 'employees/empA'), { role: 'admin' }));
     await assertFails(updateDoc(doc(d, 'employees/empA'), { superAdmin: true }));
     await assertFails(updateDoc(doc(d, 'employees/empA'), { estProprietaire: true }));
-    await assertFails(updateDoc(doc(d, 'employees/empA'), { companyId: 'B' }));
-    await assertFails(updateDoc(doc(d, 'employees/empA'), { courriel: 'pirate@x.ca' }));
     await assertFails(updateDoc(doc(d, 'employees/empA'), { pinHash: 'autre' }));
     await assertFails(updateDoc(doc(ctxDe('uid-empA'), 'employees/empA'), { role: 'admin' }));
-    await assertFails(updateDoc(doc(ctxDe('uid-adminB'), 'employees/empA'), { nom: 'Piraté' }));
-  });
-
-  test('[anciennes versions] suppression : employé OK ; propriétaire, Proprio, soi-même, autre compagnie refusés', async () => {
-    const d = ctxDe('uid-adminA');
+    await assertFails(deleteDoc(doc(d, 'employees/empA')));
     await assertFails(deleteDoc(doc(d, 'employees/adminA')));
-    await assertFails(deleteDoc(doc(d, 'employees/superA')));
     await assertFails(deleteDoc(doc(ctxDe('uid-adminB'), 'employees/empA')));
-    await assertFails(deleteDoc(doc(ctxDe('uid-plusA'), 'employees/empA')));
-    await assertSucceeds(deleteDoc(doc(d, 'employees/empA')));
   });
 
   test('un admin non propriétaire ne peut pas se supprimer lui-même', async () => {
@@ -422,10 +387,10 @@ describe('Particuliers', () => {
     lundiDate: LUNDI_PASSE, jours: [], totalHeures: 0, dateModification: serverTimestamp(), ...over,
   });
 
-  test('profil : crée/lit le sien avec son propre courriel (casse ignorée)', async () => {
+  test('profil : crée/lit le sien avec exactement le courriel du jeton', async () => {
     const d = db(individu(env, 'uid-ind2'));
     await assertSucceeds(setDoc(doc(d, 'individus/uid-ind2'), { nom: 'Nouveau', email: 'uid-ind2@exemple.ca' }));
-    await assertSucceeds(setDoc(doc(d, 'individus/uid-ind2'), { nom: 'Nouveau', email: 'UID-Ind2@Exemple.ca' }));
+    await assertFails(setDoc(doc(d, 'individus/uid-ind2'), { nom: 'Nouveau', email: 'UID-Ind2@Exemple.ca' }));
     await assertSucceeds(getDoc(doc(d, 'individus/uid-ind2')));
     await assertFails(setDoc(doc(d, 'individus/uid-ind2'), { nom: 'N', email: 'autre@exemple.ca' }));
     await assertFails(getDoc(doc(d, 'individus/uid-ind')));
