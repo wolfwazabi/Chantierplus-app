@@ -7,8 +7,8 @@ rules_version = '2';
 //   type ∈ photos | chantier_travaux | chantier_materiel
 //
 // L'appartenance à la compagnie est vérifiée dans Firestore (même modèle que
-// firestore.rules : session écrite par le serveur + employé existant +
-// compagnie approuvée + chantier de la compagnie).
+// firestore.rules : session écrite par le serveur + employé existant, admin
+// ou contremaître + compagnie approuvée + chantier de la compagnie).
 //
 // Note : une URL obtenue par getDownloadURL() contient un jeton d'accès qui
 // contourne ces règles en lecture. Ne jamais exposer ces URL hors compagnie.
@@ -17,7 +17,7 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function estEmployeDe(companyId) {
+    function estGestionnaireDe(companyId) {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == 'anonymous'
         && firestore.exists(/databases/(default)/documents/sessions/$(request.auth.uid))
@@ -28,6 +28,8 @@ service firebase.storage {
       return s.companyId == companyId
         && firestore.exists(/databases/(default)/documents/employees/$(s.employeeId))
         && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.companyId == companyId
+        // Photos, travaux et matériel : admin et contremaître seulement.
+        && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.role in ['admin', 'plus']
         && firestore.get(/databases/(default)/documents/companies/$(companyId)).data.statut == 'approuvee';
     }
 
@@ -37,13 +39,13 @@ service firebase.storage {
     }
 
     match /chantiers/{companyId}/{chantierId}/{type}/{fichier} {
-      allow read: if estEmployeDe(companyId);
+      allow read: if estGestionnaireDe(companyId);
 
       // Création seulement. Dans Storage, réécrire un objet existant passe par
       // « create » (update ne couvre que les métadonnées) : resource == null
       // empêche l'écrasement.
       allow create: if resource == null
-        && estEmployeDe(companyId)
+        && estGestionnaireDe(companyId)
         && type in ['photos', 'chantier_travaux', 'chantier_materiel']
         && chantierDe(chantierId, companyId)
         && request.resource.size > 0
@@ -51,7 +53,7 @@ service firebase.storage {
         && request.resource.contentType.matches('image/(jpeg|png|webp|heic)');
 
       allow update: if false;
-      allow delete: if estEmployeDe(companyId);
+      allow delete: if estGestionnaireDe(companyId);
     }
 
     // Tout le reste est refusé.

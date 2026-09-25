@@ -4,7 +4,9 @@ import {
   addDoc, collection, deleteDoc, deleteField, doc, getDoc, getDocs, orderBy, query,
   serverTimestamp, setDoc, updateDoc, where,
 } from 'firebase/firestore';
-import { creerEnvironnement, employe, individu, LUNDI, semer, superAdmin } from './helpers.mjs';
+import {
+  creerEnvironnement, employe, individu, LUNDI, LUNDI_PASSE, LUNDI_PROCHAIN, semer,
+} from './helpers.mjs';
 
 let env;
 before(async () => { env = await creerEnvironnement(); });
@@ -12,186 +14,218 @@ after(async () => { await env.cleanup(); });
 beforeEach(async () => { await env.clearFirestore(); await semer(env); });
 
 const db = (ctx) => ctx.firestore();
+const ctxDe = (uid) => db(employe(env, uid));
 
 // =============================================================================
 describe('Bug semaine_liste_screen : liste des feuilles de temps', () => {
   test('admin A : requête filtrée par companyId + orderBy lundiDate → OK', async () => {
-    const q = query(collection(db(employe(env, 'uid-adminA')), 'feuilles_temps'),
+    const q = query(collection(ctxDe('uid-adminA'), 'feuilles_temps'),
       where('companyId', '==', 'A'), orderBy('lundiDate', 'desc'));
     await assertSucceeds(getDocs(q));
   });
 
   test('admin A : requête SANS filtre companyId (ancien code) → refusée', async () => {
-    const q = query(collection(db(employe(env, 'uid-adminA')), 'feuilles_temps'), orderBy('lundiDate', 'desc'));
-    await assertFails(getDocs(q));
+    await assertFails(getDocs(query(collection(ctxDe('uid-adminA'), 'feuilles_temps'), orderBy('lundiDate', 'desc'))));
   });
 
   test('admin A : requête sur companyId B → refusée', async () => {
-    const q = query(collection(db(employe(env, 'uid-adminA')), 'feuilles_temps'), where('companyId', '==', 'B'));
-    await assertFails(getDocs(q));
+    await assertFails(getDocs(query(collection(ctxDe('uid-adminA'), 'feuilles_temps'), where('companyId', '==', 'B'))));
   });
 
-  test('admin A : détail de semaine (companyId + lundiDate) → OK', async () => {
-    const q = query(collection(db(employe(env, 'uid-adminA')), 'feuilles_temps'),
-      where('companyId', '==', 'A'), where('lundiDate', '==', LUNDI));
-    await assertSucceeds(getDocs(q));
+  test('admin A : détail de semaine et historique employé → OK', async () => {
+    const col = collection(ctxDe('uid-adminA'), 'feuilles_temps');
+    await assertSucceeds(getDocs(query(col, where('companyId', '==', 'A'), where('lundiDate', '==', LUNDI))));
+    await assertSucceeds(getDocs(query(col, where('companyId', '==', 'A'), where('employeeId', '==', 'empA'))));
   });
 
-  test('admin A : historique employé (companyId + employeeId) → OK', async () => {
-    const q = query(collection(db(employe(env, 'uid-adminA')), 'feuilles_temps'),
-      where('companyId', '==', 'A'), where('employeeId', '==', 'empA'));
-    await assertSucceeds(getDocs(q));
-  });
-
-  test('employé (non admin) : liste de la compagnie → refusée', async () => {
-    const q = query(collection(db(employe(env, 'uid-empA')), 'feuilles_temps'), where('companyId', '==', 'A'));
-    await assertFails(getDocs(q));
+  test('employé et contremaître : liste de la compagnie → refusée', async () => {
+    for (const uid of ['uid-empA', 'uid-plusA']) {
+      await assertFails(getDocs(query(collection(ctxDe(uid), 'feuilles_temps'), where('companyId', '==', 'A'))));
+    }
   });
 });
 
 // =============================================================================
 describe('Sessions', () => {
   test('le client ne peut pas créer sa session (usurpation)', async () => {
-    await assertFails(setDoc(doc(db(employe(env, 'uid-nouveau')), 'sessions/uid-nouveau'),
-      { employeeId: 'adminA', companyId: 'A' }));
+    await assertFails(setDoc(doc(ctxDe('uid-nouveau'), 'sessions/uid-nouveau'), { employeeId: 'adminA', companyId: 'A' }));
   });
 
-  test('le client ne peut pas modifier sa session', async () => {
-    await assertFails(updateDoc(doc(db(employe(env, 'uid-empA')), 'sessions/uid-empA'), { employeeId: 'adminA' }));
+  test('le client ne peut pas changer d\'identité ni se donner la méthode courriel', async () => {
+    const ref = doc(ctxDe('uid-empA'), 'sessions/uid-empA');
+    await assertFails(updateDoc(ref, { employeeId: 'adminA' }));
+    await assertFails(setDoc(ref, { employeeId: 'empA', companyId: 'B' }));
+    await assertFails(setDoc(ref, { employeeId: 'empA', companyId: 'A', methode: 'courriel' }));
   });
 
-  test('lecture de sa propre session → OK ; celle d\'un autre → refusée', async () => {
-    const ctx = employe(env, 'uid-empA');
-    await assertSucceeds(getDoc(doc(db(ctx), 'sessions/uid-empA')));
-    await assertFails(getDoc(doc(db(ctx), 'sessions/uid-adminA')));
+  test('[anciennes versions] réécriture identique de la session → OK', async () => {
+    await assertSucceeds(setDoc(doc(ctxDe('uid-empA'), 'sessions/uid-empA'), { employeeId: 'empA', companyId: 'A' }));
   });
 
-  test('lister les sessions → refusé', async () => {
-    await assertFails(getDocs(collection(db(employe(env, 'uid-adminA')), 'sessions')));
+  test('lecture de sa propre session → OK ; celle d\'un autre ou la liste → refusée', async () => {
+    await assertSucceeds(getDoc(doc(ctxDe('uid-empA'), 'sessions/uid-empA')));
+    await assertFails(getDoc(doc(ctxDe('uid-empA'), 'sessions/uid-adminA')));
+    await assertFails(getDocs(collection(ctxDe('uid-adminA'), 'sessions')));
   });
 
   test('suppression de sa propre session (déconnexion) → OK', async () => {
-    await assertSucceeds(deleteDoc(doc(db(employe(env, 'uid-empA')), 'sessions/uid-empA')));
+    await assertSucceeds(deleteDoc(doc(ctxDe('uid-empA'), 'sessions/uid-empA')));
   });
 
-  test('session forgée (employé A déclaré dans compagnie B) → aucun accès à B ni à A', async () => {
-    const ctx = employe(env, 'uid-forge');
-    await assertFails(getDocs(query(collection(db(ctx), 'chantiers'), where('companyId', '==', 'B'))));
-    await assertFails(getDocs(query(collection(db(ctx), 'chantiers'), where('companyId', '==', 'A'))));
-  });
-
-  test('session d\'un employé supprimé → aucun accès', async () => {
-    const ctx = employe(env, 'uid-supprime');
-    await assertFails(getDocs(query(collection(db(ctx), 'chantiers'), where('companyId', '==', 'A'))));
-  });
-
-  test('compagnie en attente → aucun accès', async () => {
-    const ctx = employe(env, 'uid-adminP');
-    await assertFails(getDocs(query(collection(db(ctx), 'chantiers'), where('companyId', '==', 'P'))));
-    await assertFails(getDoc(doc(db(ctx), 'companies/P')));
+  test('sessions invalides (forgée, employé supprimé, compagnie en attente) → aucun accès', async () => {
+    for (const [uid, cid] of [['uid-forge', 'B'], ['uid-forge', 'A'], ['uid-supprime', 'A'], ['uid-adminP', 'P']]) {
+      await assertFails(getDocs(query(collection(ctxDe(uid), 'chantiers'), where('companyId', '==', cid))));
+    }
+    await assertFails(getDoc(doc(ctxDe('uid-adminP'), 'companies/P')));
   });
 
   test('compte courriel (particulier) avec une session → ignorée', async () => {
     await env.withSecurityRulesDisabled((c) =>
       setDoc(doc(c.firestore(), 'sessions/uid-ind'), { employeeId: 'adminA', companyId: 'A' }));
-    const ctx = individu(env, 'uid-ind');
-    await assertFails(getDocs(query(collection(db(ctx), 'chantiers'), where('companyId', '==', 'A'))));
+    const d = db(individu(env, 'uid-ind'));
+    await assertFails(getDocs(query(collection(d, 'chantiers'), where('companyId', '==', 'A'))));
   });
 
   test('non authentifié → aucun accès', async () => {
-    const ctx = env.unauthenticatedContext();
-    await assertFails(getDocs(query(collection(db(ctx), 'chantiers'), where('companyId', '==', 'A'))));
+    const d = db(env.unauthenticatedContext());
+    await assertFails(getDocs(query(collection(d, 'chantiers'), where('companyId', '==', 'A'))));
   });
 });
 
 // =============================================================================
-describe('Compagnies', () => {
-  test('membre : lit sa compagnie, pas celle d\'une autre', async () => {
-    const ctx = employe(env, 'uid-empA');
-    await assertSucceeds(getDoc(doc(db(ctx), 'companies/A')));
-    await assertFails(getDoc(doc(db(ctx), 'companies/B')));
+describe('Compagnies et super-admin', () => {
+  test('membre : lit sa compagnie, pas celle d\'une autre ; ne liste pas', async () => {
+    await assertSucceeds(getDoc(doc(ctxDe('uid-empA'), 'companies/A')));
+    await assertFails(getDoc(doc(ctxDe('uid-empA'), 'companies/B')));
+    await assertFails(getDocs(collection(ctxDe('uid-adminA'), 'companies')));
   });
 
-  test('membre : ne peut pas lister les compagnies', async () => {
-    await assertFails(getDocs(collection(db(employe(env, 'uid-adminA')), 'companies')));
+  test('super-admin connecté par courriel : liste et lit toutes les compagnies', async () => {
+    const d = ctxDe('uid-superA');
+    await assertSucceeds(getDocs(query(collection(d, 'companies'), orderBy('dateCreation', 'desc'))));
+    await assertSucceeds(getDoc(doc(d, 'companies/P')));
   });
 
-  test('super-admin : liste toutes les compagnies', async () => {
-    await assertSucceeds(getDocs(query(collection(db(superAdmin(env)), 'companies'), orderBy('dateCreation', 'desc'))));
+  test('super-admin connecté par NIP seul : aucun pouvoir super-admin', async () => {
+    await assertFails(getDocs(collection(ctxDe('uid-superA-nip'), 'companies')));
+    await assertFails(getDoc(doc(ctxDe('uid-superA-nip'), 'companies/B')));
   });
 
-  test('personne ne modifie une compagnie côté client (ni admin, ni super-admin)', async () => {
-    await assertFails(updateDoc(doc(db(employe(env, 'uid-adminA')), 'companies/A'), { statut: 'approuvee' }));
-    await assertFails(updateDoc(doc(db(employe(env, 'uid-adminP')), 'companies/P'), { statut: 'approuvee' }));
-    await assertFails(updateDoc(doc(db(superAdmin(env)), 'companies/P'), { statut: 'approuvee' }));
+  test('un seul super-admin : le champ superAdmin sur une fiche ou une session ne donne rien', async () => {
+    await assertFails(getDocs(collection(ctxDe('uid-usurpateur'), 'companies')));
+    await assertFails(getDoc(doc(ctxDe('uid-usurpateur'), 'companies/B')));
   });
 
-  test('un faux claim superAdmin=false ne donne rien', async () => {
-    const ctx = env.authenticatedContext('uid-x', { superAdmin: false, firebase: { sign_in_provider: 'password' } });
-    await assertFails(getDocs(collection(db(ctx), 'companies')));
+  test('config/super_admin : ni lisible ni modifiable depuis l\'app, même par le super-admin', async () => {
+    for (const uid of ['uid-superA', 'uid-adminA', 'uid-usurpateur']) {
+      await assertFails(getDoc(doc(ctxDe(uid), 'config/super_admin')));
+      await assertFails(setDoc(doc(ctxDe(uid), 'config/super_admin'), { employeeId: 'usurpateur' }));
+    }
+  });
+
+  test('super-admin : ne voit pas les données internes des autres compagnies', async () => {
+    const d = ctxDe('uid-superA');
+    await assertFails(getDocs(query(collection(d, 'chantiers'), where('companyId', '==', 'B'))));
+    await assertFails(getDocs(query(collection(d, 'employees'), where('companyId', '==', 'B'))));
+    await assertFails(getDocs(query(collection(d, 'feuilles_temps'), where('companyId', '==', 'B'))));
+  });
+
+  test('personne ne modifie une compagnie côté client', async () => {
+    await assertFails(updateDoc(doc(ctxDe('uid-adminP'), 'companies/P'), { statut: 'approuvee' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-superA'), 'companies/P'), { statut: 'approuvee' }));
   });
 });
 
 // =============================================================================
 describe('Employés', () => {
-  test('employé : lit sa propre fiche, pas celle des autres', async () => {
-    const ctx = employe(env, 'uid-empA');
-    await assertSucceeds(getDoc(doc(db(ctx), 'employees/empA')));
-    await assertFails(getDoc(doc(db(ctx), 'employees/adminA')));
-  });
-
-  test('employé : ne peut pas lister les employés', async () => {
-    await assertFails(getDocs(query(collection(db(employe(env, 'uid-empA')), 'employees'), where('companyId', '==', 'A'))));
+  test('employé : lit sa propre fiche, pas celle des autres, ne liste pas', async () => {
+    await assertSucceeds(getDoc(doc(ctxDe('uid-empA'), 'employees/empA')));
+    await assertFails(getDoc(doc(ctxDe('uid-empA'), 'employees/adminA')));
+    await assertFails(getDocs(query(collection(ctxDe('uid-empA'), 'employees'), where('companyId', '==', 'A'))));
   });
 
   test('admin A : liste les employés de A, pas ceux de B', async () => {
-    const ctx = employe(env, 'uid-adminA');
-    await assertSucceeds(getDocs(query(collection(db(ctx), 'employees'), where('companyId', '==', 'A'))));
-    await assertFails(getDocs(query(collection(db(ctx), 'employees'), where('companyId', '==', 'B'))));
-    await assertFails(getDoc(doc(db(ctx), 'employees/adminB')));
+    const d = ctxDe('uid-adminA');
+    await assertSucceeds(getDocs(query(collection(d, 'employees'), where('companyId', '==', 'A'))));
+    await assertFails(getDocs(query(collection(d, 'employees'), where('companyId', '==', 'B'))));
+    await assertFails(getDoc(doc(d, 'employees/adminB')));
   });
 
-  test('aucune écriture client (création, promotion, suppression du propriétaire)', async () => {
-    const ctx = employe(env, 'uid-adminA');
-    await assertFails(addDoc(collection(db(ctx), 'employees'), { companyId: 'A', nom: 'X', role: 'admin' }));
-    await assertFails(updateDoc(doc(db(employe(env, 'uid-empA')), 'employees/empA'), { role: 'admin' }));
-    await assertFails(deleteDoc(doc(db(ctx), 'employees/adminA')));
+  test('[anciennes versions] admin : crée un employé avec NIP en clair → OK', async () => {
+    await assertSucceeds(addDoc(collection(ctxDe('uid-adminA'), 'employees'),
+      { companyId: 'A', nom: 'Nouveau', pin: '4321', role: 'employe', estProprietaire: false }));
+  });
+
+  test('[anciennes versions] création refusée : non-admin, autre compagnie, propriétaire, super-admin, courriel, NIP invalide', async () => {
+    const ok = { companyId: 'A', nom: 'N', pin: '4321', role: 'employe', estProprietaire: false };
+    await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'employees'), ok));
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, companyId: 'B' }));
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, estProprietaire: true }));
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, superAdmin: true }));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'employees/empA'), { superAdmin: true }));
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, courriel: 'x@x.ca' }));
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, pin: '12' }));
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, pinHash: 'h' }));
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, role: 'patron' }));
+  });
+
+  test('[anciennes versions] admin : modifie nom/NIP/rôle → OK', async () => {
+    await assertSucceeds(updateDoc(doc(ctxDe('uid-adminA'), 'employees/empA'), { nom: 'Emp A2', pin: '5555', role: 'plus' }));
+  });
+
+  test('[anciennes versions] modification refusée : propriétaire rétrogradé, super-admin, champs protégés', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertFails(updateDoc(doc(d, 'employees/adminA'), { nom: 'Admin A', pin: '1111', role: 'employe' }));
+    await assertFails(updateDoc(doc(d, 'employees/superA'), { nom: 'Super A', pin: '1111', role: 'employe' }));
+    await assertFails(updateDoc(doc(d, 'employees/empA'), { superAdmin: true }));
+    await assertFails(updateDoc(doc(d, 'employees/empA'), { estProprietaire: true }));
+    await assertFails(updateDoc(doc(d, 'employees/empA'), { companyId: 'B' }));
+    await assertFails(updateDoc(doc(d, 'employees/empA'), { courriel: 'pirate@x.ca' }));
+    await assertFails(updateDoc(doc(d, 'employees/empA'), { pinHash: 'autre' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-empA'), 'employees/empA'), { role: 'admin' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminB'), 'employees/empA'), { nom: 'Piraté' }));
+  });
+
+  test('[anciennes versions] suppression : employé OK ; propriétaire, super-admin, soi-même, autre compagnie refusés', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertFails(deleteDoc(doc(d, 'employees/adminA')));
+    await assertFails(deleteDoc(doc(d, 'employees/superA')));
+    await assertFails(deleteDoc(doc(ctxDe('uid-adminB'), 'employees/empA')));
+    await assertFails(deleteDoc(doc(ctxDe('uid-plusA'), 'employees/empA')));
+    await assertSucceeds(deleteDoc(doc(d, 'employees/empA')));
+  });
+
+  test('un admin non propriétaire ne peut pas se supprimer lui-même', async () => {
+    await assertFails(deleteDoc(doc(ctxDe('uid-superA'), 'employees/superA')));
   });
 });
 
 // =============================================================================
 describe('Chantiers', () => {
-  test('membre : lit les chantiers de sa compagnie seulement', async () => {
-    const ctx = employe(env, 'uid-empA');
-    await assertSucceeds(getDocs(query(collection(db(ctx), 'chantiers'), where('companyId', '==', 'A'))));
-    await assertFails(getDoc(doc(db(ctx), 'chantiers/chB')));
+  test('tous les membres lisent les chantiers de leur compagnie (feuille de temps)', async () => {
+    await assertSucceeds(getDocs(query(collection(ctxDe('uid-empA'), 'chantiers'), where('companyId', '==', 'A'))));
+    await assertFails(getDoc(doc(ctxDe('uid-empA'), 'chantiers/chB')));
   });
 
-  test('employé : ne peut pas créer de chantier', async () => {
-    await assertFails(addDoc(collection(db(employe(env, 'uid-empA')), 'chantiers'),
-      { companyId: 'A', nom: 'N', adresse: '' }));
-  });
-
-  test('admin A : crée dans A ; refusé dans B ; refusé avec champ en trop', async () => {
-    const ctx = employe(env, 'uid-adminA');
-    await assertSucceeds(addDoc(collection(db(ctx), 'chantiers'), { companyId: 'A', nom: 'Nouveau', adresse: '2 rue' }));
-    await assertFails(addDoc(collection(db(ctx), 'chantiers'), { companyId: 'B', nom: 'Intrus', adresse: '' }));
-    await assertFails(addDoc(collection(db(ctx), 'chantiers'), { companyId: 'A', nom: 'N', adresse: '', x: 1 }));
-    await assertFails(addDoc(collection(db(ctx), 'chantiers'), { companyId: 'A', nom: '', adresse: '' }));
-  });
-
-  test('admin A : modifie le nom ; ne peut pas déplacer vers B ; ne touche pas à B', async () => {
-    const ctx = employe(env, 'uid-adminA');
-    await assertSucceeds(updateDoc(doc(db(ctx), 'chantiers/chA'), { nom: 'Renommé', adresse: '3 rue' }));
-    await assertFails(updateDoc(doc(db(ctx), 'chantiers/chA'), { companyId: 'B' }));
-    await assertFails(updateDoc(doc(db(ctx), 'chantiers/chB'), { nom: 'Piraté' }));
-    await assertFails(deleteDoc(doc(db(ctx), 'chantiers/chB')));
-    await assertSucceeds(deleteDoc(doc(db(ctx), 'chantiers/chA')));
+  test('seul l\'admin crée, modifie, supprime', async () => {
+    const nouveau = { companyId: 'A', nom: 'Nouveau', adresse: '2 rue' };
+    await assertFails(addDoc(collection(ctxDe('uid-empA'), 'chantiers'), nouveau));
+    await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'chantiers'), nouveau));
+    const d = ctxDe('uid-adminA');
+    await assertSucceeds(addDoc(collection(d, 'chantiers'), nouveau));
+    await assertFails(addDoc(collection(d, 'chantiers'), { ...nouveau, companyId: 'B' }));
+    await assertFails(addDoc(collection(d, 'chantiers'), { ...nouveau, x: 1 }));
+    await assertFails(addDoc(collection(d, 'chantiers'), { ...nouveau, nom: '' }));
+    await assertSucceeds(updateDoc(doc(d, 'chantiers/chA'), { nom: 'Renommé', adresse: '3 rue' }));
+    await assertFails(updateDoc(doc(d, 'chantiers/chA'), { companyId: 'B' }));
+    await assertFails(updateDoc(doc(d, 'chantiers/chB'), { nom: 'Piraté' }));
+    await assertFails(deleteDoc(doc(d, 'chantiers/chB')));
+    await assertSucceeds(deleteDoc(doc(d, 'chantiers/chA')));
   });
 });
 
 // =============================================================================
-describe('Photos de chantier', () => {
+describe('Photos (admin et contremaître seulement)', () => {
   const photo = (over = {}) => ({
     companyId: 'A', chantierId: 'chA',
     url: 'https://firebasestorage.googleapis.com/v0/b/x/o/p.jpg',
@@ -200,12 +234,25 @@ describe('Photos de chantier', () => {
     ...over,
   });
 
-  test('membre A : ajoute une photo valide', async () => {
-    await assertSucceeds(addDoc(collection(db(employe(env, 'uid-empA')), 'chantier_photos'), photo()));
+  test('contremaître et admin : lisent, ajoutent et suppriment', async () => {
+    for (const uid of ['uid-plusA', 'uid-adminA']) {
+      await assertSucceeds(getDocs(query(collection(ctxDe(uid), 'chantier_photos'),
+        where('companyId', '==', 'A'), where('chantierId', '==', 'chA'))));
+      await assertSucceeds(addDoc(collection(ctxDe(uid), 'chantier_photos'), photo()));
+    }
+    await assertSucceeds(deleteDoc(doc(ctxDe('uid-plusA'), 'chantier_photos/pA')));
+  });
+
+  test('employé : ne voit ni ne gère les photos', async () => {
+    const d = ctxDe('uid-empA');
+    await assertFails(getDocs(query(collection(d, 'chantier_photos'), where('companyId', '==', 'A'))));
+    await assertFails(getDoc(doc(d, 'chantier_photos/pA')));
+    await assertFails(addDoc(collection(d, 'chantier_photos'), photo()));
+    await assertFails(deleteDoc(doc(d, 'chantier_photos/pA')));
   });
 
   test('refusé : chantier d\'une autre compagnie, chemin incohérent, URL externe, date client', async () => {
-    const col = collection(db(employe(env, 'uid-empA')), 'chantier_photos');
+    const col = collection(ctxDe('uid-plusA'), 'chantier_photos');
     await assertFails(addDoc(col, photo({ chantierId: 'chB', cheminStorage: 'chantiers/A/chB/photos/p.jpg' })));
     await assertFails(addDoc(col, photo({ cheminStorage: 'chantiers/B/chB/photos/p.jpg' })));
     await assertFails(addDoc(col, photo({ url: 'https://evil.example.com/p.jpg' })));
@@ -213,87 +260,105 @@ describe('Photos de chantier', () => {
     await assertFails(addDoc(col, photo({ companyId: 'B', chantierId: 'chB', cheminStorage: 'chantiers/B/chB/photos/p.jpg' })));
   });
 
-  test('lecture/suppression : A oui, B non', async () => {
-    await assertSucceeds(getDoc(doc(db(employe(env, 'uid-empA')), 'chantier_photos/pA')));
-    await assertFails(getDoc(doc(db(employe(env, 'uid-adminB')), 'chantier_photos/pA')));
-    await assertFails(deleteDoc(doc(db(employe(env, 'uid-adminB')), 'chantier_photos/pA')));
-    await assertSucceeds(deleteDoc(doc(db(employe(env, 'uid-empA')), 'chantier_photos/pA')));
+  test('autre compagnie : ni lecture ni suppression', async () => {
+    await assertFails(getDoc(doc(ctxDe('uid-adminB'), 'chantier_photos/pA')));
+    await assertFails(deleteDoc(doc(ctxDe('uid-adminB'), 'chantier_photos/pA')));
   });
 });
 
 // =============================================================================
-describe('Travaux / matériel', () => {
+describe('Travaux / matériel (admin et contremaître seulement)', () => {
   const entree = (over = {}) => ({
     companyId: 'A', chantierId: 'chA', texte: 'Tâche', complete: false, dateAjout: serverTimestamp(), ...over,
   });
 
-  test('création valide (avec quantité et photo) → OK', async () => {
-    const ctx = employe(env, 'uid-empA');
-    await assertSucceeds(addDoc(collection(db(ctx), 'chantier_travaux'), entree()));
-    await assertSucceeds(addDoc(collection(db(ctx), 'chantier_materiel'), entree({
+  test('contremaître : crée (avec quantité et photo), complète, édite, supprime', async () => {
+    const d = ctxDe('uid-plusA');
+    await assertSucceeds(addDoc(collection(d, 'chantier_travaux'), entree()));
+    await assertSucceeds(addDoc(collection(d, 'chantier_materiel'), entree({
       quantite: '12 feuilles', photoUrl: 'https://firebasestorage.googleapis.com/v0/b/x/o/m.jpg',
     })));
+    const ref = doc(d, 'chantier_travaux/tA');
+    await assertSucceeds(updateDoc(ref, { complete: true, dateComplete: serverTimestamp() }));
+    await assertSucceeds(updateDoc(ref, { texte: 'Coffrage fini' }));
+    await assertSucceeds(updateDoc(ref, { complete: false, dateComplete: deleteField() }));
+    await assertSucceeds(deleteDoc(ref));
+  });
+
+  test('employé : ni lecture, ni création, ni modification', async () => {
+    const d = ctxDe('uid-empA');
+    await assertFails(getDocs(query(collection(d, 'chantier_travaux'), where('companyId', '==', 'A'))));
+    await assertFails(getDocs(query(collection(d, 'chantier_materiel'), where('companyId', '==', 'A'))));
+    await assertFails(addDoc(collection(d, 'chantier_travaux'), entree()));
+    await assertFails(updateDoc(doc(d, 'chantier_travaux/tA'), { complete: true, dateComplete: serverTimestamp() }));
+    await assertFails(deleteDoc(doc(d, 'chantier_travaux/tA')));
   });
 
   test('création refusée : déjà complétée, texte vide, chantier de B, champ inconnu', async () => {
-    const col = collection(db(employe(env, 'uid-empA')), 'chantier_travaux');
+    const col = collection(ctxDe('uid-plusA'), 'chantier_travaux');
     await assertFails(addDoc(col, entree({ complete: true })));
     await assertFails(addDoc(col, entree({ texte: '' })));
     await assertFails(addDoc(col, entree({ chantierId: 'chB' })));
     await assertFails(addDoc(col, entree({ admin: true })));
   });
 
-  test('compléter / décompléter / éditer → OK', async () => {
-    const ref = doc(db(employe(env, 'uid-empA')), 'chantier_travaux/tA');
-    await assertSucceeds(updateDoc(ref, { complete: true, dateComplete: serverTimestamp() }));
-    await assertSucceeds(updateDoc(ref, { texte: 'Coffrage fini' }));
-    await assertSucceeds(updateDoc(ref, { complete: false, dateComplete: deleteField() }));
-  });
-
   test('modification refusée : changer companyId/chantierId, date falsifiée, autre compagnie', async () => {
-    const ref = doc(db(employe(env, 'uid-empA')), 'chantier_travaux/tA');
+    const ref = doc(ctxDe('uid-plusA'), 'chantier_travaux/tA');
     await assertFails(updateDoc(ref, { companyId: 'B' }));
     await assertFails(updateDoc(ref, { chantierId: 'chB' }));
     await assertFails(updateDoc(ref, { complete: true, dateComplete: new Date('2020-01-01') }));
-    await assertFails(updateDoc(doc(db(employe(env, 'uid-empA')), 'chantier_travaux/tB'), { texte: 'x' }));
-    await assertFails(deleteDoc(doc(db(employe(env, 'uid-empA')), 'chantier_travaux/tB')));
+    await assertFails(updateDoc(doc(ctxDe('uid-plusA'), 'chantier_travaux/tB'), { texte: 'x' }));
+    await assertFails(deleteDoc(doc(ctxDe('uid-plusA'), 'chantier_travaux/tB')));
   });
 });
 
 // =============================================================================
 describe('Feuilles de temps — employé', () => {
-  const feuille = (over = {}) => ({
+  const feuille = (lundiDate, over = {}) => ({
     companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',
-    lundiDate: '2026-09-28', jours: [{ nomJour: 'Lundi', heuresTravaillees: 8 }], totalHeures: 8,
+    lundiDate, jours: [{ nomJour: 'Lundi', heuresTravaillees: 8 }], totalHeures: 8,
     dateModification: serverTimestamp(), ...over,
   });
 
   test('lit sa feuille (existante ou non) ; pas celle d\'un collègue ni d\'une autre compagnie', async () => {
-    const ctx = employe(env, 'uid-empA');
-    await assertSucceeds(getDoc(doc(db(ctx), `feuilles_temps/empA_${LUNDI}`)));
-    await assertSucceeds(getDoc(doc(db(ctx), 'feuilles_temps/empA_2030-01-07')));
-    await assertFails(getDoc(doc(db(ctx), `feuilles_temps/adminA_${LUNDI}`)));
-    await assertFails(getDoc(doc(db(ctx), `feuilles_temps/adminB_${LUNDI}`)));
+    const d = ctxDe('uid-empA');
+    await assertSucceeds(getDoc(doc(d, `feuilles_temps/empA_${LUNDI}`)));
+    await assertSucceeds(getDoc(doc(d, 'feuilles_temps/empA_2030-01-07')));
+    await assertFails(getDoc(doc(d, `feuilles_temps/adminA_${LUNDI}`)));
+    await assertFails(getDoc(doc(d, `feuilles_temps/adminB_${LUNDI}`)));
   });
 
-  test('enregistre sa feuille (set merge) → OK', async () => {
-    const ref = doc(db(employe(env, 'uid-empA')), 'feuilles_temps/empA_2026-09-28');
-    await assertSucceeds(setDoc(ref, feuille(), { merge: true }));
-    await assertSucceeds(setDoc(ref, feuille({ totalHeures: 16 }), { merge: true }));
+  test('enregistre sa feuille de la semaine courante et suivante (set merge) → OK', async () => {
+    const d = ctxDe('uid-empA');
+    await assertSucceeds(setDoc(doc(d, `feuilles_temps/empA_${LUNDI}`), feuille(LUNDI), { merge: true }));
+    await assertSucceeds(setDoc(doc(d, `feuilles_temps/empA_${LUNDI_PROCHAIN}`), feuille(LUNDI_PROCHAIN), { merge: true }));
   });
 
   test('refusé : autre employé, id incohérent, autre compagnie, faux nom, heures absurdes', async () => {
-    const d = db(employe(env, 'uid-empA'));
-    await assertFails(setDoc(doc(d, 'feuilles_temps/adminA_2026-09-28'), feuille({ employeeId: 'adminA' })));
-    await assertFails(setDoc(doc(d, 'feuilles_temps/empA_2026-10-05'), feuille()));
-    await assertFails(setDoc(doc(d, 'feuilles_temps/empA_2026-09-28'), feuille({ companyId: 'B' })));
-    await assertFails(setDoc(doc(d, 'feuilles_temps/empA_2026-09-28'), feuille({ employeeNom: 'Admin A' })));
-    await assertFails(setDoc(doc(d, 'feuilles_temps/empA_2026-09-28'), feuille({ totalHeures: 500 })));
-    await assertFails(setDoc(doc(d, 'feuilles_temps/empA_2026-09-28'), feuille({ estIndividuel: true })));
+    const d = ctxDe('uid-empA');
+    const id = `feuilles_temps/empA_${LUNDI}`;
+    await assertFails(setDoc(doc(d, `feuilles_temps/adminA_${LUNDI}`), feuille(LUNDI, { employeeId: 'adminA' })));
+    await assertFails(setDoc(doc(d, `feuilles_temps/empA_${LUNDI_PROCHAIN}`), feuille(LUNDI)));
+    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { companyId: 'B' })));
+    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { employeeNom: 'Admin A' })));
+    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { totalHeures: 500 })));
+    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { estIndividuel: true })));
+  });
+
+  test('verrouillage : employé et contremaître ne modifient plus une semaine échue', async () => {
+    await assertFails(setDoc(doc(ctxDe('uid-empA'), `feuilles_temps/empA_${LUNDI_PASSE}`),
+      feuille(LUNDI_PASSE), { merge: true }));
+    await assertFails(setDoc(doc(ctxDe('uid-plusA'), `feuilles_temps/plusA_${LUNDI_PASSE}`),
+      feuille(LUNDI_PASSE, { employeeId: 'plusA', employeeNom: 'Plus A' })));
+  });
+
+  test('verrouillage : l\'admin peut encore corriger sa semaine échue', async () => {
+    await assertSucceeds(setDoc(doc(ctxDe('uid-adminA'), `feuilles_temps/adminA_${LUNDI_PASSE}`),
+      feuille(LUNDI_PASSE, { employeeId: 'adminA', employeeNom: 'Admin A' })));
   });
 
   test('suppression → refusée', async () => {
-    await assertFails(deleteDoc(doc(db(employe(env, 'uid-adminA')), `feuilles_temps/empA_${LUNDI}`)));
+    await assertFails(deleteDoc(doc(ctxDe('uid-adminA'), `feuilles_temps/empA_${LUNDI}`)));
   });
 });
 
@@ -301,37 +366,38 @@ describe('Feuilles de temps — employé', () => {
 describe('Particuliers', () => {
   const feuilleSolo = (over = {}) => ({
     estIndividuel: true, employeeId: 'uid-ind', employeeNom: 'Solo',
-    lundiDate: LUNDI, jours: [], totalHeures: 0, dateModification: serverTimestamp(), ...over,
+    lundiDate: LUNDI_PASSE, jours: [], totalHeures: 0, dateModification: serverTimestamp(), ...over,
   });
 
-  test('profil : crée/lit le sien avec son propre courriel', async () => {
-    const ctx = individu(env, 'uid-ind2');
-    await assertSucceeds(setDoc(doc(db(ctx), 'individus/uid-ind2'), { nom: 'Nouveau', email: 'uid-ind2@exemple.ca' }));
-    await assertSucceeds(getDoc(doc(db(ctx), 'individus/uid-ind2')));
-    await assertFails(setDoc(doc(db(ctx), 'individus/uid-ind2'), { nom: 'N', email: 'autre@exemple.ca' }));
-    await assertFails(getDoc(doc(db(ctx), 'individus/uid-ind')));
+  test('profil : crée/lit le sien avec son propre courriel (casse ignorée)', async () => {
+    const d = db(individu(env, 'uid-ind2'));
+    await assertSucceeds(setDoc(doc(d, 'individus/uid-ind2'), { nom: 'Nouveau', email: 'uid-ind2@exemple.ca' }));
+    await assertSucceeds(setDoc(doc(d, 'individus/uid-ind2'), { nom: 'Nouveau', email: 'UID-Ind2@Exemple.ca' }));
+    await assertSucceeds(getDoc(doc(d, 'individus/uid-ind2')));
+    await assertFails(setDoc(doc(d, 'individus/uid-ind2'), { nom: 'N', email: 'autre@exemple.ca' }));
+    await assertFails(getDoc(doc(d, 'individus/uid-ind')));
   });
 
   test('profil : un compte anonyme ne peut pas créer de profil', async () => {
-    await assertFails(setDoc(doc(db(employe(env, 'uid-anon')), 'individus/uid-anon'), { nom: 'N', email: 'x@x.ca' }));
+    await assertFails(setDoc(doc(ctxDe('uid-anon'), 'individus/uid-anon'), { nom: 'N', email: 'x@x.ca' }));
   });
 
-  test('feuille perso : enregistre et relit la sienne', async () => {
-    const ref = doc(db(individu(env, 'uid-ind')), `feuilles_temps/uid-ind_${LUNDI}`);
+  test('feuille perso : enregistre (même semaine passée : pas de verrouillage) et relit', async () => {
+    const ref = doc(db(individu(env, 'uid-ind')), `feuilles_temps/uid-ind_${LUNDI_PASSE}`);
     await assertSucceeds(setDoc(ref, feuilleSolo(), { merge: true }));
     await assertSucceeds(getDoc(ref));
   });
 
   test('feuille perso : refusé avec companyId, estIndividuel=false ou pour un autre uid', async () => {
     const d = db(individu(env, 'uid-ind'));
-    await assertFails(setDoc(doc(d, `feuilles_temps/uid-ind_${LUNDI}`), feuilleSolo({ companyId: 'A' })));
-    await assertFails(setDoc(doc(d, `feuilles_temps/uid-ind_${LUNDI}`), feuilleSolo({ estIndividuel: false })));
-    await assertFails(setDoc(doc(d, `feuilles_temps/empA_${LUNDI}`), feuilleSolo({ employeeId: 'empA' })));
+    await assertFails(setDoc(doc(d, `feuilles_temps/uid-ind_${LUNDI_PASSE}`), feuilleSolo({ companyId: 'A' })));
+    await assertFails(setDoc(doc(d, `feuilles_temps/uid-ind_${LUNDI_PASSE}`), feuilleSolo({ estIndividuel: false })));
+    await assertFails(setDoc(doc(d, `feuilles_temps/empA_${LUNDI}`), feuilleSolo({ employeeId: 'empA', lundiDate: LUNDI })));
   });
 
   test('un compte anonyme sans session ne peut pas se faire passer pour un particulier', async () => {
-    const d = db(employe(env, 'uid-anon'));
-    await assertFails(setDoc(doc(d, `feuilles_temps/uid-anon_${LUNDI}`), feuilleSolo({ employeeId: 'uid-anon' })));
+    await assertFails(setDoc(doc(ctxDe('uid-anon'), `feuilles_temps/uid-anon_${LUNDI}`),
+      feuilleSolo({ employeeId: 'uid-anon', lundiDate: LUNDI })));
   });
 
   test('un particulier ne voit rien des compagnies', async () => {
@@ -343,16 +409,18 @@ describe('Particuliers', () => {
 
 // =============================================================================
 describe('Collections serveur uniquement', () => {
-  test('compteurs, limites_connexion, companies_prive : aucun accès client', async () => {
-    for (const ctx of [employe(env, 'uid-adminA'), superAdmin(env)]) {
-      await assertFails(getDoc(doc(db(ctx), 'compteurs/companies')));
-      await assertFails(setDoc(doc(db(ctx), 'compteurs/companies'), { dernierNumero: 1 }));
-      await assertFails(getDoc(doc(db(ctx), 'limites_connexion/x')));
-      await assertFails(getDoc(doc(db(ctx), 'companies_prive/A')));
+  test('compteurs, limites, données privées, codes, config : aucun accès client', async () => {
+    for (const uid of ['uid-adminA', 'uid-superA']) {
+      const d = ctxDe(uid);
+      for (const chemin of ['compteurs/companies', 'limites_connexion/x', 'companies_prive/A',
+        'reinitialisations_nip/empA', 'config/securite']) {
+        await assertFails(getDoc(doc(d, chemin)));
+        await assertFails(setDoc(doc(d, chemin), { a: 1 }));
+      }
     }
   });
 
   test('collection inconnue → refusée', async () => {
-    await assertFails(setDoc(doc(db(employe(env, 'uid-adminA')), 'autre/x'), { a: 1 }));
+    await assertFails(setDoc(doc(ctxDe('uid-adminA'), 'autre/x'), { a: 1 }));
   });
 });

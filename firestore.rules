@@ -9,16 +9,24 @@ rules_version = '2';
 //    n'est valide que si l'employé existe encore, appartient toujours à la même
 //    compagnie et que la compagnie est approuvée : une suppression d'employé,
 //    un changement de rôle ou un refus de compagnie prend effet immédiatement.
+//  - Super-admin : UN SEUL pour toute l'app, la fiche employé désignée dans
+//    config/super_admin (écrit à la main dans la console), connectée par
+//    courriel + NIP.
 //  - Particulier : compte courriel/mot de passe, données sous son uid.
-//  - Super-admin : custom claim superAdmin == true (posé côté serveur).
+//
+// Rôles : admin (gestion complète), plus (contremaître : chantiers, photos,
+// travaux, matériel), employe (feuille de temps seulement).
 //
 // Rappel : les règles ne filtrent pas les requêtes. Toute requête client DOIT
 // contenir where('companyId', isEqualTo: ...) sinon elle est refusée en bloc.
 //
-// Coût en lectures : sessions + employees + companies (+ chantiers pour les
-// sous-collections) = 4 documents maximum par requête. Firestore met en cache
-// les get()/exists() d'un même chemin durant une évaluation ; les appels
-// répétés ne comptent qu'une fois dans la limite de 10.
+// Coût : sessions + employees + companies (+ chantiers) = 4 documents au
+// maximum par requête ; les get()/exists() d'un même chemin sont mis en cache
+// durant une évaluation et ne comptent qu'une fois.
+//
+// COMPATIBILITÉ : les blocs marqués [ANCIENNES VERSIONS] existent pour les
+// versions de l'app antérieures à la connexion par courriel. À retirer quand
+// elles ne sont plus en circulation.
 // =============================================================================
 
 service cloud.firestore {
@@ -34,15 +42,8 @@ service cloud.firestore {
       return request.auth.token.firebase.sign_in_provider;
     }
 
-    function estSuperAdmin() {
-      // get() avec défaut : lire un claim absent lève une erreur, et
-      // !erreur ne vaut pas true (cela bloquerait tous les particuliers).
-      return estAuth() && request.auth.token.get('superAdmin', false) == true;
-    }
-
-    // Particulier : compte courriel/mot de passe qui n'est pas super-admin.
     function estIndividu() {
-      return estAuth() && fournisseur() == 'password' && !estSuperAdmin();
+      return estAuth() && fournisseur() == 'password';
     }
 
     function cheminSession() {
@@ -94,6 +95,29 @@ service cloud.firestore {
       return membreDe(companyId) && moi().role == 'admin';
     }
 
+    // Admin ou contremaître.
+    function gestionnaireDe(companyId) {
+      return membreDe(companyId) && moi().role in ['admin', 'plus'];
+    }
+
+    // Un seul super-admin pour toute l'app : la fiche employé désignée dans
+    // config/super_admin { employeeId } (écrit à la main dans la console).
+    function cheminSuperAdmin() {
+      return /databases/$(database)/documents/config/super_admin;
+    }
+
+    function estLeSuperAdmin(employeeId) {
+      return exists(cheminSuperAdmin())
+        && get(cheminSuperAdmin()).data.employeeId == employeeId;
+    }
+
+    // Pouvoirs super-admin : seulement avec une session ouverte par courriel.
+    function estSuperAdmin() {
+      return estEmployeActif()
+        && session().get('methode', '') == 'courriel'
+        && estLeSuperAdmin(session().employeeId);
+    }
+
     // ------------------------------------------------------------- Validation
 
     function texte(v, min, max) {
@@ -126,7 +150,6 @@ service cloud.firestore {
 
     // ------------------------------------------------ Collections serveur seul
 
-    // Créées/modifiées exclusivement par les Cloud Functions (Admin SDK).
     match /compteurs/{doc=**} {
       allow read, write: if false;
     }
@@ -139,14 +162,30 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    match /reinitialisations_nip/{doc=**} {
+      allow read, write: if false;
+    }
+
+    match /config/{doc=**} {
+      allow read, write: if false;
+    }
+
     // ----------------------------------------------------------------- Sessions
 
     match /sessions/{uid} {
-      // Lecture de sa propre session (reconnexion automatique) et déconnexion.
       allow get: if estAuth() && request.auth.uid == uid;
       allow delete: if estAuth() && request.auth.uid == uid;
-      // Création/modification : jamais depuis le client (sinon usurpation).
-      allow list, create, update: if false;
+
+      // [ANCIENNES VERSIONS] À la reconnexion, elles réécrivent leur session
+      // avec les mêmes identifiants. Permis seulement sans changement
+      // d'identité (la méthode de connexion disparaît : perte des pouvoirs
+      // super-admin, jamais de gain).
+      allow update: if estAuth() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['employeeId', 'companyId'])
+        && request.resource.data.employeeId == resource.data.employeeId
+        && request.resource.data.companyId == resource.data.companyId;
+
+      allow list, create: if false;
     }
 
     // --------------------------------------------------------------- Compagnies
@@ -159,30 +198,63 @@ service cloud.firestore {
 
     // ----------------------------------------------------------------- Employés
 
-    // Les NIP ne sont jamais stockés ici en clair (pinHash, écrit par les
-    // Cloud Functions). Aucune écriture client : enregistrerEmploye /
-    // supprimerEmploye appliquent les protections (propriétaire, unicité NIP).
+    // Les NIP sont stockés en HMAC (pinHash) par les Cloud Functions.
+    // estProprietaire, courriel et pinHash ne sont jamais
+    // modifiables par le client.
     match /employees/{employeeId} {
       allow get: if membreDe(resource.data.companyId)
         && (employeeId == session().employeeId || moi().role == 'admin');
       allow list: if adminDe(resource.data.companyId);
-      allow write: if false;
+
+      // [ANCIENNES VERSIONS] Gestion des employés directement depuis l'app,
+      // avec un NIP en clair que le déclencheur securiserEmploye remplace
+      // aussitôt par son empreinte. La nouvelle app passe par les fonctions
+      // enregistrerEmploye / supprimerEmploye.
+      allow create: if adminDe(request.resource.data.companyId)
+        && champsPermis(request.resource.data, ['companyId', 'nom', 'pin', 'role', 'estProprietaire'])
+        && request.resource.data.estProprietaire == false
+        && request.resource.data.role in ['admin', 'plus', 'employe']
+        && texte(request.resource.data.nom, 1, 100)
+        && request.resource.data.pin is string
+        && request.resource.data.pin.matches('[0-9]{4,8}');
+
+      allow update: if adminDe(resource.data.companyId)
+        && champsModifiesPermis(['nom', 'pin', 'role'])
+        && request.resource.data.role in ['admin', 'plus', 'employe']
+        && texte(request.resource.data.nom, 1, 100)
+        && (!request.resource.data.keys().hasAny(['pin'])
+            || (request.resource.data.pin is string
+                && request.resource.data.pin.matches('[0-9]{4,8}')))
+        // Le propriétaire reste admin ; le rôle du super-admin ne change pas.
+        && (resource.data.get('estProprietaire', false) != true
+            || request.resource.data.role == 'admin')
+        && (!estLeSuperAdmin(employeeId)
+            || request.resource.data.role == resource.data.role);
+
+      allow delete: if adminDe(resource.data.companyId)
+        && employeeId != session().employeeId
+        && resource.data.get('estProprietaire', false) != true
+        && !estLeSuperAdmin(employeeId);
     }
 
     // -------------------------------------------------------------- Particuliers
 
     match /individus/{uid} {
       allow get: if estIndividu() && request.auth.uid == uid;
+      // Courriel comparé en minuscules : les anciennes versions l'enregistrent
+      // tel que saisi, alors que le jeton le normalise.
       allow create, update: if estIndividu()
         && request.auth.uid == uid
         && champsPermis(request.resource.data, ['nom', 'email'])
         && texte(request.resource.data.nom, 1, 100)
-        && request.resource.data.email == request.auth.token.email;
+        && request.resource.data.email is string
+        && request.resource.data.email.lower() == request.auth.token.email.lower();
       allow list, delete: if false;
     }
 
     // ---------------------------------------------------------------- Chantiers
 
+    // Lecture par tous les membres : la feuille de temps a besoin de la liste.
     match /chantiers/{chantierId} {
       allow read: if membreDe(resource.data.companyId);
 
@@ -199,12 +271,12 @@ service cloud.firestore {
       allow delete: if adminDe(resource.data.companyId);
     }
 
-    // ------------------------------------------------------------------- Photos
+    // ------------------------------------------ Photos (admin et contremaître)
 
     match /chantier_photos/{photoId} {
-      allow read: if membreDe(resource.data.companyId);
+      allow read: if gestionnaireDe(resource.data.companyId);
 
-      allow create: if membreDe(request.resource.data.companyId)
+      allow create: if gestionnaireDe(request.resource.data.companyId)
         && champsPermis(request.resource.data,
              ['companyId', 'chantierId', 'url', 'cheminStorage', 'dateAjout'])
         && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
@@ -216,10 +288,10 @@ service cloud.firestore {
         && request.resource.data.dateAjout == request.time;
 
       allow update: if false;
-      allow delete: if membreDe(resource.data.companyId);
+      allow delete: if gestionnaireDe(resource.data.companyId);
     }
 
-    // ------------------------------------------------------- Travaux / Matériel
+    // ------------------------------- Travaux / Matériel (admin et contremaître)
 
     function entreeValideCreation(d) {
       return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
@@ -246,21 +318,21 @@ service cloud.firestore {
     }
 
     match /chantier_travaux/{entreeId} {
-      allow read: if membreDe(resource.data.companyId);
-      allow create: if membreDe(request.resource.data.companyId)
+      allow read: if gestionnaireDe(resource.data.companyId);
+      allow create: if gestionnaireDe(request.resource.data.companyId)
         && entreeValideCreation(request.resource.data);
-      allow update: if membreDe(resource.data.companyId)
+      allow update: if gestionnaireDe(resource.data.companyId)
         && entreeValideModification(request.resource.data);
-      allow delete: if membreDe(resource.data.companyId);
+      allow delete: if gestionnaireDe(resource.data.companyId);
     }
 
     match /chantier_materiel/{entreeId} {
-      allow read: if membreDe(resource.data.companyId);
-      allow create: if membreDe(request.resource.data.companyId)
+      allow read: if gestionnaireDe(resource.data.companyId);
+      allow create: if gestionnaireDe(request.resource.data.companyId)
         && entreeValideCreation(request.resource.data);
-      allow update: if membreDe(resource.data.companyId)
+      allow update: if gestionnaireDe(resource.data.companyId)
         && entreeValideModification(request.resource.data);
-      allow delete: if membreDe(resource.data.companyId);
+      allow delete: if gestionnaireDe(resource.data.companyId);
     }
 
     // ---------------------------------------------------------- Feuilles de temps
@@ -268,6 +340,14 @@ service cloud.firestore {
     // Identifiant : {employeeId}_{AAAA-MM-JJ} (lundi de la semaine).
     function idFeuille(proprietaireId, lundiDate) {
       return proprietaireId + '_' + lundiDate;
+    }
+
+    // Échéance de la semaine : le mardi suivant à 23 h UTC, soit 18 h à
+    // Montréal en hiver (19 h en été). L'app bloque dès 18 h, heure locale ;
+    // le serveur ne tolère donc au plus qu'une heure de plus en été.
+    function echeanceSemaine(lundiDate) {
+      return timestamp.date(int(lundiDate[0:4]), int(lundiDate[5:7]), int(lundiDate[8:10]))
+        + duration.value(8 * 24 + 23, 'h');
     }
 
     function contenuFeuilleValide(d, feuilleId) {
@@ -290,7 +370,10 @@ service cloud.firestore {
         && d.employeeId == session().employeeId
         && d.employeeNom == moi().nom
         && d.estIndividuel == false
-        && contenuFeuilleValide(d, feuilleId);
+        && contenuFeuilleValide(d, feuilleId)
+        // Verrouillage : contremaîtres et employés ne modifient plus une
+        // semaine après son échéance ; les admins le peuvent.
+        && (moi().role == 'admin' || request.time < echeanceSemaine(d.lundiDate));
     }
 
     function feuilleIndividuValide(d, feuilleId) {

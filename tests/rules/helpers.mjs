@@ -7,8 +7,18 @@ import { doc, setDoc } from 'firebase/firestore';
 const racine = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 export const PROJET = 'demo-construction-rules';
-export const BUCKET = 'demo-construction-rules.appspot.com';
-export const LUNDI = '2026-09-21';
+
+/** Lundi (AAAA-MM-JJ, UTC) de la semaine courante décalée de `semaines`. */
+export function lundi(semaines = 0) {
+  const d = new Date();
+  d.setUTCHours(0, 0, 0, 0);
+  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7) + 7 * semaines);
+  return d.toISOString().slice(0, 10);
+}
+
+export const LUNDI = lundi(0);           // semaine courante : ouverte
+export const LUNDI_PASSE = lundi(-2);    // échéance dépassée : verrouillée
+export const LUNDI_PROCHAIN = lundi(1);  // semaine future : ouverte
 
 export async function creerEnvironnement({ storage = false } = {}) {
   return initializeTestEnvironment({
@@ -36,21 +46,16 @@ export const employe = (env, uid) =>
 export const individu = (env, uid, email = `${uid}@exemple.ca`) =>
   env.authenticatedContext(uid, { email, email_verified: true, firebase: { sign_in_provider: 'password' } });
 
-export const superAdmin = (env) =>
-  env.authenticatedContext('uid-super', {
-    email: 'super@exemple.ca',
-    email_verified: true,
-    superAdmin: true,
-    firebase: { sign_in_provider: 'password' },
-  });
-
 // ------------------------------------------------------------ Jeu de données
 //
-// Compagnie A (approuvée) : adminA (admin), empA (employé)
+// Compagnie A (approuvée) : adminA (admin, propriétaire), plusA (contremaître),
+//                           empA (employé), superA (admin, LE super-admin
+//                           désigné par config/super_admin), usurpateur (porte
+//                           un champ superAdmin: true, qui ne doit rien donner)
 // Compagnie B (approuvée) : adminB (admin)
 // Compagnie P (en attente) : adminP
-// Sessions : une par employé, + une session forgée (employé A / compagnie B)
-//            + une session d'employé supprimé.
+// Sessions : une par employé ; superA en a deux (courriel / NIP seul) ;
+//            + une session forgée et une d'employé supprimé.
 
 export async function semer(env) {
   await env.withSecurityRulesDisabled(async (ctx) => {
@@ -61,29 +66,38 @@ export async function semer(env) {
     await d('companies/B', { numero: '1002', nomEntreprise: 'Bêta', statut: 'approuvee' });
     await d('companies/P', { numero: '1003', nomEntreprise: 'Pending', statut: 'attente' });
 
-    await d('employees/adminA', { companyId: 'A', nom: 'Admin A', role: 'admin', estProprietaire: true, pinHash: 'h1' });
-    await d('employees/empA', { companyId: 'A', nom: 'Emp A', role: 'employe', estProprietaire: false, pinHash: 'h2' });
-    await d('employees/adminB', { companyId: 'B', nom: 'Admin B', role: 'admin', estProprietaire: true, pinHash: 'h3' });
-    await d('employees/adminP', { companyId: 'P', nom: 'Admin P', role: 'admin', estProprietaire: true, pinHash: 'h4' });
+    const emp = (companyId, nom, role, extra = {}) =>
+      ({ companyId, nom, role, estProprietaire: false, pinHash: 'h', courriel: `${nom}@a.ca`, ...extra });
+    await d('employees/adminA', emp('A', 'Admin A', 'admin', { estProprietaire: true }));
+    await d('employees/plusA', emp('A', 'Plus A', 'plus'));
+    await d('employees/empA', emp('A', 'Emp A', 'employe'));
+    await d('employees/superA', emp('A', 'Super A', 'admin'));
+    await d('employees/usurpateur', emp('A', 'Usurpateur', 'admin', { superAdmin: true }));
+    await d('config/super_admin', { employeeId: 'superA' });
+    await d('employees/adminB', emp('B', 'Admin B', 'admin', { estProprietaire: true }));
+    await d('employees/adminP', emp('P', 'Admin P', 'admin', { estProprietaire: true }));
 
-    await d('sessions/uid-adminA', { employeeId: 'adminA', companyId: 'A' });
-    await d('sessions/uid-empA', { employeeId: 'empA', companyId: 'A' });
-    await d('sessions/uid-adminB', { employeeId: 'adminB', companyId: 'B' });
-    await d('sessions/uid-adminP', { employeeId: 'adminP', companyId: 'P' });
-    await d('sessions/uid-forge', { employeeId: 'empA', companyId: 'B' });
-    await d('sessions/uid-supprime', { employeeId: 'fantome', companyId: 'A' });
+    const session = (employeeId, companyId, methode = 'courriel') => ({ employeeId, companyId, methode });
+    await d('sessions/uid-adminA', session('adminA', 'A'));
+    await d('sessions/uid-plusA', session('plusA', 'A'));
+    await d('sessions/uid-empA', session('empA', 'A', 'nip'));
+    await d('sessions/uid-superA', session('superA', 'A'));
+    await d('sessions/uid-superA-nip', session('superA', 'A', 'nip'));
+    await d('sessions/uid-usurpateur', { ...session('usurpateur', 'A'), superAdmin: true });
+    await d('sessions/uid-adminB', session('adminB', 'B'));
+    await d('sessions/uid-adminP', session('adminP', 'P'));
+    await d('sessions/uid-forge', session('empA', 'B'));
+    await d('sessions/uid-supprime', session('fantome', 'A'));
 
     await d('chantiers/chA', { companyId: 'A', nom: 'Chantier A', adresse: '1 rue A' });
     await d('chantiers/chB', { companyId: 'B', nom: 'Chantier B', adresse: '1 rue B' });
 
-    await d(`feuilles_temps/empA_${LUNDI}`, {
-      companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',
-      lundiDate: LUNDI, jours: [], totalHeures: 0,
+    const feuille = (employeeId, companyId, employeeNom, lundiDate) => ({
+      companyId, estIndividuel: false, employeeId, employeeNom, lundiDate, jours: [], totalHeures: 0,
     });
-    await d(`feuilles_temps/adminB_${LUNDI}`, {
-      companyId: 'B', estIndividuel: false, employeeId: 'adminB', employeeNom: 'Admin B',
-      lundiDate: LUNDI, jours: [], totalHeures: 0,
-    });
+    await d(`feuilles_temps/empA_${LUNDI}`, feuille('empA', 'A', 'Emp A', LUNDI));
+    await d(`feuilles_temps/empA_${LUNDI_PASSE}`, feuille('empA', 'A', 'Emp A', LUNDI_PASSE));
+    await d(`feuilles_temps/adminB_${LUNDI}`, feuille('adminB', 'B', 'Admin B', LUNDI));
 
     await d('chantier_travaux/tA', { companyId: 'A', chantierId: 'chA', texte: 'Coffrage', complete: false });
     await d('chantier_travaux/tB', { companyId: 'B', chantierId: 'chB', texte: 'Toiture', complete: false });
