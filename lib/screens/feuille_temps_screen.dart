@@ -396,7 +396,14 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur lors de la sauvegarde : $e'),
+            // permission-denied : semaine échue (verrouillage imposé par le
+            // serveur aux contremaîtres et employés) ou session expirée.
+            content: Text(
+              e is FirebaseException && e.code == 'permission-denied'
+                  ? 'Enregistrement refusé : cette semaine est verrouillée. '
+                        'Contactez votre superviseur pour toute correction.'
+                  : 'Erreur lors de la sauvegarde. Vérifiez votre réseau et réessayez.',
+            ),
             backgroundColor: Colors.red,
           ),
         );

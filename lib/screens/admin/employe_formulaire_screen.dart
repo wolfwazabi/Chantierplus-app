@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/services.dart';
 
 import '../../services/app_session.dart';
+import '../../services/fonctions.dart';
 
+/// Création / modification d'un employé.
+///
+/// L'admin ne choisit jamais le NIP : un NIP aléatoire est généré par le
+/// serveur et envoyé par courriel à l'employé, qui peut ensuite le changer.
 class EmployeFormulaireScreen extends StatefulWidget {
   final String? docId;
   final Map<String, dynamic>? donneesExistantes;
@@ -19,8 +24,10 @@ class EmployeFormulaireScreen extends StatefulWidget {
 }
 
 class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
+  static final _formatCourriel = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]{2,}$');
+
   late final TextEditingController _nomCtrl;
-  late final TextEditingController _pinCtrl;
+  late final TextEditingController _courrielCtrl;
   String _role = 'employe';
   bool _enCours = false;
   String? _erreur;
@@ -34,28 +41,27 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
     super.initState();
     final d = widget.donneesExistantes;
     _nomCtrl = TextEditingController(text: d?['nom'] ?? '');
-    // Le NIP n'est jamais relu : en modification, vide = inchangé.
-    _pinCtrl = TextEditingController();
+    _courrielCtrl = TextEditingController(text: d?['courriel'] ?? '');
     _role = d?['role'] ?? 'employe';
   }
 
   @override
   void dispose() {
     _nomCtrl.dispose();
-    _pinCtrl.dispose();
+    _courrielCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _enregistrer() async {
+  Future<void> _enregistrer({bool envoyerNouveauNip = false}) async {
     final nom = _nomCtrl.text.trim();
-    final pin = _pinCtrl.text.trim();
+    final courriel = _courrielCtrl.text.trim();
 
-    if (nom.isEmpty || (!_modeEdition && pin.isEmpty)) {
-      setState(() => _erreur = 'Veuillez remplir tous les champs.');
+    if (nom.isEmpty || courriel.isEmpty) {
+      setState(() => _erreur = 'Entrez le nom complet et le courriel.');
       return;
     }
-    if (pin.isNotEmpty && !RegExp(r'^\d{4,8}$').hasMatch(pin)) {
-      setState(() => _erreur = 'Le NIP doit contenir de 4 à 8 chiffres.');
+    if (!_formatCourriel.hasMatch(courriel)) {
+      setState(() => _erreur = 'Courriel invalide.');
       return;
     }
     if (AppSession.current?.companyId == null) {
@@ -68,33 +74,116 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
       _erreur = null;
     });
 
-    // Validation, unicité du NIP, hachage et protection du propriétaire :
-    // appliqués côté serveur (Cloud Function enregistrerEmploye).
+    // Validation, unicité du courriel, génération et envoi du NIP, protection
+    // du propriétaire : côté serveur (Cloud Function enregistrerEmploye).
     try {
-      await FirebaseFunctions.instance.httpsCallable('enregistrerEmploye').call(
-        {
-          'employeeId': widget.docId,
-          'nom': nom,
-          'role': _estProprietaireExistant ? 'admin' : _role,
-          if (pin.isNotEmpty) 'pin': pin,
-        },
-      );
-      if (mounted) Navigator.of(context).pop();
-    } on FirebaseFunctionsException catch (e) {
-      setState(() {
-        _erreur = e.message ?? 'Erreur lors de l\'enregistrement.';
-        _enCours = false;
+      final resultat = await Fonctions.appeler('enregistrerEmploye', {
+        'employeeId': widget.docId,
+        'nom': nom,
+        'courriel': courriel,
+        'role': _estProprietaireExistant ? 'admin' : _role,
+        'envoyerNouveauNip': envoyerNouveauNip,
       });
-    } catch (_) {
+      if (!mounted) return;
+
+      final nipTemporaire = resultat['nipTemporaire'] as String?;
+      if (nipTemporaire != null) {
+        await _afficherNipTemporaire(nom, nipTemporaire);
+      } else if (resultat['courrielEnvoye'] == true) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Le NIP a été envoyé à $courriel.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+      if (mounted) Navigator.of(context).pop();
+    } catch (e) {
       setState(() {
-        _erreur = 'Erreur lors de l\'enregistrement. Vérifiez votre réseau.';
+        _erreur = Fonctions.message(e, 'Erreur lors de l\'enregistrement.');
         _enCours = false;
       });
     }
   }
 
+  /// Solution de repli tant que l'envoi de courriels n'est pas configuré :
+  /// le NIP est montré une seule fois à l'admin, qui le transmet en personne.
+  Future<void> _afficherNipTemporaire(String nom, String nip) {
+    return showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Courriel non envoyé'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'L\'envoi de courriels n\'est pas encore disponible. '
+              'Transmettez ce NIP à $nom en personne ; il ne sera plus affiché.',
+            ),
+            const SizedBox(height: 16),
+            Center(
+              child: SelectableText(
+                nip,
+                style: const TextStyle(
+                  fontSize: 28,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 6,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'L\'employé pourra le changer dans l\'onglet Compte.',
+              style: TextStyle(fontSize: 13),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Clipboard.setData(ClipboardData(text: nip)),
+            child: const Text('Copier'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('C\'est noté'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _confirmerNouveauNip() async {
+    final confirme = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Envoyer un nouveau NIP ?'),
+        content: Text(
+          'Un nouveau NIP sera envoyé à ${_courrielCtrl.text.trim()}. '
+          'L\'ancien ne fonctionnera plus et l\'employé sera déconnecté de ses appareils.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Envoyer'),
+          ),
+        ],
+      ),
+    );
+    if (confirme == true) await _enregistrer(envoyerNouveauNip: true);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final sansCourriel =
+        _modeEdition &&
+        (widget.donneesExistantes?['courriel'] as String?)?.isNotEmpty != true;
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -108,6 +197,7 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
           children: [
             TextField(
               controller: _nomCtrl,
+              textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(
                 labelText: 'Nom complet',
                 border: OutlineInputBorder(),
@@ -116,18 +206,30 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
             ),
             const SizedBox(height: 16),
             TextField(
-              controller: _pinCtrl,
-              keyboardType: TextInputType.number,
-              obscureText: true,
-              maxLength: 8,
-              decoration: InputDecoration(
-                labelText: _modeEdition
-                    ? 'Nouveau NIP (laisser vide pour conserver)'
-                    : 'NIP (4 à 8 chiffres)',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.lock),
+              controller: _courrielCtrl,
+              keyboardType: TextInputType.emailAddress,
+              autocorrect: false,
+              decoration: const InputDecoration(
+                labelText: 'Courriel',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.email_outlined),
               ),
             ),
+            if (sansCourriel) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Cet employé n\'a pas encore de courriel : ajoutez-le pour qu\'il puisse '
+                'recevoir son NIP et se connecter avec la nouvelle version de l\'application.',
+                style: TextStyle(fontSize: 13, color: Colors.orange),
+              ),
+            ],
+            if (!_modeEdition) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Un NIP aléatoire sera envoyé à ce courriel. L\'employé pourra le changer.',
+                style: TextStyle(fontSize: 13),
+              ),
+            ],
             const SizedBox(height: 16),
             if (_estProprietaireExistant)
               Container(
@@ -137,7 +239,7 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  'Cette personne est propriétaire de la compagnie : son rôle ne peut pas être changé.',
+                  'Cette personne est le super-admin de la compagnie : son rôle ne peut pas être changé.',
                   style: TextStyle(fontSize: 13),
                 ),
               )
@@ -164,7 +266,7 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
             SizedBox(
               width: double.infinity,
               child: FilledButton(
-                onPressed: _enCours ? null : _enregistrer,
+                onPressed: _enCours ? null : () => _enregistrer(),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.all(16),
                 ),
@@ -180,10 +282,21 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
                     : Text(
                         _modeEdition
                             ? 'Enregistrer les modifications'
-                            : 'Créer l\'employé',
+                            : 'Créer l\'employé et envoyer son NIP',
                       ),
               ),
             ),
+            if (_modeEdition) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _enCours ? null : _confirmerNouveauNip,
+                  icon: const Icon(Icons.send_outlined),
+                  label: const Text('Envoyer un nouveau NIP'),
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -10,7 +10,7 @@ const {
   ROLES, FORMAT_NIP_EXISTANT, FORMAT_NUMERO,
   texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire, genererNipUnique,
   empreinte, empreinteIp, verifierAppCheck, exigerAnonyme,
-  superAdminId, contexteEmploye, contexteAdmin, contexteSuperAdmin,
+  proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp,
   limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,
 } = require("./src/commun");
 const {RESEND_API_KEY, envoyerCourriel, courrielConfigure, NOM_APP} = require("./src/courriel");
@@ -39,7 +39,7 @@ function compagniesApprouvees(numero) {
 /**
  * Deux modes :
  *  - numéro + courriel + NIP (nouvelle app) : identifie l'employé sans
- *    ambiguïté ; seul mode donnant accès aux pouvoirs super-admin ;
+ *    ambiguïté ; seul mode donnant accès aux pouvoirs du Proprio ;
  *  - numéro + NIP (anciennes versions) : accepté seulement si le NIP désigne
  *    un seul employé, et désactivable via config/securite
  *    { connexionNipSeulAutorisee: false } quand les anciennes versions auront
@@ -116,14 +116,14 @@ exports.connexionEmploye = onCall({...COMPAT, secrets: SECRETS_NIP}, async (requ
 
   const data = employe.data();
   const methode = adresse ? "courriel" : "nip";
-  const estSuperAdmin = methode === "courriel" && (await superAdminId()) === employe.id;
+  const estProprioApp = methode === "courriel" && (await proprioAppId()) === employe.id;
   await db.collection("sessions").doc(auth.uid).set({
     employeeId: employe.id,
     companyId: compagnie.id,
     methode,
     // Indicatif pour l'interface seulement : les règles et les fonctions
-    // revérifient config/super_admin à chaque requête.
-    superAdmin: estSuperAdmin,
+    // revérifient config/proprio_app à chaque requête.
+    proprioApp: estProprioApp,
     creeLe: FieldValue.serverTimestamp(),
   });
   await limiteIp.reinitialiser();
@@ -134,7 +134,7 @@ exports.connexionEmploye = onCall({...COMPAT, secrets: SECRETS_NIP}, async (requ
     courriel: data.courriel || null,
     role: ROLES.includes(data.role) ? data.role : "employe",
     estProprietaire: data.estProprietaire === true,
-    estSuperAdmin,
+    estProprioApp,
     companyId: compagnie.id,
     companyNom: compagnie.data().nomEntreprise || "",
   };
@@ -218,7 +218,7 @@ exports.inscrireCompagnie = onCall({...COMPAT, secrets: SECRETS_NIP_COURRIEL}, a
 
 exports.approuverCompagnie = onCall({...COMPAT, secrets: [RESEND_API_KEY]}, async (request) => {
   verifierAppCheck(request, "approuverCompagnie");
-  const ctx = await contexteSuperAdmin(request);
+  const ctx = await contexteProprioApp(request);
   const companyId = texte(request.data?.companyId, "companyId", {max: 128});
   if (typeof request.data?.approuver !== "boolean") {
     throw new HttpsError("invalid-argument", "Décision invalide.");
@@ -313,10 +313,10 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
       throw new HttpsError("already-exists", "Ce courriel est déjà utilisé par un autre employé de votre compagnie.");
     }
 
-    // Le propriétaire reste admin ; le rôle du super-admin ne change que par lui-même.
+    // Le super-admin de la compagnie reste admin ; le rôle du Proprio ne change que par lui-même.
     let role = d.role;
     if (existant?.estProprietaire === true) role = "admin";
-    if (ref.id === ctx.idSuperAdmin && ref.id !== ctx.employeeId) role = existant.role;
+    if (ref.id === ctx.idProprioApp && ref.id !== ctx.employeeId) role = existant.role;
 
     const maj = {nom, courriel: adresse, role};
     if (pin) {
@@ -351,8 +351,8 @@ exports.supprimerEmploye = onCall(async (request) => {
     if (!snap.exists || snap.data().companyId !== ctx.companyId) {
       throw new HttpsError("not-found", "Employé introuvable.");
     }
-    if (snap.data().estProprietaire === true || employeeId === ctx.idSuperAdmin) {
-      throw new HttpsError("failed-precondition", "Le propriétaire ne peut pas être retiré.");
+    if (snap.data().estProprietaire === true || employeeId === ctx.idProprioApp) {
+      throw new HttpsError("failed-precondition", "Le super-admin de la compagnie ne peut pas être retiré.");
     }
     t.delete(ref);
   });
@@ -593,7 +593,7 @@ exports.securiserEmploye = onDocumentWritten(
 
 /** Migration unique : remplace tout NIP stocké en clair par son empreinte. */
 exports.migrerNips = onCall({secrets: SECRETS_NIP, timeoutSeconds: 540}, async (request) => {
-  await contexteSuperAdmin(request);
+  await contexteProprioApp(request);
   let migres = 0;
   let curseur = null;
   for (;;) {

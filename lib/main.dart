@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -12,9 +14,46 @@ import 'screens/chantier_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/admin/compagnies_attente_screen.dart';
 
+// Clé de site reCAPTCHA Enterprise (web), fournie à la compilation :
+// flutter build web --dart-define=RECAPTCHA_ENTERPRISE_SITE_KEY=...
+const _cleRecaptchaWeb = String.fromEnvironment(
+  'RECAPTCHA_ENTERPRISE_SITE_KEY',
+);
+
+/// Active App Check : atteste que les requêtes viennent de l'app authentique
+/// (Play Integrity sur Android, App Attest sur iOS, reCAPTCHA Enterprise sur
+/// le web). En développement, fournisseur de débogage : son jeton, affiché
+/// dans la console, doit être enregistré dans la console Firebase.
+/// L'app fonctionne même si l'attestation échoue, tant que l'application
+/// d'App Check n'est pas imposée côté Firebase.
+Future<void> _activerAppCheck() async {
+  final plateformeMobile =
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+  final webConfigure = kIsWeb && _cleRecaptchaWeb.isNotEmpty;
+  if (!plateformeMobile && !webConfigure) return;
+  try {
+    await FirebaseAppCheck.instance.activate(
+      providerWeb: webConfigure
+          ? ReCaptchaEnterpriseProvider(_cleRecaptchaWeb)
+          : null,
+      providerAndroid: kReleaseMode
+          ? const AndroidPlayIntegrityProvider()
+          : const AndroidDebugProvider(),
+      providerApple: kReleaseMode
+          ? const AppleAppAttestWithDeviceCheckFallbackProvider()
+          : const AppleDebugProvider(),
+    );
+  } catch (e) {
+    debugPrint('App Check non activé : $e');
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await _activerAppCheck();
   if (FirebaseAuth.instance.currentUser == null) {
     await FirebaseAuth.instance.signInAnonymously();
   }
@@ -141,31 +180,9 @@ class _HomePageState extends State<HomePage> {
       ];
     }
 
-    // Super-admin : compte courriel hors compagnie, gère les inscriptions.
-    if (employee.estSuperAdmin) {
-      return [
-        _OngletInfo(
-          'Calculatrice',
-          Icons.calculate_outlined,
-          Icons.calculate,
-          const CalculatriceScreen(),
-        ),
-        _OngletInfo(
-          'Compagnies',
-          Icons.business_outlined,
-          Icons.business,
-          const CompagniesAttenteScreen(),
-        ),
-        _OngletInfo(
-          'Compte',
-          Icons.person_outline,
-          Icons.person,
-          const CompteScreen(),
-        ),
-      ];
-    }
-
     final estAdmin = employee.role == EmployeeRole.admin;
+    // Photos, travaux et matériel : admin et contremaître seulement.
+    final estGestionnaire = estAdmin || employee.role == EmployeeRole.plus;
 
     final onglets = <_OngletInfo>[
       _OngletInfo(
@@ -180,12 +197,13 @@ class _HomePageState extends State<HomePage> {
         Icons.access_time,
         FeuilleTempsScreen(),
       ),
-      _OngletInfo(
-        'Chantier',
-        Icons.construction_outlined,
-        Icons.construction,
-        ChantierScreen(),
-      ),
+      if (estGestionnaire)
+        _OngletInfo(
+          'Chantier',
+          Icons.construction_outlined,
+          Icons.construction,
+          ChantierScreen(),
+        ),
     ];
 
     if (estAdmin) {
@@ -195,6 +213,18 @@ class _HomePageState extends State<HomePage> {
           Icons.bar_chart_outlined,
           Icons.bar_chart,
           const AdminHomeScreen(),
+        ),
+      );
+    }
+
+    // Proprio de l'app (un seul compte, le vôtre) : gestion des compagnies.
+    if (employee.estProprioApp) {
+      onglets.add(
+        _OngletInfo(
+          'Compagnies',
+          Icons.business_outlined,
+          Icons.business,
+          const CompagniesAttenteScreen(),
         ),
       );
     }

@@ -150,12 +150,13 @@ function exigerAnonyme(request) {
  * compagnie, compagnie approuvée.
  */
 /**
- * Identifiant de la fiche employé du super-admin (un seul pour toute l'app),
- * défini à la main dans config/super_admin { employeeId } via la console.
+ * Identifiant de la fiche employé du Proprio de l'app (un seul compte pour
+ * toute l'app, gère les compagnies inscrites), défini à la main dans
+ * config/proprio_app { employeeId } via la console.
  * Aucune fonction ni aucune règle ne permet de le modifier depuis l'app.
  */
-async function superAdminId() {
-  const snap = await db.collection("config").doc("super_admin").get();
+async function proprioAppId() {
+  const snap = await db.collection("config").doc("proprio_app").get();
   const id = snap.exists ? snap.data().employeeId : null;
   return typeof id === "string" && id.length > 0 ? id : null;
 }
@@ -167,10 +168,10 @@ async function contexteEmploye(request) {
   if (!session?.employeeId || !session?.companyId) {
     throw new HttpsError("permission-denied", "Session invalide. Reconnectez-vous.");
   }
-  const [empSnap, compSnap, idSuperAdmin] = await Promise.all([
+  const [empSnap, compSnap, idProprioApp] = await Promise.all([
     db.collection("employees").doc(session.employeeId).get(),
     db.collection("companies").doc(session.companyId).get(),
-    superAdminId(),
+    proprioAppId(),
   ]);
   if (!empSnap.exists || empSnap.data().companyId !== session.companyId ||
       !compSnap.exists || compSnap.data().statut !== "approuvee") {
@@ -183,9 +184,9 @@ async function contexteEmploye(request) {
     employe,
     companyId: session.companyId,
     compagnie: compSnap.data(),
-    // Pouvoirs super-admin : seulement avec une session ouverte par courriel.
-    estSuperAdmin: idSuperAdmin === empSnap.id && session.methode === "courriel",
-    idSuperAdmin,
+    // Pouvoirs du Proprio : seulement avec une session ouverte par courriel.
+    estProprioApp: idProprioApp === empSnap.id && session.methode === "courriel",
+    idProprioApp,
   };
 }
 
@@ -197,10 +198,10 @@ async function contexteAdmin(request) {
   return ctx;
 }
 
-async function contexteSuperAdmin(request) {
+async function contexteProprioApp(request) {
   const ctx = await contexteEmploye(request);
-  if (!ctx.estSuperAdmin) {
-    throw new HttpsError("permission-denied", "Accès réservé au super-admin.");
+  if (!ctx.estProprioApp) {
+    throw new HttpsError("permission-denied", "Accès réservé au Proprio de l'application.");
   }
   return ctx;
 }
@@ -268,6 +269,6 @@ module.exports = {
   ROLES, ROLES_GESTION, FORMAT_NIP_EXISTANT, FORMAT_NUMERO,
   texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire, genererNipUnique,
   empreinte, empreinteIp, verifierAppCheck, exigerAuth, exigerAnonyme,
-  superAdminId, contexteEmploye, contexteAdmin, contexteSuperAdmin,
+  proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp,
   limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,
 };

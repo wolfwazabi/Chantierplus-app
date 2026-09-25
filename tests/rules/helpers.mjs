@@ -49,8 +49,8 @@ export const individu = (env, uid, email = `${uid}@exemple.ca`) =>
 // ------------------------------------------------------------ Jeu de données
 //
 // Compagnie A (approuvée) : adminA (admin, propriétaire), plusA (contremaître),
-//                           empA (employé), superA (admin, LE super-admin
-//                           désigné par config/super_admin), usurpateur (porte
+//                           empA (employé), superA (admin, LE Proprio
+//                           désigné par config/proprio_app), usurpateur (porte
 //                           un champ superAdmin: true, qui ne doit rien donner)
 // Compagnie B (approuvée) : adminB (admin)
 // Compagnie P (en attente) : adminP
@@ -73,7 +73,7 @@ export async function semer(env) {
     await d('employees/empA', emp('A', 'Emp A', 'employe'));
     await d('employees/superA', emp('A', 'Super A', 'admin'));
     await d('employees/usurpateur', emp('A', 'Usurpateur', 'admin', { superAdmin: true }));
-    await d('config/super_admin', { employeeId: 'superA' });
+    await d('config/proprio_app', { employeeId: 'superA' });
     await d('employees/adminB', emp('B', 'Admin B', 'admin', { estProprietaire: true }));
     await d('employees/adminP', emp('P', 'Admin P', 'admin', { estProprietaire: true }));
 
@@ -83,7 +83,7 @@ export async function semer(env) {
     await d('sessions/uid-empA', session('empA', 'A', 'nip'));
     await d('sessions/uid-superA', session('superA', 'A'));
     await d('sessions/uid-superA-nip', session('superA', 'A', 'nip'));
-    await d('sessions/uid-usurpateur', { ...session('usurpateur', 'A'), superAdmin: true });
+    await d('sessions/uid-usurpateur', { ...session('usurpateur', 'A'), proprioApp: true });
     await d('sessions/uid-adminB', session('adminB', 'B'));
     await d('sessions/uid-adminP', session('adminP', 'P'));
     await d('sessions/uid-forge', session('empA', 'B'));

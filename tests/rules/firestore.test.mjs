@@ -93,37 +93,37 @@ describe('Sessions', () => {
 });
 
 // =============================================================================
-describe('Compagnies et super-admin', () => {
+describe('Compagnies et Proprio', () => {
   test('membre : lit sa compagnie, pas celle d\'une autre ; ne liste pas', async () => {
     await assertSucceeds(getDoc(doc(ctxDe('uid-empA'), 'companies/A')));
     await assertFails(getDoc(doc(ctxDe('uid-empA'), 'companies/B')));
     await assertFails(getDocs(collection(ctxDe('uid-adminA'), 'companies')));
   });
 
-  test('super-admin connecté par courriel : liste et lit toutes les compagnies', async () => {
+  test('Proprio connecté par courriel : liste et lit toutes les compagnies', async () => {
     const d = ctxDe('uid-superA');
     await assertSucceeds(getDocs(query(collection(d, 'companies'), orderBy('dateCreation', 'desc'))));
     await assertSucceeds(getDoc(doc(d, 'companies/P')));
   });
 
-  test('super-admin connecté par NIP seul : aucun pouvoir super-admin', async () => {
+  test('Proprio connecté par NIP seul : aucun pouvoir Proprio', async () => {
     await assertFails(getDocs(collection(ctxDe('uid-superA-nip'), 'companies')));
     await assertFails(getDoc(doc(ctxDe('uid-superA-nip'), 'companies/B')));
   });
 
-  test('un seul super-admin : le champ superAdmin sur une fiche ou une session ne donne rien', async () => {
+  test('un seul Proprio : le champ superAdmin sur une fiche ou une session ne donne rien', async () => {
     await assertFails(getDocs(collection(ctxDe('uid-usurpateur'), 'companies')));
     await assertFails(getDoc(doc(ctxDe('uid-usurpateur'), 'companies/B')));
   });
 
-  test('config/super_admin : ni lisible ni modifiable depuis l\'app, même par le super-admin', async () => {
+  test('config/proprio_app : ni lisible ni modifiable depuis l\'app, même par le Proprio', async () => {
     for (const uid of ['uid-superA', 'uid-adminA', 'uid-usurpateur']) {
-      await assertFails(getDoc(doc(ctxDe(uid), 'config/super_admin')));
-      await assertFails(setDoc(doc(ctxDe(uid), 'config/super_admin'), { employeeId: 'usurpateur' }));
+      await assertFails(getDoc(doc(ctxDe(uid), 'config/proprio_app')));
+      await assertFails(setDoc(doc(ctxDe(uid), 'config/proprio_app'), { employeeId: 'usurpateur' }));
     }
   });
 
-  test('super-admin : ne voit pas les données internes des autres compagnies', async () => {
+  test('Proprio : ne voit pas les données internes des autres compagnies', async () => {
     const d = ctxDe('uid-superA');
     await assertFails(getDocs(query(collection(d, 'chantiers'), where('companyId', '==', 'B'))));
     await assertFails(getDocs(query(collection(d, 'employees'), where('companyId', '==', 'B'))));
@@ -156,7 +156,7 @@ describe('Employés', () => {
       { companyId: 'A', nom: 'Nouveau', pin: '4321', role: 'employe', estProprietaire: false }));
   });
 
-  test('[anciennes versions] création refusée : non-admin, autre compagnie, propriétaire, super-admin, courriel, NIP invalide', async () => {
+  test('[anciennes versions] création refusée : non-admin, autre compagnie, propriétaire, Proprio, courriel, NIP invalide', async () => {
     const ok = { companyId: 'A', nom: 'N', pin: '4321', role: 'employe', estProprietaire: false };
     await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'employees'), ok));
     await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'employees'), { ...ok, companyId: 'B' }));
@@ -173,7 +173,7 @@ describe('Employés', () => {
     await assertSucceeds(updateDoc(doc(ctxDe('uid-adminA'), 'employees/empA'), { nom: 'Emp A2', pin: '5555', role: 'plus' }));
   });
 
-  test('[anciennes versions] modification refusée : propriétaire rétrogradé, super-admin, champs protégés', async () => {
+  test('[anciennes versions] modification refusée : propriétaire rétrogradé, Proprio, champs protégés', async () => {
     const d = ctxDe('uid-adminA');
     await assertFails(updateDoc(doc(d, 'employees/adminA'), { nom: 'Admin A', pin: '1111', role: 'employe' }));
     await assertFails(updateDoc(doc(d, 'employees/superA'), { nom: 'Super A', pin: '1111', role: 'employe' }));
@@ -186,7 +186,7 @@ describe('Employés', () => {
     await assertFails(updateDoc(doc(ctxDe('uid-adminB'), 'employees/empA'), { nom: 'Piraté' }));
   });
 
-  test('[anciennes versions] suppression : employé OK ; propriétaire, super-admin, soi-même, autre compagnie refusés', async () => {
+  test('[anciennes versions] suppression : employé OK ; propriétaire, Proprio, soi-même, autre compagnie refusés', async () => {
     const d = ctxDe('uid-adminA');
     await assertFails(deleteDoc(doc(d, 'employees/adminA')));
     await assertFails(deleteDoc(doc(d, 'employees/superA')));

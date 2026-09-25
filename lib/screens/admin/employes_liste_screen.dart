@@ -1,15 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../services/app_session.dart';
+import '../../services/fonctions.dart';
 import 'employe_formulaire_screen.dart';
 
 class EmployesListeScreen extends StatelessWidget {
   const EmployesListeScreen({super.key});
 
   String _libelleRole(Map<String, dynamic> data) {
-    if (data['estProprietaire'] == true) return 'Propriétaire';
+    if (data['estProprietaire'] == true) return 'Super-admin';
     switch (data['role']) {
       case 'admin':
         return 'Administrateur';
@@ -50,24 +50,15 @@ class EmployesListeScreen extends StatelessWidget {
               Navigator.pop(ctx);
               // Protection du propriétaire et nettoyage des sessions : côté serveur.
               try {
-                await FirebaseFunctions.instance
-                    .httpsCallable('supprimerEmploye')
-                    .call({'employeeId': docId});
-              } on FirebaseFunctionsException catch (e) {
+                await Fonctions.appeler('supprimerEmploye', {
+                  'employeeId': docId,
+                });
+              } catch (e) {
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                      content: Text(e.message ?? 'Erreur lors du retrait.'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              } catch (_) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
                       content: Text(
-                        'Erreur lors du retrait. Vérifiez votre réseau.',
+                        Fonctions.message(e, 'Erreur lors du retrait.'),
                       ),
                       backgroundColor: Colors.red,
                     ),
@@ -132,7 +123,33 @@ class EmployesListeScreen extends StatelessWidget {
                         ),
                       ),
                       title: Text(nom),
-                      subtitle: Text(_libelleRole(data)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(_libelleRole(data)),
+                          if ((data['courriel'] as String?)?.isNotEmpty == true)
+                            Text(
+                              data['courriel'],
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                            )
+                          else
+                            const Text(
+                              'Courriel à ajouter',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange,
+                              ),
+                            ),
+                          if (data['nipRefuse'] == true)
+                            const Text(
+                              'NIP refusé (déjà utilisé) : envoyez-lui un nouveau NIP',
+                              style: TextStyle(fontSize: 12, color: Colors.red),
+                            ),
+                        ],
+                      ),
                       trailing: PopupMenuButton<String>(
                         onSelected: (valeur) {
                           if (valeur == 'modifier') {

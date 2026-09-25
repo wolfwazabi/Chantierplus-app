@@ -9,13 +9,17 @@ rules_version = '2';
 //    n'est valide que si l'employé existe encore, appartient toujours à la même
 //    compagnie et que la compagnie est approuvée : une suppression d'employé,
 //    un changement de rôle ou un refus de compagnie prend effet immédiatement.
-//  - Super-admin : UN SEUL pour toute l'app, la fiche employé désignée dans
-//    config/super_admin (écrit à la main dans la console), connectée par
-//    courriel + NIP.
+//  - Proprio de l'app (vous) : UN SEUL compte pour toute l'app, la fiche
+//    employé désignée dans config/proprio_app (écrit à la main dans la
+//    console), connectée par courriel + NIP. Gère les compagnies inscrites.
 //  - Particulier : compte courriel/mot de passe, données sous son uid.
 //
-// Rôles : admin (gestion complète), plus (contremaître : chantiers, photos,
-// travaux, matériel), employe (feuille de temps seulement).
+// Rôles dans une compagnie (codes stockés → noms affichés) :
+//  - admin + estProprietaire → « Super-admin » (propriétaire de la compagnie,
+//    ne peut être ni rétrogradé ni retiré) ;
+//  - admin → « Admin » (personnel de bureau, gestion complète) ;
+//  - plus → « Contremaître » (chefs de chantier : photos, travaux, matériel) ;
+//  - employe → « Employé » (feuille de temps seulement).
 //
 // Rappel : les règles ne filtrent pas les requêtes. Toute requête client DOIT
 // contenir where('companyId', isEqualTo: ...) sinon elle est refusée en bloc.
@@ -100,22 +104,22 @@ service cloud.firestore {
       return membreDe(companyId) && moi().role in ['admin', 'plus'];
     }
 
-    // Un seul super-admin pour toute l'app : la fiche employé désignée dans
-    // config/super_admin { employeeId } (écrit à la main dans la console).
-    function cheminSuperAdmin() {
-      return /databases/$(database)/documents/config/super_admin;
+    // Un seul Proprio pour toute l'app : la fiche employé désignée dans
+    // config/proprio_app { employeeId } (écrit à la main dans la console).
+    function cheminProprioApp() {
+      return /databases/$(database)/documents/config/proprio_app;
     }
 
-    function estLeSuperAdmin(employeeId) {
-      return exists(cheminSuperAdmin())
-        && get(cheminSuperAdmin()).data.employeeId == employeeId;
+    function estLeProprioApp(employeeId) {
+      return exists(cheminProprioApp())
+        && get(cheminProprioApp()).data.employeeId == employeeId;
     }
 
-    // Pouvoirs super-admin : seulement avec une session ouverte par courriel.
-    function estSuperAdmin() {
+    // Pouvoirs du Proprio : seulement avec une session ouverte par courriel.
+    function estProprioApp() {
       return estEmployeActif()
         && session().get('methode', '') == 'courriel'
-        && estLeSuperAdmin(session().employeeId);
+        && estLeProprioApp(session().employeeId);
     }
 
     // ------------------------------------------------------------- Validation
@@ -179,7 +183,7 @@ service cloud.firestore {
       // [ANCIENNES VERSIONS] À la reconnexion, elles réécrivent leur session
       // avec les mêmes identifiants. Permis seulement sans changement
       // d'identité (la méthode de connexion disparaît : perte des pouvoirs
-      // super-admin, jamais de gain).
+      // du Proprio, jamais de gain).
       allow update: if estAuth() && request.auth.uid == uid
         && request.resource.data.keys().hasOnly(['employeeId', 'companyId'])
         && request.resource.data.employeeId == resource.data.employeeId
@@ -191,8 +195,8 @@ service cloud.firestore {
     // --------------------------------------------------------------- Compagnies
 
     match /companies/{companyId} {
-      allow get: if membreDe(companyId) || estSuperAdmin();
-      allow list: if estSuperAdmin();
+      allow get: if membreDe(companyId) || estProprioApp();
+      allow list: if estProprioApp();
       allow write: if false; // inscrireCompagnie / approuverCompagnie
     }
 
@@ -225,16 +229,16 @@ service cloud.firestore {
         && (!request.resource.data.keys().hasAny(['pin'])
             || (request.resource.data.pin is string
                 && request.resource.data.pin.matches('[0-9]{4,8}')))
-        // Le propriétaire reste admin ; le rôle du super-admin ne change pas.
+        // Le super-admin de la compagnie reste admin ; le rôle du Proprio ne change pas.
         && (resource.data.get('estProprietaire', false) != true
             || request.resource.data.role == 'admin')
-        && (!estLeSuperAdmin(employeeId)
+        && (!estLeProprioApp(employeeId)
             || request.resource.data.role == resource.data.role);
 
       allow delete: if adminDe(resource.data.companyId)
         && employeeId != session().employeeId
         && resource.data.get('estProprietaire', false) != true
-        && !estLeSuperAdmin(employeeId);
+        && !estLeProprioApp(employeeId);
     }
 
     // -------------------------------------------------------------- Particuliers

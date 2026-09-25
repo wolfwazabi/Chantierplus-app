@@ -97,15 +97,15 @@ beforeEach(viderLimites);
 after(async () => { await Promise.all(apps.map((a) => deleteApp(a))); });
 
 // =============================================================================
-describe('Super-admin, inscription et approbation', () => {
-  test('mise en place : compagnie du super-admin (approuvée, config/super_admin posé à la console)', async () => {
+describe('Proprio, inscription et approbation', () => {
+  test('mise en place : compagnie du Proprio (approuvée, config/proprio_app posé à la console)', async () => {
     const a = await appareil();
     ({ numero: numeroS } = await a.appeler('inscrireCompagnie',
       inscription({ nomEntreprise: 'Boréal', nomAdmin: 'Super', emailAdmin: 'super@exemple.ca', pinAdmin: '246810' })));
     const comp = (await adminDb.collection('companies').where('numero', '==', numeroS).get()).docs[0];
     await comp.ref.update({ statut: 'approuvee' });
     const proprio = (await adminDb.collection('employees').where('companyId', '==', comp.id).get()).docs[0];
-    await adminDb.collection('config').doc('super_admin').set({ employeeId: proprio.id });
+    await adminDb.collection('config').doc('proprio_app').set({ employeeId: proprio.id });
   });
 
   test('inscription : validations (NIP, courriel, longueur)', async () => {
@@ -140,9 +140,9 @@ describe('Super-admin, inscription et approbation', () => {
     await rejette(a.appeler('connexionEmploye', { numeroCompagnie: numero, courriel: 'proprio@exemple.ca', pin: '1234' }), 'not-found');
   });
 
-  test('super-admin par NIP seul : pas de pouvoirs ; un admin ordinaire non plus', async () => {
+  test('Proprio par NIP seul : pas de pouvoirs ; un admin ordinaire non plus', async () => {
     const parNip = await connecter(numeroS, '246810');
-    assert.equal(parNip.profil.estSuperAdmin, false);
+    assert.equal(parNip.profil.estProprioApp, false);
     await rejette(parNip.appeler('approuverCompagnie', { companyId, approuver: true }), 'permission-denied');
     await assert.rejects(getDocs(collection(parNip.db, 'companies')));
   });
@@ -154,14 +154,14 @@ describe('Super-admin, inscription et approbation', () => {
       superAdmin: true, pinHash: hacher(comp.id, '112233'),
     });
     const u = await connecter(numeroS, '112233', 'usurpateur@exemple.ca');
-    assert.equal(u.profil.estSuperAdmin, false);
+    assert.equal(u.profil.estProprioApp, false);
     await rejette(u.appeler('approuverCompagnie', { companyId, approuver: true }), 'permission-denied');
     await assert.rejects(getDocs(collection(u.db, 'companies')));
   });
 
-  test('super-admin par courriel : approuve une seule fois ; le propriétaire est avisé', async () => {
+  test('Proprio par courriel : approuve une seule fois ; le propriétaire est avisé', async () => {
     const s = await connecter(numeroS, '246810', 'super@exemple.ca');
-    assert.equal(s.profil.estSuperAdmin, true);
+    assert.equal(s.profil.estProprioApp, true);
     assert.ok((await getDocs(collection(s.db, 'companies'))).size >= 2);
     await rejette(s.appeler('approuverCompagnie', { companyId, approuver: 'oui' }), 'invalid-argument');
     assert.deepEqual(await s.appeler('approuverCompagnie', { companyId, approuver: true }), { ok: true });
@@ -354,7 +354,7 @@ describe('Retrait, protections et isolation', () => {
   let proprio;
   before(async () => { proprio = await connecter(numero, '1234', 'proprio@exemple.ca'); });
 
-  test('propriétaire et super-admin : ne peuvent pas être retirés', async () => {
+  test('propriétaire et Proprio : ne peuvent pas être retirés', async () => {
     const { id: adminId, nipTemporaire } = await proprio.appeler('enregistrerEmploye',
       { nom: 'Second admin', courriel: 'admin2@exemple.ca', role: 'admin' });
     assert.equal(nipTemporaire, undefined);
@@ -423,7 +423,7 @@ describe('Compatibilité : anciennes versions de l\'app', () => {
 
 // =============================================================================
 describe('Migration et limites', () => {
-  test('migrerNips : super-admin (courriel) seulement', async () => {
+  test('migrerNips : Proprio (courriel) seulement', async () => {
     const ref = await adminDb.collection('employees').add({ companyId, nom: 'Reste', role: 'employe', pin: '3690' });
     const p = await connecter(numero, '1234', 'proprio@exemple.ca');
     await rejette(p.appeler('migrerNips'), 'permission-denied');

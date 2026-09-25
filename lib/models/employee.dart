@@ -7,7 +7,7 @@ class Employee {
   final String nom;
   final EmployeeRole role;
   final bool estProprietaire;
-  final bool estSuperAdmin;
+  final bool estProprioApp;
   final bool estIndividuel;
 
   Employee({
@@ -17,7 +17,7 @@ class Employee {
     required this.nom,
     required this.role,
     this.estProprietaire = false,
-    this.estSuperAdmin = false,
+    this.estProprioApp = false,
     this.estIndividuel = false,
   });
 

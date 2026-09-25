@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+
+import '../../services/fonctions.dart';
 
 class CompagniesAttenteScreen extends StatelessWidget {
   const CompagniesAttenteScreen({super.key});
@@ -11,10 +12,10 @@ class CompagniesAttenteScreen extends StatelessWidget {
     bool approuver,
   ) async {
     try {
-      final callable = FirebaseFunctions.instance.httpsCallable(
-        'approuverCompagnie',
-      );
-      await callable.call({'companyId': companyId, 'approuver': approuver});
+      await Fonctions.appeler('approuverCompagnie', {
+        'companyId': companyId,
+        'approuver': approuver,
+      });
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -27,7 +28,10 @@ class CompagniesAttenteScreen extends StatelessWidget {
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur : $e'), backgroundColor: Colors.red),
+          SnackBar(
+            content: Text(Fonctions.message(e)),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

@@ -1,8 +1,8 @@
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 
 import '../models/employee.dart';
 import '../services/app_session.dart';
+import '../services/fonctions.dart';
 
 const List<String> metiersQuebec = [
   'Charpentier-menuisier',
@@ -49,6 +49,7 @@ class _CompteScreenState extends State<CompteScreen> {
       0; // 0 = connexion compagnie, 1 = inscription compagnie, 2 = individuel
 
   final _numeroCtrl = TextEditingController();
+  final _courrielCtrl = TextEditingController();
   final _pinCtrl = TextEditingController();
   bool _enCours = false;
   String? _erreur;
@@ -74,10 +75,13 @@ class _CompteScreenState extends State<CompteScreen> {
 
   Future<void> _seConnecter() async {
     final numero = _numeroCtrl.text.trim();
+    final courriel = _courrielCtrl.text.trim();
     final pin = _pinCtrl.text.trim();
 
     if (numero.isEmpty || pin.isEmpty) {
-      setState(() => _erreur = 'Veuillez remplir les deux champs.');
+      setState(
+        () => _erreur = 'Entrez votre numéro de compagnie et votre NIP.',
+      );
       return;
     }
 
@@ -86,7 +90,11 @@ class _CompteScreenState extends State<CompteScreen> {
       _erreur = null;
     });
 
-    final erreur = await AppSession.connecterAvecNumeroEtPin(numero, pin);
+    final erreur = await AppSession.connecterEmploye(
+      numeroCompagnie: numero,
+      courriel: courriel,
+      pin: pin,
+    );
 
     if (erreur != null) {
       setState(() {
@@ -97,12 +105,140 @@ class _CompteScreenState extends State<CompteScreen> {
     }
 
     _numeroCtrl.clear();
+    _courrielCtrl.clear();
     _pinCtrl.clear();
     setState(() => _enCours = false);
   }
 
+  @override
+  void dispose() {
+    for (final c in [
+      _numeroCtrl,
+      _courrielCtrl,
+      _pinCtrl,
+      _nomEntrepriseCtrl,
+      _nomLegalCtrl,
+      _telephoneCtrl,
+      _nombreEmployesCtrl,
+      _nomAdminCtrl,
+      _pinAdminCtrl,
+      _emailAdminCtrl,
+      _emailIndividuelCtrl,
+      _motDePasseIndividuelCtrl,
+      _nomIndividuelCtrl,
+    ]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
   Future<void> _seDeconnecter() async {
     await AppSession.deconnecter();
+  }
+
+  void _ouvrirChangementNip() {
+    final actuelCtrl = TextEditingController();
+    final nouveauCtrl = TextEditingController();
+    final confirmationCtrl = TextEditingController();
+    String? erreur;
+    bool enCours = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          Future<void> confirmer() async {
+            final nouveau = nouveauCtrl.text.trim();
+            if (!RegExp(r'^\d{6,8}$').hasMatch(nouveau)) {
+              setDialogState(
+                () =>
+                    erreur = 'Le nouveau NIP doit contenir de 6 à 8 chiffres.',
+              );
+              return;
+            }
+            if (nouveau != confirmationCtrl.text.trim()) {
+              setDialogState(
+                () => erreur = 'La confirmation ne correspond pas.',
+              );
+              return;
+            }
+            setDialogState(() {
+              enCours = true;
+              erreur = null;
+            });
+            final resultat = await AppSession.changerNip(
+              actuelCtrl.text.trim(),
+              nouveau,
+            );
+            if (resultat != null) {
+              setDialogState(() {
+                erreur = resultat;
+                enCours = false;
+              });
+              return;
+            }
+            if (ctx.mounted) Navigator.pop(ctx);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'NIP modifié. Vos autres appareils ont été déconnectés.',
+                  ),
+                  backgroundColor: Colors.green,
+                ),
+              );
+            }
+          }
+
+          InputDecoration champ(String libelle) =>
+              InputDecoration(labelText: libelle, counterText: '');
+
+          return AlertDialog(
+            title: const Text('Changer mon NIP'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: actuelCtrl,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 8,
+                  decoration: champ('NIP actuel'),
+                ),
+                TextField(
+                  controller: nouveauCtrl,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 8,
+                  decoration: champ('Nouveau NIP (6 à 8 chiffres)'),
+                ),
+                TextField(
+                  controller: confirmationCtrl,
+                  keyboardType: TextInputType.number,
+                  obscureText: true,
+                  maxLength: 8,
+                  decoration: champ('Confirmer le nouveau NIP'),
+                ),
+                if (erreur != null) ...[
+                  const SizedBox(height: 8),
+                  Text(erreur!, style: const TextStyle(color: Colors.red)),
+                ],
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: enCours ? null : () => Navigator.pop(ctx),
+                child: const Text('Annuler'),
+              ),
+              FilledButton(
+                onPressed: enCours ? null : confirmer,
+                child: const Text('Confirmer'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
   }
 
   Future<void> _soumettreInscription() async {
@@ -117,9 +253,9 @@ class _CompteScreenState extends State<CompteScreen> {
       );
       return;
     }
-    if (!RegExp(r'^\d{4,8}$').hasMatch(_pinAdminCtrl.text.trim())) {
+    if (!RegExp(r'^\d{6,8}$').hasMatch(_pinAdminCtrl.text.trim())) {
       setState(
-        () => _inscriptionErreur = 'Le NIP doit contenir de 4 à 8 chiffres.',
+        () => _inscriptionErreur = 'Le NIP doit contenir de 6 à 8 chiffres.',
       );
       return;
     }
@@ -145,15 +281,12 @@ class _CompteScreenState extends State<CompteScreen> {
         _numeroAttribue = numero;
         _inscriptionEnCours = false;
       });
-    } on FirebaseFunctionsException catch (e) {
+    } catch (e) {
       setState(() {
-        _inscriptionErreur = e.message ?? 'Erreur lors de l\'inscription.';
-        _inscriptionEnCours = false;
-      });
-    } catch (_) {
-      setState(() {
-        _inscriptionErreur =
-            'Erreur lors de l\'inscription. Vérifiez votre réseau.';
+        _inscriptionErreur = Fonctions.message(
+          e,
+          'Erreur lors de l\'inscription.',
+        );
         _inscriptionEnCours = false;
       });
     }
@@ -196,7 +329,7 @@ class _CompteScreenState extends State<CompteScreen> {
 
   String _libelleRole(Employee employee) {
     if (employee.estIndividuel) return 'Compte individuel';
-    if (employee.estProprietaire) return 'Propriétaire';
+    if (employee.estProprietaire) return 'Super-admin';
     switch (employee.role) {
       case EmployeeRole.admin:
         return 'Administrateur';
@@ -247,7 +380,7 @@ class _CompteScreenState extends State<CompteScreen> {
                       ),
                     ),
                   ],
-                  if (employee.estSuperAdmin) ...[
+                  if (employee.estProprioApp) ...[
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(
@@ -259,7 +392,7 @@ class _CompteScreenState extends State<CompteScreen> {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        'Super Admin',
+                        'Proprio de l\'application',
                         style: TextStyle(
                           color: Colors.purple.shade700,
                           fontSize: 12,
@@ -269,6 +402,17 @@ class _CompteScreenState extends State<CompteScreen> {
                     ),
                   ],
                   const SizedBox(height: 32),
+                  if (!employee.estIndividuel) ...[
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _ouvrirChangementNip,
+                        icon: const Icon(Icons.pin_outlined),
+                        label: const Text('Changer mon NIP'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
@@ -358,6 +502,19 @@ class _CompteScreenState extends State<CompteScreen> {
         ),
         const SizedBox(height: 16),
         TextField(
+          controller: _courrielCtrl,
+          keyboardType: TextInputType.emailAddress,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Courriel',
+            helperText: 'Laissez vide si votre employeur ne l\'a pas encore enregistré.',
+            helperMaxLines: 2,
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.email_outlined),
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
           controller: _pinCtrl,
           keyboardType: TextInputType.number,
           obscureText: true,
@@ -415,9 +572,7 @@ class _CompteScreenState extends State<CompteScreen> {
         content: TextField(
           controller: emailCtrl,
           keyboardType: TextInputType.emailAddress,
-          decoration: const InputDecoration(
-            labelText: 'Votre courriel (propriétaire)',
-          ),
+          decoration: const InputDecoration(labelText: 'Votre courriel'),
         ),
         actions: [
           TextButton(
@@ -427,13 +582,16 @@ class _CompteScreenState extends State<CompteScreen> {
           FilledButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              await AppSession.demanderNumeroCompagnie(emailCtrl.text.trim());
+              final erreur = await AppSession.demanderNumeroCompagnie(
+                emailCtrl.text.trim(),
+              );
               if (!mounted) return;
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
+                SnackBar(
                   content: Text(
-                    'Si ce courriel est associé à une compagnie, vous recevrez un message.',
+                    erreur ?? 'Si ce courriel est associé à une compagnie, vous recevrez un message.',
                   ),
+                  backgroundColor: erreur == null ? null : Colors.red,
                 ),
               );
             },
@@ -479,8 +637,17 @@ class _CompteScreenState extends State<CompteScreen> {
               final numero = numeroCtrl.text.trim();
               final email = emailCtrl.text.trim();
               Navigator.pop(ctx);
-              await AppSession.demanderCodeReinitialisation(numero, email);
+              final erreur = await AppSession.demanderCodeReinitialisation(
+                numero,
+                email,
+              );
               if (!mounted) return;
+              if (erreur != null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(erreur), backgroundColor: Colors.red),
+                );
+                return;
+              }
               _ouvrirSaisieCode(numero, email);
             },
             child: const Text('Recevoir un code'),
@@ -515,7 +682,10 @@ class _CompteScreenState extends State<CompteScreen> {
                 controller: nouveauPinCtrl,
                 keyboardType: TextInputType.number,
                 obscureText: true,
-                decoration: const InputDecoration(labelText: 'Nouveau NIP'),
+                maxLength: 8,
+                decoration: const InputDecoration(
+                  labelText: 'Nouveau NIP (6 à 8 chiffres)',
+                ),
               ),
               if (erreurCode != null) ...[
                 const SizedBox(height: 8),
@@ -663,7 +833,7 @@ class _CompteScreenState extends State<CompteScreen> {
           keyboardType: TextInputType.number,
           obscureText: true,
           decoration: const InputDecoration(
-            labelText: 'Choisissez un NIP',
+            labelText: 'Choisissez un NIP (6 à 8 chiffres)',
             border: OutlineInputBorder(),
           ),
         ),

@@ -1,19 +1,18 @@
 import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/employee.dart';
+import 'fonctions.dart';
 
 /// État de connexion de l'application.
 ///
 /// L'identité n'est jamais déduite de données locales : pour un employé, elle
 /// provient du document sessions/{uid} écrit par la Cloud Function
-/// connexionEmploye ; pour un compte courriel, de Firebase Auth (et du claim
-/// superAdmin pour le super-admin).
+/// connexionEmploye ; pour un particulier, de Firebase Auth.
 class AppSession {
   static final ValueNotifier<Employee?> notifier = ValueNotifier<Employee?>(
     null,
@@ -22,18 +21,17 @@ class AppSession {
 
   static StreamSubscription<DocumentSnapshot>? _ecouteSuppression;
 
-  // Anciennes clés (versions précédentes) : effacées au démarrage.
+  // Clés des versions précédentes : effacées au démarrage.
   static const _anciennesCles = ['employee_id', 'company_id', 'is_individuel'];
 
   static bool get estConnecte => current != null;
-  static bool get estSuperAdmin => current?.estSuperAdmin == true;
+  static bool get estProprioApp => current?.estProprioApp == true;
   static bool get estAdmin => current?.role == EmployeeRole.admin;
   static bool get estProprietaire => current?.estProprietaire == true;
   static bool get estPlusOuAdmin =>
       current?.role == EmployeeRole.admin || current?.role == EmployeeRole.plus;
 
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
-  static FirebaseFunctions get _fonctions => FirebaseFunctions.instance;
 
   // ==================== RECONNEXION AUTOMATIQUE ====================
 
@@ -46,7 +44,7 @@ class AppSession {
       if (user.isAnonymous) {
         await _restaurerSessionEmploye(user.uid);
       } else {
-        await _restaurerCompteCourriel(user);
+        await _restaurerIndividu(user);
       }
     } catch (_) {
       // Pas de réseau ou session invalide : on reste déconnecté.
@@ -55,10 +53,9 @@ class AppSession {
   }
 
   static Future<void> _restaurerSessionEmploye(String uid) async {
-    final session = await _db.collection('sessions').doc(uid).get();
-    final data = session.data();
-    final employeeId = data?['employeeId'] as String?;
-    final companyId = data?['companyId'] as String?;
+    final session = (await _db.collection('sessions').doc(uid).get()).data();
+    final employeeId = session?['employeeId'] as String?;
+    final companyId = session?['companyId'] as String?;
     if (employeeId == null || companyId == null) return;
 
     // Les règles refusent ces lectures si l'employé a été retiré ou si la
@@ -67,24 +64,23 @@ class AppSession {
     final companyDoc = await _db.collection('companies').doc(companyId).get();
     if (!empDoc.exists || !companyDoc.exists) return;
 
-    final empData = empDoc.data()!;
+    final emp = empDoc.data()!;
     notifier.value = Employee(
       id: employeeId,
       companyId: companyId,
       companyNom: companyDoc.data()!['nomEntreprise'],
-      nom: empData['nom'] ?? '',
-      role: Employee.roleFromString(empData['role']),
-      estProprietaire: empData['estProprietaire'] == true,
+      nom: emp['nom'] ?? '',
+      role: Employee.roleFromString(emp['role']),
+      estProprietaire: emp['estProprietaire'] == true,
+      // Indicatif pour l'interface (écrit par le serveur à la connexion) ; les
+      // règles et les fonctions revérifient config/proprio_app à chaque requête.
+      estProprioApp:
+          session?['proprioApp'] == true && session?['methode'] == 'courriel',
     );
     _demarrerEcouteSuppression(employeeId);
   }
 
-  static Future<void> _restaurerCompteCourriel(User user) async {
-    final jeton = await user.getIdTokenResult(true);
-    if (jeton.claims?['superAdmin'] == true) {
-      notifier.value = _superAdmin(user);
-      return;
-    }
+  static Future<void> _restaurerIndividu(User user) async {
     final doc = await _db.collection('individus').doc(user.uid).get();
     notifier.value = Employee(
       id: user.uid,
@@ -96,23 +92,15 @@ class AppSession {
     );
   }
 
-  static Employee _superAdmin(User user) => Employee(
-    id: user.uid,
-    companyId: null,
-    companyNom: null,
-    nom: user.displayName?.isNotEmpty == true
-        ? user.displayName!
-        : (user.email ?? 'Super-admin'),
-    role: EmployeeRole.employe,
-    estSuperAdmin: true,
-  );
+  // ==================== CONNEXION COMPAGNIE ====================
 
-  // ==================== CONNEXION COMPAGNIE (numéro + NIP) ====================
-
-  static Future<String?> connecterAvecNumeroEtPin(
-    String numeroCompagnie,
-    String pin,
-  ) async {
+  /// Connexion par numéro de compagnie + courriel + NIP. Le courriel peut être
+  /// vide pour un employé dont l'employeur ne l'a pas encore enregistré.
+  static Future<String?> connecterEmploye({
+    required String numeroCompagnie,
+    required String courriel,
+    required String pin,
+  }) async {
     try {
       // La connexion employé exige un compte anonyme (voir connexionEmploye).
       final user = FirebaseAuth.instance.currentUser;
@@ -120,37 +108,26 @@ class AppSession {
         await FirebaseAuth.instance.signOut();
         await FirebaseAuth.instance.signInAnonymously();
       }
-      final resultat = await _fonctions.httpsCallable('connexionEmploye').call({
+      final data = await Fonctions.appeler('connexionEmploye', {
         'numeroCompagnie': numeroCompagnie,
+        if (courriel.isNotEmpty) 'courriel': courriel,
         'pin': pin,
       });
 
-      final data = Map<String, dynamic>.from(resultat.data);
       final employee = Employee(
         id: data['id'],
         companyId: data['companyId'],
         companyNom: data['companyNom'],
-        nom: data['nom'],
+        nom: data['nom'] ?? '',
         role: Employee.roleFromString(data['role']),
         estProprietaire: data['estProprietaire'] == true,
+        estProprioApp: data['estProprioApp'] == true,
       );
-
       notifier.value = employee;
       _demarrerEcouteSuppression(employee.id);
       return null;
-    } on FirebaseFunctionsException catch (e) {
-      switch (e.code) {
-        case 'not-found':
-        case 'resource-exhausted':
-        case 'failed-precondition':
-          return e.message ?? 'Numéro de compagnie ou NIP invalide.';
-        case 'invalid-argument':
-          return 'Veuillez remplir les deux champs.';
-        default:
-          return 'Erreur de connexion. Réessayez plus tard.';
-      }
-    } catch (_) {
-      return 'Erreur de connexion. Vérifiez votre réseau.';
+    } catch (e) {
+      return Fonctions.message(e, 'Erreur de connexion. Réessayez plus tard.');
     }
   }
 
@@ -164,7 +141,7 @@ class AppSession {
     required String pinAdmin,
     required String emailAdmin,
   }) async {
-    final resultat = await _fonctions.httpsCallable('inscrireCompagnie').call({
+    final data = await Fonctions.appeler('inscrireCompagnie', {
       'nomEntreprise': nomEntreprise,
       'nomLegal': nomLegal,
       'secteur': secteur,
@@ -174,29 +151,47 @@ class AppSession {
       'pinAdmin': pinAdmin,
       'emailAdmin': emailAdmin,
     });
-    final data = Map<String, dynamic>.from(resultat.data);
     return data['numero'];
   }
 
-  // ==================== RÉCUPÉRATION (compagnie) ====================
-  // TODO : les Cloud Functions recupererNumeroCompagnie,
-  // demanderReinitialisationNip et validerReinitialisationNip n'existent pas
-  // encore côté serveur ; ces appels échouent tant qu'elles ne sont pas écrites.
+  // ==================== NIP ====================
 
-  static Future<void> demanderNumeroCompagnie(String email) async {
-    await _fonctions.httpsCallable('recupererNumeroCompagnie').call({
-      'email': email,
-    });
+  static Future<String?> changerNip(String nipActuel, String nouveauNip) async {
+    try {
+      await Fonctions.appeler('changerNip', {
+        'nipActuel': nipActuel,
+        'nouveauNip': nouveauNip,
+      });
+      return null;
+    } catch (e) {
+      return Fonctions.message(e, 'Impossible de changer le NIP.');
+    }
   }
 
-  static Future<void> demanderCodeReinitialisation(
+  /// Retourne null si la demande est partie, sinon un message d'erreur.
+  static Future<String?> demanderNumeroCompagnie(String email) async {
+    try {
+      await Fonctions.appeler('recupererNumeroCompagnie', {'email': email});
+      return null;
+    } catch (e) {
+      return Fonctions.message(e);
+    }
+  }
+
+  /// Retourne null si la demande est partie, sinon un message d'erreur.
+  static Future<String?> demanderCodeReinitialisation(
     String numeroCompagnie,
     String email,
   ) async {
-    await _fonctions.httpsCallable('demanderReinitialisationNip').call({
-      'numeroCompagnie': numeroCompagnie,
-      'email': email,
-    });
+    try {
+      await Fonctions.appeler('demanderReinitialisationNip', {
+        'numeroCompagnie': numeroCompagnie,
+        'email': email,
+      });
+      return null;
+    } catch (e) {
+      return Fonctions.message(e);
+    }
   }
 
   static Future<String?> validerReinitialisation({
@@ -206,21 +201,19 @@ class AppSession {
     required String nouveauPin,
   }) async {
     try {
-      await _fonctions.httpsCallable('validerReinitialisationNip').call({
+      await Fonctions.appeler('validerReinitialisationNip', {
         'numeroCompagnie': numeroCompagnie,
         'email': email,
         'code': code,
         'nouveauPin': nouveauPin,
       });
       return null;
-    } on FirebaseFunctionsException catch (e) {
-      return e.message ?? 'Erreur de réinitialisation.';
-    } catch (_) {
-      return 'Erreur de réinitialisation. Réessayez plus tard.';
+    } catch (e) {
+      return Fonctions.message(e, 'Erreur de réinitialisation.');
     }
   }
 
-  // ==================== COMPTE COURRIEL (particulier / super-admin) ====================
+  // ==================== PARTICULIER (courriel + mot de passe) ====================
 
   static Future<String?> inscrireIndividuel(
     String nom,
@@ -228,19 +221,18 @@ class AppSession {
     String motDePasse,
   ) async {
     try {
+      await _supprimerSessionEmploye();
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(
         email: email.trim(),
         password: motDePasse,
       );
       final user = cred.user!;
 
-      // Le courriel enregistré doit correspondre exactement à celui du jeton
-      // (Firebase le normalise en minuscules) : exigé par les règles.
+      // Courriel tel que normalisé par Firebase (exigé par les règles).
       await _db.collection('individus').doc(user.uid).set({
         'nom': nom.trim(),
         'email': user.email,
       });
-
       try {
         await user.sendEmailVerification();
       } catch (_) {}
@@ -275,23 +267,12 @@ class AppSession {
     String motDePasse,
   ) async {
     try {
-      // Quitter la session employé éventuelle avant de changer de compte.
       await _supprimerSessionEmploye();
       final cred = await FirebaseAuth.instance.signInWithEmailAndPassword(
         email: email.trim(),
         password: motDePasse,
       );
-      final user = cred.user!;
-
-      // Active le claim super-admin si ce compte est celui configuré côté
-      // serveur (refus silencieux pour tous les autres comptes).
-      if (user.emailVerified) {
-        try {
-          await _fonctions.httpsCallable('activerSuperAdmin').call();
-        } catch (_) {}
-      }
-
-      await _restaurerCompteCourriel(user);
+      await _restaurerIndividu(cred.user!);
       return null;
     } on FirebaseAuthException catch (e) {
       switch (e.code) {
