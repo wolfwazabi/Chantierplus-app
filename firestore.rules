@@ -339,6 +339,36 @@ service cloud.firestore {
       allow delete: if gestionnaireDe(resource.data.companyId);
     }
 
+    // ------------------------------------------------ Documents de chantier
+    // Plans, devis, photos, etc. Consultés par les admins et contremaîtres ;
+    // déposés et supprimés par les admins (dont le super-admin) seulement.
+    // Le fichier lui-même est dans Storage (voir storage.rules).
+
+    match /chantier_documents/{documentId} {
+      allow read: if gestionnaireDe(resource.data.companyId);
+
+      allow create: if adminDe(request.resource.data.companyId)
+        && champsPermis(request.resource.data,
+             ['companyId', 'chantierId', 'nom', 'cheminStorage', 'url',
+              'taille', 'typeMime', 'ajoutePar', 'dateAjout'])
+        && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
+        && texte(request.resource.data.nom, 1, 200)
+        && request.resource.data.cheminStorage is string
+        && request.resource.data.cheminStorage.matches(
+             'chantiers/' + request.resource.data.companyId + '/'
+             + request.resource.data.chantierId + '/documents/[^/]{1,250}')
+        && urlStorage(request.resource.data.url)
+        && request.resource.data.taille is int
+        && request.resource.data.taille > 0
+        && request.resource.data.taille <= 50 * 1024 * 1024
+        && texte(request.resource.data.typeMime, 1, 150)
+        && request.resource.data.ajoutePar == session().employeeId
+        && request.resource.data.dateAjout == request.time;
+
+      allow update: if false;
+      allow delete: if adminDe(resource.data.companyId);
+    }
+
     // ---------------------------------------------------------- Feuilles de temps
 
     // Identifiant : {employeeId}_{AAAA-MM-JJ} (lundi de la semaine).

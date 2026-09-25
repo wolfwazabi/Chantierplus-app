@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
 import 'chantiers_gestion_screen.dart';
+import 'documents_admin_screen.dart';
 
 class AdminHomeScreen extends StatelessWidget {
   const AdminHomeScreen({super.key});
@@ -40,6 +41,20 @@ class AdminHomeScreen extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => ChantiersGestionScreen()),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: const Icon(Icons.folder_open, color: Colors.orange),
+            title: const Text('Documents des chantiers'),
+            subtitle: const Text('Déposer des plans, devis, photos…'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const DocumentsAdminScreen()),
               );
             },
           ),

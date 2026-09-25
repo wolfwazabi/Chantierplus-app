@@ -313,6 +313,59 @@ describe('Travaux / matériel (admin et contremaître seulement)', () => {
 });
 
 // =============================================================================
+describe('Documents de chantier (dépôt : admin ; consultation : admin et contremaître)', () => {
+  const document = (over = {}) => ({
+    companyId: 'A', chantierId: 'chA', nom: 'Devis toiture.xlsx',
+    cheminStorage: 'chantiers/A/chA/documents/171_Devis_toiture.xlsx',
+    url: 'https://firebasestorage.googleapis.com/v0/b/x/o/devis.xlsx',
+    taille: 20480, typeMime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    ajoutePar: 'adminA', dateAjout: serverTimestamp(), ...over,
+  });
+  const lister = (uid, cid = 'A') => getDocs(query(collection(ctxDe(uid), 'chantier_documents'),
+    where('companyId', '==', cid), where('chantierId', '==', cid === 'A' ? 'chA' : 'chB')));
+
+  test('admin et Proprio (admin de sa compagnie) : déposent et suppriment', async () => {
+    await assertSucceeds(addDoc(collection(ctxDe('uid-adminA'), 'chantier_documents'), document()));
+    await assertSucceeds(addDoc(collection(ctxDe('uid-superA'), 'chantier_documents'),
+      document({ ajoutePar: 'superA' })));
+    await assertSucceeds(deleteDoc(doc(ctxDe('uid-adminA'), 'chantier_documents/dA')));
+  });
+
+  test('contremaître : consulte, mais ne dépose ni ne supprime', async () => {
+    await assertSucceeds(lister('uid-plusA'));
+    await assertSucceeds(getDoc(doc(ctxDe('uid-plusA'), 'chantier_documents/dA')));
+    await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'chantier_documents'), document({ ajoutePar: 'plusA' })));
+    await assertFails(deleteDoc(doc(ctxDe('uid-plusA'), 'chantier_documents/dA')));
+  });
+
+  test('employé : aucun accès', async () => {
+    await assertFails(lister('uid-empA'));
+    await assertFails(getDoc(doc(ctxDe('uid-empA'), 'chantier_documents/dA')));
+  });
+
+  test('autre compagnie : ni lecture, ni dépôt, ni suppression', async () => {
+    await assertFails(getDoc(doc(ctxDe('uid-adminB'), 'chantier_documents/dA')));
+    await assertFails(lister('uid-adminB', 'A'));
+    await assertFails(deleteDoc(doc(ctxDe('uid-adminB'), 'chantier_documents/dA')));
+    await assertFails(addDoc(collection(ctxDe('uid-adminB'), 'chantier_documents'), document({ ajoutePar: 'adminB' })));
+  });
+
+  test("refusé : chemin incohérent, chantier d'une autre compagnie, taille, auteur ou date falsifiés, champ inconnu", async () => {
+    const col = collection(ctxDe('uid-adminA'), 'chantier_documents');
+    await assertFails(addDoc(col, document({ cheminStorage: 'chantiers/A/chA/photos/x.pdf' })));
+    await assertFails(addDoc(col, document({ cheminStorage: 'chantiers/B/chB/documents/x.pdf' })));
+    await assertFails(addDoc(col, document({ chantierId: 'chB', cheminStorage: 'chantiers/A/chB/documents/x.pdf' })));
+    await assertFails(addDoc(col, document({ taille: 60 * 1024 * 1024 })));
+    await assertFails(addDoc(col, document({ taille: 0 })));
+    await assertFails(addDoc(col, document({ ajoutePar: 'empA' })));
+    await assertFails(addDoc(col, document({ dateAjout: new Date('2020-01-01') })));
+    await assertFails(addDoc(col, document({ url: 'https://evil.example.com/x.pdf' })));
+    await assertFails(addDoc(col, document({ public: true })));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'chantier_documents/dA'), { nom: 'Renommé.pdf' }));
+  });
+});
+
+// =============================================================================
 describe('Feuilles de temps — employé', () => {
   const feuille = (lundiDate, over = {}) => ({
     companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',

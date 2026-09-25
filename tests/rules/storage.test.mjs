@@ -13,12 +13,61 @@ beforeEach(async () => {
   await env.withSecurityRulesDisabled(async (ctx) => {
     await uploadBytes(ref(ctx.storage(), 'chantiers/A/chA/photos/existante.jpg'), IMAGE, JPEG);
     await uploadBytes(ref(ctx.storage(), 'chantiers/B/chB/photos/secrete.jpg'), IMAGE, JPEG);
+    await uploadBytes(ref(ctx.storage(), 'chantiers/A/chA/documents/plan.pdf'), IMAGE, PDF);
   });
 });
 
 const IMAGE = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
 const JPEG = { contentType: 'image/jpeg' };
+const PDF = { contentType: 'application/pdf' };
+const XLSX = { contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+const DOCX = { contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+const BINAIRE = { contentType: 'application/octet-stream' };
 const st = (ctx) => ctx.storage();
+
+describe('Storage — documents de chantier', () => {
+  test('admin : dépose PDF, Excel, Word, images et plans', async () => {
+    const s = st(employe(env, 'uid-adminA'));
+    for (const [nom, meta] of [['a.pdf', PDF], ['b.xlsx', XLSX], ['c.docx', DOCX], ['d.JPG', JPEG],
+      ['e.png', { contentType: 'image/png' }], ['f.dwg', BINAIRE], ['g.csv', { contentType: 'text/csv' }]]) {
+      await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/documents/' + nom), IMAGE, meta));
+    }
+  });
+
+  test('refusé : HTML, SVG, JavaScript, exécutable, extension inconnue, > 50 Mo, écrasement', async () => {
+    const s = st(employe(env, 'uid-adminA'));
+    const refuser = (nom, meta, donnees = IMAGE) =>
+      assertFails(uploadBytes(ref(s, 'chantiers/A/chA/documents/' + nom), donnees, meta));
+    await refuser('page.html', { contentType: 'text/html' });
+    await refuser('page.pdf', { contentType: 'text/html' });
+    await refuser('image.svg', { contentType: 'image/svg+xml' });
+    await refuser('script.js', { contentType: 'text/javascript' });
+    await refuser('virus.exe', { contentType: 'application/x-msdownload' });
+    await refuser('virus.exe', BINAIRE);
+    await refuser('sans_extension', PDF);
+    await refuser('gros.pdf', PDF, new Uint8Array(50 * 1024 * 1024 + 1));
+    await refuser('plan.pdf', PDF);
+  });
+
+  test('contremaître : lit, mais ne dépose ni ne supprime', async () => {
+    const s = st(employe(env, 'uid-plusA'));
+    await assertSucceeds(getBytes(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
+    await assertFails(uploadBytes(ref(s, 'chantiers/A/chA/documents/x.pdf'), IMAGE, PDF));
+    await assertFails(deleteObject(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
+  });
+
+  test('employé et autre compagnie : aucun accès', async () => {
+    await assertFails(getBytes(ref(st(employe(env, 'uid-empA')), 'chantiers/A/chA/documents/plan.pdf')));
+    await assertFails(getBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/documents/plan.pdf')));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/documents/x.pdf'), IMAGE, PDF));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminA')), 'chantiers/A/chB/documents/x.pdf'), IMAGE, PDF));
+    await assertFails(deleteObject(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/documents/plan.pdf')));
+  });
+
+  test('admin : supprime', async () => {
+    await assertSucceeds(deleteObject(ref(st(employe(env, 'uid-adminA')), 'chantiers/A/chA/documents/plan.pdf')));
+  });
+});
 
 describe('Storage — photos de chantier', () => {
   test('contremaître A : téléverse dans son chantier (photos, travaux, matériel)', async () => {

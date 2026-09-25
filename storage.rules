@@ -1,14 +1,17 @@
 rules_version = '2';
 
 // =============================================================================
-// Règles Cloud Storage — photos de chantier
+// Règles Cloud Storage — fichiers de chantier
 //
 // Chemin : chantiers/{companyId}/{chantierId}/{type}/{fichier}
-//   type ∈ photos | chantier_travaux | chantier_materiel
+//   type ∈ photos | chantier_travaux | chantier_materiel : images, admin et
+//          contremaître ;
+//   type == documents : plans, devis, etc. Lecture admin et contremaître,
+//          dépôt et suppression par les admins (dont le super-admin).
 //
 // L'appartenance à la compagnie est vérifiée dans Firestore (même modèle que
-// firestore.rules : session écrite par le serveur + employé existant, admin
-// ou contremaître + compagnie approuvée + chantier de la compagnie).
+// firestore.rules : session écrite par le serveur + employé existant de la
+// compagnie avec le bon rôle + compagnie approuvée + chantier de la compagnie).
 //
 // Note : une URL obtenue par getDownloadURL() contient un jeton d'accès qui
 // contourne ces règles en lecture. Ne jamais exposer ces URL hors compagnie.
@@ -17,20 +20,29 @@ rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
 
-    function estGestionnaireDe(companyId) {
+    function employeDe(companyId, roles) {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == 'anonymous'
         && firestore.exists(/databases/(default)/documents/sessions/$(request.auth.uid))
-        && sessionValide(firestore.get(/databases/(default)/documents/sessions/$(request.auth.uid)).data, companyId);
+        && sessionValide(firestore.get(/databases/(default)/documents/sessions/$(request.auth.uid)).data,
+                         companyId, roles);
     }
 
-    function sessionValide(s, companyId) {
+    function sessionValide(s, companyId, roles) {
       return s.companyId == companyId
         && firestore.exists(/databases/(default)/documents/employees/$(s.employeeId))
         && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.companyId == companyId
-        // Photos, travaux et matériel : admin et contremaître seulement.
-        && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.role in ['admin', 'plus']
+        && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.role in roles
         && firestore.get(/databases/(default)/documents/companies/$(companyId)).data.statut == 'approuvee';
+    }
+
+    // Admin ou contremaître.
+    function gestionnaireDe(companyId) {
+      return employeDe(companyId, ['admin', 'plus']);
+    }
+
+    function adminDe(companyId) {
+      return employeDe(companyId, ['admin']);
     }
 
     function chantierDe(chantierId, companyId) {
@@ -38,22 +50,62 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/chantiers/$(chantierId)).data.companyId == companyId;
     }
 
+    // ------------------------------------------------ Photos (travaux, matériel)
+
     match /chantiers/{companyId}/{chantierId}/{type}/{fichier} {
-      allow read: if estGestionnaireDe(companyId);
+      allow read, delete: if type in ['photos', 'chantier_travaux', 'chantier_materiel']
+        && gestionnaireDe(companyId);
 
       // Création seulement. Dans Storage, réécrire un objet existant passe par
       // « create » (update ne couvre que les métadonnées) : resource == null
       // empêche l'écrasement.
       allow create: if resource == null
-        && estGestionnaireDe(companyId)
         && type in ['photos', 'chantier_travaux', 'chantier_materiel']
+        && gestionnaireDe(companyId)
         && chantierDe(chantierId, companyId)
         && request.resource.size > 0
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|heic)');
 
       allow update: if false;
-      allow delete: if estGestionnaireDe(companyId);
+    }
+
+    // ------------------------------------------------------------- Documents
+
+    // Formats de bureau, images et plans courants. Refusés volontairement :
+    // HTML, SVG, XML, JavaScript et exécutables, qui pourraient servir à
+    // l'hameçonnage ou à diffuser un logiciel malveillant depuis le lien.
+    function extensionPermise(nom) {
+      return nom.lower().matches(
+        '.+[.](pdf|doc|docx|xls|xlsx|xlsm|ppt|pptx|odt|ods|odp|rtf|txt|csv'
+        + '|jpg|jpeg|png|webp|heic|heif|gif|tif|tiff|bmp'
+        + '|dwg|dxf|dwf|ifc|rvt|skp|zip)');
+    }
+
+    // Liste exacte (paramètres « ; charset=… » tolérés). Ne pas chercher
+    // « xml » partout : les formats Office s'appellent vnd.openxmlformats-….
+    function typeDangereux(contentType) {
+      return contentType.lower().matches(
+        '(text/html|application/xhtml[+]xml|image/svg[+]xml|text/xml|application/xml'
+        + '|text/javascript|application/javascript|application/x-javascript|application/ecmascript'
+        + '|application/x-msdownload|application/x-msdos-program|application/x-msi'
+        + '|application/x-sh|application/x-executable|application/vnd[.]microsoft[.]portable-executable)'
+        + '( *;.*)?');
+    }
+
+    match /chantiers/{companyId}/{chantierId}/documents/{fichier} {
+      allow read: if gestionnaireDe(companyId);
+
+      allow create: if resource == null
+        && adminDe(companyId)
+        && chantierDe(chantierId, companyId)
+        && extensionPermise(fichier)
+        && !typeDangereux(request.resource.contentType)
+        && request.resource.size > 0
+        && request.resource.size <= 50 * 1024 * 1024;
+
+      allow update: if false;
+      allow delete: if adminDe(companyId);
     }
 
     // Tout le reste est refusé.

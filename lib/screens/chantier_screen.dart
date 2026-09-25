@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
+import 'documents/documents_chantier.dart';
 
 class ChantierScreen extends StatefulWidget {
   const ChantierScreen({super.key});
@@ -81,7 +82,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
             }
 
             return DefaultTabController(
-              length: 3,
+              length: 4,
               child: Column(
                 children: [
                   Padding(
@@ -107,10 +108,13 @@ class _ChantierScreenState extends State<ChantierScreen> {
                   ),
                   const TabBar(
                     labelColor: Colors.orange,
+                    isScrollable: true,
+                    tabAlignment: TabAlignment.center,
                     tabs: [
                       Tab(icon: Icon(Icons.photo_camera), text: 'Photos'),
                       Tab(icon: Icon(Icons.assignment), text: 'Travaux'),
                       Tab(icon: Icon(Icons.shopping_cart), text: 'Matériel'),
+                      Tab(icon: Icon(Icons.folder_open), text: 'Documents'),
                     ],
                   ),
                   Expanded(
@@ -142,6 +146,13 @@ class _ChantierScreenState extends State<ChantierScreen> {
                           libelleActif: 'Remettre comme manquant',
                           icone: Icons.shopping_cart,
                           avecQuantite: true,
+                        ),
+                        // Consultation seulement : le dépôt se fait dans l'onglet Admin.
+                        DocumentsChantier(
+                          key: ValueKey('docs_${_chantierSelectionne!.id}'),
+                          companyId: companyId,
+                          chantierId: _chantierSelectionne!.id,
+                          peutGerer: false,
                         ),
                       ],
                     ),

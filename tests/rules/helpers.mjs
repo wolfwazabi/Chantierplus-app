@@ -106,6 +106,12 @@ export async function semer(env) {
       url: 'https://firebasestorage.googleapis.com/v0/b/x/o/a.jpg', cheminStorage: 'chantiers/A/chA/photos/a.jpg',
     });
 
+    await d('chantier_documents/dA', {
+      companyId: 'A', chantierId: 'chA', nom: 'Plan.pdf', cheminStorage: 'chantiers/A/chA/documents/1_Plan.pdf',
+      url: 'https://firebasestorage.googleapis.com/v0/b/x/o/plan.pdf', taille: 1000,
+      typeMime: 'application/pdf', ajoutePar: 'adminA',
+    });
+
     await d('individus/uid-ind', { nom: 'Solo', email: 'uid-ind@exemple.ca' });
     await d('compteurs/companies', { dernierNumero: 1003 });
   });
