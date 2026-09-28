@@ -87,5 +87,18 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "limites_connexion",
+      "fieldPath": "expireLe",
+      "ttl": true,
+      "indexes": []
+    },
+    {
+      "collectionGroup": "reinitialisations_nip",
+      "fieldPath": "expireLe",
+      "ttl": true,
+      "indexes": []
+    }
+  ]
 }
