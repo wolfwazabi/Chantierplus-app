@@ -1,11 +1,11 @@
 {
-    "name": "construction_app",
-    "short_name": "construction_app",
+    "name": "Chantier+",
+    "short_name": "Chantier+",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Gestion de chantier : feuilles de temps, chantiers, photos et documents.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

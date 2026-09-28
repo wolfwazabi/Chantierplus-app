@@ -8,7 +8,7 @@ const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 // Adresse d'expédition vérifiée chez Resend, ex. « Boréal <noreply@boreal.ca> ».
 const COURRIEL_EXPEDITEUR = defineString("COURRIEL_EXPEDITEUR", {default: ""});
 
-const NOM_APP = "Boréal Chantier";
+const NOM_APP = "Chantier+";
 
 function courrielConfigure() {
   const cle = RESEND_API_KEY.value();
