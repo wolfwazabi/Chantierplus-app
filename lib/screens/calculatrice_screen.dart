@@ -2,9 +2,12 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../services/preferences.dart';
 import '../services/theme_compagnie.dart';
 
-enum _Mode { charpente, beton, conversion, materiaux }
+/// Calculatrice affichée. On bascule en touchant deux fois l'onglet
+/// Calculatrice de la barre du bas (voir main.dart).
+enum ModeCalculatrice { charpente, beton }
 
 /// Levée par l'évaluation quand une division par zéro survient.
 class _DivisionParZero implements Exception {
@@ -12,7 +15,6 @@ class _DivisionParZero implements Exception {
 }
 
 const Color _casing = Color(0xFFEAE2D0);
-const Color _texteLCD = Color(0xFF1E2E20);
 const Color _boutonChiffreBg = Color(0xFFDDD2B8);
 const Color _boutonChiffreBorder = Color(0xFFB8AC90);
 const Color _boutonChiffreTexte = Color(0xFF2C2A22);
@@ -21,6 +23,11 @@ const Color _texteClaire = Color(0xFFEAE2D0);
 
 class CalculatriceScreen extends StatefulWidget {
   const CalculatriceScreen({super.key});
+
+  /// Mode affiché (charpente ou béton), partagé avec la barre d'onglets.
+  static final ValueNotifier<ModeCalculatrice> mode = ValueNotifier(
+    ModeCalculatrice.charpente,
+  );
 
   @override
   State<CalculatriceScreen> createState() => _CalculatriceScreenState();
@@ -31,12 +38,49 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   // (beige) et AC (rouge) gardent leurs couleurs fixes.
   Color get _boutonOperateur => Theme.of(context).colorScheme.primary;
   Color get _boutonFonction => ThemeCompagnie.variante(_boutonOperateur);
-  Color get _lcdBg => ThemeCompagnie.teintePale(_boutonOperateur, 0.30);
+
+  /// Écran : la couleur de l'app en plus foncé, texte clair lisible.
+  Color get _lcdBg => Color.lerp(_boutonOperateur, Colors.black, 0.45)!;
+  Color get _texteLcd => ThemeCompagnie.texteSur(_lcdBg);
+  Color get _texteLcdSecondaire => Color.lerp(_texteLcd, _lcdBg, 0.25)!;
 
   /// Texte lisible sur une touche (contraste WCAG ≥ 4,5:1).
   Color _texteSur(Color fond) => ThemeCompagnie.texteSur(fond);
 
-  _Mode _mode = _Mode.charpente;
+  ModeCalculatrice get _mode => CalculatriceScreen.mode.value;
+
+  /// Unités de l'utilisateur. Base de calcul : pouces en impérial,
+  /// millimètres en métrique.
+  bool get _metrique => Preferences.estMetrique;
+
+  @override
+  void initState() {
+    super.initState();
+    CalculatriceScreen.mode.addListener(_changementMode);
+    Preferences.unites.addListener(_changementUnites);
+  }
+
+  @override
+  void dispose() {
+    CalculatriceScreen.mode.removeListener(_changementMode);
+    Preferences.unites.removeListener(_changementUnites);
+    super.dispose();
+  }
+
+  void _changementMode() => _effacerToutAutre();
+
+  /// Changer d'unités change la base de calcul (pouces ↔ mm) : les valeurs
+  /// en cours, la mémoire et RUN/RISE/DIAG n'ont plus de sens, on repart à zéro.
+  void _changementUnites() {
+    _toutEffacerCharpente();
+    setState(() => _memoire = null);
+    _effacerToutAutre();
+  }
+
+  // Saisie métrique en cours (m, cm, mm).
+  double? _metres;
+  double? _centimetres;
+  double? _millimetres;
 
   String _entreeCharpente = '';
   double? _feet;
@@ -78,7 +122,6 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   }
 
   double? _resultatFinal;
-  bool _resultatFormuleEnPieds = true;
 
   double? _rise;
   double? _run;
@@ -108,6 +151,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _feet == null &&
       _inches == null &&
       _fracNum == null &&
+      _metres == null &&
+      _centimetres == null &&
+      _millimetres == null &&
       _entreeCharpente.isEmpty;
 
   void _finaliserFraction() {
@@ -122,6 +168,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     _finaliserFraction();
     double total = 0;
     if (_feet != null) total += _feet! * 12;
+    if (_metres != null) total += _metres! * 1000;
+    if (_centimetres != null) total += _centimetres! * 10;
+    if (_millimetres != null) total += _millimetres!;
     if (_inches != null) total += _inches!;
     if (_fracNum != null && _fracDen != null && _fracDen != 0) {
       total += _fracNum! / _fracDen!;
@@ -139,6 +188,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
 
   String _texteOperandeEnCours() {
     final buffer = StringBuffer();
+    if (_metres != null) buffer.write('${_fmtNum(_metres!)} m ');
+    if (_centimetres != null) buffer.write('${_fmtNum(_centimetres!)} cm ');
+    if (_millimetres != null) buffer.write('${_fmtNum(_millimetres!)} mm ');
     if (_feet != null) {
       buffer.write("${_fmtNum(_feet!)}' ");
     }
@@ -182,9 +234,53 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   }
 
   String _formatResultat(double v) {
-    return _uniteUtiliseeDansFormule
+    return _uniteUtiliseeDansFormule ? _formatLongueur(v) : _formatDecimal(v);
+  }
+
+  /// Longueur (en pouces ou en mm selon les unités) → texte principal :
+  /// 5' 6 1/2" ou 2 m 35 cm 4 mm.
+  String _formatLongueur(double v) =>
+      _metrique ? _formatMetrique(v) : _formatPiedsPoucesFraction(v);
+
+  /// Vue secondaire compacte : 66 1/2" ou 2354 mm.
+  String _formatLongueurAlt(double v) =>
+      _metrique ? '${_formatDecimal(v)} mm' : _formatPoucesFraction(v);
+
+  /// Millimètres → « 2 m 35 cm 4 mm » (au dixième de mm, zéros omis).
+  String _formatMetrique(double mm) {
+    final negatif = mm < 0;
+    var dixiemes = (mm.abs() * 10).round();
+    final metres = dixiemes ~/ 10000;
+    dixiemes %= 10000;
+    final centimetres = dixiemes ~/ 100;
+    final resteMm = (dixiemes % 100) / 10;
+    final parties = [
+      if (metres > 0) '$metres m',
+      if (centimetres > 0) '$centimetres cm',
+      if (resteMm > 0) '${_formatDecimal(resteMm)} mm',
+    ];
+    if (parties.isEmpty) return '0 mm';
+    return '${negatif ? '-' : ''}${parties.join(' ')}';
+  }
+
+  /// Réponse affichée ; la toucher alterne les vues : pi-po ↔ pouces, ou
+  /// m cm mm → m → mm.
+  int _vueResultat = 0;
+
+  String _texteResultatVue(double v) {
+    if (_metrique) {
+      switch (_vueResultat % 3) {
+        case 1:
+          return '${_formatDecimal(v / 1000)} m';
+        case 2:
+          return '${_formatDecimal(v)} mm';
+        default:
+          return _formatMetrique(v);
+      }
+    }
+    return _vueResultat.isEven
         ? _formatPiedsPoucesFraction(v)
-        : _formatDecimal(v);
+        : _formatPoucesFraction(v);
   }
 
   // ==================== EXPRESSION (priorité des opérations) ====================
@@ -207,6 +303,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _jetons.where((j) => j == ')').length;
 
   void _viderOperande() {
+    _metres = null;
+    _centimetres = null;
+    _millimetres = null;
     _feet = null;
     _inches = null;
     _fracNum = null;
@@ -366,6 +465,12 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         _inches = null;
       } else if (_feet != null) {
         _feet = null;
+      } else if (_millimetres != null) {
+        _millimetres = null;
+      } else if (_centimetres != null) {
+        _centimetres = null;
+      } else if (_metres != null) {
+        _metres = null;
       }
     });
   }
@@ -394,6 +499,20 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _conversionExtra = null;
     }
   }
+
+  void _committerUnite(void Function(double valeur) affecter) {
+    if (_entreeCharpente.isEmpty) return;
+    setState(() {
+      _reinitialiserSiResultat();
+      affecter(double.tryParse(_entreeCharpente) ?? 0);
+      _entreeCharpente = '';
+      _uniteUtiliseeDansFormule = true;
+    });
+  }
+
+  void _committerMetres() => _committerUnite((v) => _metres = v);
+  void _committerCentimetres() => _committerUnite((v) => _centimetres = v);
+  void _committerMillimetres() => _committerUnite((v) => _millimetres = v);
 
   void _committerFeet() {
     if (_entreeCharpente.isEmpty) return;
@@ -617,23 +736,26 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     setState(() {
       final v = _valeurActuelle();
       if (v == null) return;
-      final metres = v * 0.0254;
-      final cm = metres * 100;
-      _ajouterHistorique('Conv(${_formatDecimal(v)}")', v);
+      // Conv affiche toujours pieds-pouces, pouces et mètres.
+      final pouces = _metrique ? v / 25.4 : v;
+      final metres = pouces * 0.0254;
+      _ajouterHistorique(
+        _metrique
+            ? 'Conv(${_formatDecimal(v)} mm)'
+            : 'Conv(${_formatDecimal(v)}")',
+        v,
+      );
       _resultatFinal = v;
       _uniteUtiliseeDansFormule = true;
       _textes.clear();
       _jetons.clear();
       _erreur = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _entreeCharpente = '';
+      _viderOperande();
       _conversionExtra = [
-        '${_formatPoucesFraction(v)} po',
+        _formatPiedsPoucesFraction(pouces),
+        '${_formatPoucesFraction(pouces).replaceAll('"', '')} po',
         '${metres.toStringAsFixed(3)} m',
-        '${cm.toStringAsFixed(1)} cm',
+        '${(metres * 100).toStringAsFixed(1)} cm',
       ];
     });
   }
@@ -644,6 +766,12 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     setState(() => _memoire = (_memoire ?? 0) + v);
   }
 
+  void _memoireMoins() {
+    final v = _valeurActuelle();
+    if (v == null) return;
+    setState(() => _memoire = (_memoire ?? 0) - v);
+  }
+
   void _memoireRappel() {
     if (_memoire == null) return;
     setState(() {
@@ -651,11 +779,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _textes.clear();
       _jetons.clear();
       _erreur = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _entreeCharpente = '';
+      _viderOperande();
       _conversionExtra = null;
     });
   }
@@ -820,47 +944,29 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     return "$signe$restePouces$fracStr\"";
   }
 
-  // ==================== BÉTON / CONVERSION / MATÉRIAUX ====================
+  // ==================== BÉTON ====================
 
   int _etape = 0;
   String _saisie = '';
-  final List<double> _valeurs = [];
+  final List<double> _valeurs = []; // en mètres
   String? _resultatTitre;
   List<String> _resultatLignes = [];
-  bool _resultatAutreEnPieds = true;
-  double? _resultatAutreLineaire;
+  String? _noteResultat;
 
+  /// Unité de la saisie en cours : pi/po en impérial, m/cm/mm en métrique.
   String _uniteBeton = 'pi';
-  String _uniteConversion = 'pi';
 
-  List<String> get _etapes {
-    switch (_mode) {
-      case _Mode.beton:
-        return ['Longueur', 'Largeur', 'Épaisseur'];
-      case _Mode.conversion:
-        return ['Valeur'];
-      case _Mode.materiaux:
-        return ['Surface à couvrir (pi²)'];
-      case _Mode.charpente:
-        return [];
-    }
-  }
+  static const _etapes = ['Longueur', 'Largeur', 'Épaisseur'];
+
+  /// Rendement d'un sac de béton prémélangé de 30 kg (≈ 14 L).
+  static const _rendementSacM3 = 0.014;
 
   bool get _termine => _etape >= _etapes.length;
 
-  void _choisirMode(_Mode mode) {
-    setState(() {
-      _mode = mode;
-      _etape = 0;
-      _saisie = '';
-      _valeurs.clear();
-      _resultatTitre = null;
-      _resultatLignes = [];
-      _resultatAutreLineaire = null;
-      _uniteBeton = 'pi';
-      _uniteConversion = 'pi';
-    });
-  }
+  /// Unités proposées pour l'étape en cours (la première est celle par défaut).
+  List<String> get _unitesEtape => _metrique
+      ? (_etape == 2 ? ['cm', 'mm'] : ['m', 'cm'])
+      : (_etape == 2 ? ['po', 'pi'] : ['pi', 'po']);
 
   void _appuyerChiffreAutre(String chiffre) {
     if (_termine) return;
@@ -890,96 +996,61 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _valeurs.clear();
       _resultatTitre = null;
       _resultatLignes = [];
-      _resultatAutreLineaire = null;
+      _noteResultat = null;
+      _uniteBeton = _unitesEtape.first;
     });
   }
 
-  double _convertirBeton(double valeurBrute) {
-    final estEpaisseur = _etape == 2;
-    if (estEpaisseur) {
-      return _uniteBeton == 'pi' ? valeurBrute * 12 : valeurBrute;
-    } else {
-      return _uniteBeton == 'po' ? valeurBrute / 12 : valeurBrute;
-    }
-  }
-
-  double _convertirConversionEnPouces(double valeurBrute) {
-    switch (_uniteConversion) {
+  static double _enMetres(double valeur, String unite) {
+    switch (unite) {
       case 'pi':
-        return valeurBrute * 12;
-      case 'm':
-        return valeurBrute / 0.0254;
-      case 'cm':
-        return valeurBrute / 2.54;
-      case 'mm':
-        return valeurBrute / 25.4;
+        return valeur * 0.3048;
       case 'po':
+        return valeur * 0.0254;
+      case 'cm':
+        return valeur / 100;
+      case 'mm':
+        return valeur / 1000;
+      case 'm':
       default:
-        return valeurBrute;
+        return valeur;
     }
   }
 
   void _entreeAutre() {
     if (_termine) return;
     final valeurBrute = double.tryParse(_saisie) ?? 0;
-    double valeur = valeurBrute;
-    if (_mode == _Mode.beton) {
-      valeur = _convertirBeton(valeurBrute);
-    } else if (_mode == _Mode.conversion) {
-      valeur = _convertirConversionEnPouces(valeurBrute);
-    }
     setState(() {
-      _valeurs.add(valeur);
+      _valeurs.add(_enMetres(valeurBrute, _uniteBeton));
       _saisie = '';
       _etape++;
-      if (_mode == _Mode.beton) {
-        _uniteBeton = _etape == 2 ? 'po' : 'pi';
-      }
-      if (_etape >= _etapes.length) {
+      if (_termine) {
         _calculerResultatAutre();
+      } else {
+        _uniteBeton = _unitesEtape.first;
       }
     });
   }
 
   void _calculerResultatAutre() {
-    switch (_mode) {
-      case _Mode.beton:
-        final lFeet = _valeurs[0];
-        final wFeet = _valeurs[1];
-        final eInches = _valeurs[2];
-        final eFeet = eInches / 12;
-        final volumeM3 = (lFeet * wFeet * eFeet) * 0.0283168;
-        final sacs = volumeM3 / 0.02;
-        _resultatTitre = 'Résultat béton';
-        _resultatLignes = [
-          'Volume : ${volumeM3.toStringAsFixed(3)} m³',
-          'Sacs de béton (30kg) : ${sacs.ceil()}',
-        ];
-        _resultatAutreLineaire = null;
-        break;
-      case _Mode.conversion:
-        final totalPouces = _valeurs[0];
-        final metres = totalPouces * 0.0254;
-        _resultatTitre = 'Résultat conversion';
-        _resultatLignes = [
-          '${metres.toStringAsFixed(3)} m',
-          '${(metres * 100).toStringAsFixed(1)} cm',
-        ];
-        _resultatAutreLineaire = totalPouces;
-        _resultatAutreEnPieds = true;
-        break;
-      case _Mode.materiaux:
-        final feuilles = ((_valeurs[0] * 1.1) / 32).ceil();
-        _resultatTitre = 'Résultat matériaux';
-        _resultatLignes = [
-          '$feuilles feuilles de gypse (4x8 pi)',
-          '(incluant 10% de perte)',
-        ];
-        _resultatAutreLineaire = null;
-        break;
-      case _Mode.charpente:
-        break;
+    final volumeM3 = _valeurs[0] * _valeurs[1] * _valeurs[2];
+    final sacs = (volumeM3 / _rendementSacM3).ceil();
+    _resultatTitre = 'Résultat béton';
+    if (_metrique) {
+      _resultatLignes = [
+        'Volume : ${volumeM3.toStringAsFixed(3)} m³',
+        'Sacs de 30 kg : $sacs',
+      ];
+    } else {
+      final pi3 = volumeM3 / 0.0283168466;
+      final vg3 = pi3 / 27;
+      _resultatLignes = [
+        'Volume : ${vg3.toStringAsFixed(2)} vg³ (${pi3.toStringAsFixed(2)} pi³)',
+        '${volumeM3.toStringAsFixed(3)} m³',
+        'Sacs de 30 kg : $sacs',
+      ];
     }
+    _noteResultat = 'Rendement ≈ 14 L par sac de 30 kg ; prévoir 5 à 10 % de plus pour les pertes.';
   }
 
   @override
@@ -989,12 +1060,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: SafeArea(
         child: Column(
           children: [
-            _boutonsMode(),
+            _enteteMode(),
             const SizedBox(height: 8),
-            _mode == _Mode.charpente ? _ecranCharpente() : _ecranAutre(),
+            _mode == ModeCalculatrice.charpente
+                ? _ecranCharpente()
+                : _ecranAutre(),
             const SizedBox(height: 8),
             Expanded(
-              child: _mode == _Mode.charpente
+              child: _mode == ModeCalculatrice.charpente
                   ? _clavierCharpente()
                   : _clavierAutre(),
             ),
@@ -1004,43 +1077,50 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  Widget _boutonsMode() {
+  /// En-tête : calculatrice affichée et unités. Toucher le titre bascule
+  /// aussi entre charpente et béton.
+  Widget _enteteMode() {
+    final beton = _mode == ModeCalculatrice.beton;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _pillule('Charpente', _Mode.charpente),
-            _pillule('Béton', _Mode.beton),
-            _pillule('Conversion', _Mode.conversion),
-            _pillule('Matériaux', _Mode.materiaux),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _pillule(String label, _Mode mode) {
-    final actif = _mode == mode;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4),
-      child: ElevatedButton(
-        onPressed: () => _choisirMode(mode),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: actif ? _boutonFonction : _boutonOperateur,
-          foregroundColor: _texteSur(
-            actif ? _boutonFonction : _boutonOperateur,
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Row(
+        children: [
+          InkWell(
+            key: const ValueKey('titre_mode_calculatrice'),
+            onTap: () => CalculatriceScreen.mode.value = beton
+                ? ModeCalculatrice.charpente
+                : ModeCalculatrice.beton,
+            child: Row(
+              children: [
+                Text(
+                  beton ? 'Béton' : 'Charpente',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                    color: ThemeCompagnie.accentDe(context),
+                  ),
+                ),
+                Icon(
+                  Icons.swap_horiz,
+                  size: 18,
+                  color: ThemeCompagnie.accentDe(context),
+                ),
+              ],
+            ),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Touchez deux fois l\'onglet pour ${beton ? 'la charpente' : 'le béton'}',
+              style: const TextStyle(fontSize: 11, color: Color(0xFF6B6455)),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-        ),
+          Text(
+            _metrique ? 'Métrique' : 'Impérial',
+            style: const TextStyle(fontSize: 11, color: Color(0xFF6B6455)),
+          ),
+        ],
       ),
     );
   }
@@ -1064,21 +1144,23 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 children: [
                   if (_pitch != null)
                     Text(
-                      'PITCH ${_pitch!.toStringAsFixed(2)}/12',
-                      style: const TextStyle(
-                        color: _texteLCD,
+                      _metrique
+                          ? 'PENTE ${(_pitch! / 12 * 100).toStringAsFixed(1)} %'
+                          : 'PITCH ${_pitch!.toStringAsFixed(2)}/12',
+                      style: TextStyle(
+                        color: _texteLcd,
                         fontSize: 11,
                         fontFamily: 'monospace',
                         letterSpacing: 1,
                       ),
                     ),
                   if (_memoire != null)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 8),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 8),
                       child: Text(
                         'M',
                         style: TextStyle(
-                          color: _texteLCD,
+                          color: _texteLcd,
                           fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
@@ -1088,7 +1170,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               ),
               InkWell(
                 onTap: _ouvrirHistorique,
-                child: const Icon(Icons.history, size: 18, color: _texteLCD),
+                child: Icon(Icons.history, size: 18, color: _texteLcd),
               ),
             ],
           ),
@@ -1099,10 +1181,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 alignment: Alignment.centerRight,
                 child: Text(
                   _afficherEnPieds
-                      ? _formatPiedsPoucesFraction(_diag!)
-                      : _formatPoucesFraction(_diag!),
-                  style: const TextStyle(
-                    color: Color(0xFF3D5A3F),
+                      ? _formatLongueur(_diag!)
+                      : _formatLongueurAlt(_diag!),
+                  style: TextStyle(
+                    color: _texteLcdSecondaire,
                     fontSize: 13,
                     fontFamily: 'monospace',
                   ),
@@ -1113,21 +1195,17 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           if (_resultatFinal != null)
             GestureDetector(
               onTap: _uniteUtiliseeDansFormule
-                  ? () => setState(
-                      () => _resultatFormuleEnPieds = !_resultatFormuleEnPieds,
-                    )
+                  ? () => setState(() => _vueResultat++)
                   : null,
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 alignment: Alignment.centerRight,
                 child: Text(
                   _uniteUtiliseeDansFormule
-                      ? (_resultatFormuleEnPieds
-                            ? _formatPiedsPoucesFraction(_resultatFinal!)
-                            : _formatPoucesFraction(_resultatFinal!))
+                      ? _texteResultatVue(_resultatFinal!)
                       : _formatDecimal(_resultatFinal!),
-                  style: const TextStyle(
-                    color: _texteLCD,
+                  style: TextStyle(
+                    color: _texteLcd,
                     fontSize: 38,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'monospace',
@@ -1140,8 +1218,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               alignment: Alignment.centerRight,
               child: Text(
                 _erreur!,
-                style: const TextStyle(
-                  color: _boutonEffacer,
+                style: TextStyle(
+                  color: _texteLcd,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'monospace',
@@ -1157,8 +1235,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                   (_formulePrecedente + _texteOperandeEnCours()).trim().isEmpty
                       ? '0'
                       : (_formulePrecedente + _texteOperandeEnCours()),
-                  style: const TextStyle(
-                    color: _texteLCD,
+                  style: TextStyle(
+                    color: _texteLcd,
                     fontSize: 26,
                     fontWeight: FontWeight.w600,
                     fontFamily: 'monospace',
@@ -1175,8 +1253,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                     .map(
                       (l) => Text(
                         l,
-                        style: const TextStyle(
-                          color: Color(0xFF3D5A3F),
+                        style: TextStyle(
+                          color: _texteLcdSecondaire,
                           fontSize: 14,
                           fontFamily: 'monospace',
                         ),
@@ -1190,134 +1268,134 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
+  /// Disposition « chantier classique » (modèle 1).
   Widget _clavierCharpente() {
+    Widget rangee(List<Widget> touches) => Expanded(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: touches,
+      ),
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
       child: Column(
         children: [
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _toucheMemoireGrande('RUN', _run, () => _stocker('run')),
-                _toucheMemoireGrande('RISE', _rise, () => _stocker('rise')),
-                _toucheMemoireDiagGrande(),
-                _toucheFonctionGrande(
-                  'AC',
-                  _toutEffacerCharpente,
-                  effacer: true,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _toucheFonctionGrande('Pi', _committerFeet, claire: true),
-                _toucheFonctionGrande('Po', _committerPouces, claire: true),
-                _toucheFonctionGrande('/', _committerSeizieme, claire: true),
-                _toucheFonctionGrande(
-                  '⌫',
-                  _effacerDernierCharpente,
-                  claire: true,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _toucheFonctionGrande('(', _ouvrirParenthese, fonction: true),
-                _toucheFonctionGrande(')', _fermerParenthese, fonction: true),
-                _toucheFonctionGrande('x²', _appliquerCarre, fonction: true),
-                _toucheFonctionGrande('x³', _appliquerCube, fonction: true),
-              ],
-            ),
-          ),
           SizedBox(
-            height: 32,
+            height: 34,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _toucheExtraPetite('√x', _appliquerRacine),
-                _toucheExtraPetite('%', _appliquerPourcent),
                 _toucheExtraPetite('M+', _memoirePlus),
+                _toucheExtraPetite('M−', _memoireMoins),
                 _toucheExtraPetite('MR', _memoireRappel),
                 _toucheExtraPetite('MC', _memoireEffacer),
-                _toucheExtraPetite(
-                  'Conv',
-                  _appliquerConversion,
-                  fonction: true,
-                ),
               ],
             ),
           ),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _toucheChiffreGrande('7'),
-                _toucheChiffreGrande('8'),
-                _toucheChiffreGrande('9'),
-                _toucheFonctionGrande(
-                  '÷',
-                  () => _appuyerOperateurCharpente('÷'),
-                  operateur: true,
-                ),
-              ],
-            ),
+          rangee([
+            _toucheMemoireGrande('RUN', _run, () => _stocker('run')),
+            _toucheMemoireGrande('RISE', _rise, () => _stocker('rise')),
+            _toucheMemoireDiagGrande(),
+            _toucheFonctionGrande('Conv', _appliquerConversion, fonction: true),
+          ]),
+          rangee(
+            _metrique
+                ? [
+                    _toucheFonctionGrande('m', _committerMetres, claire: true),
+                    _toucheFonctionGrande(
+                      'cm',
+                      _committerCentimetres,
+                      claire: true,
+                    ),
+                    _toucheFonctionGrande(
+                      'mm',
+                      _committerMillimetres,
+                      claire: true,
+                    ),
+                    _toucheFonctionGrande(
+                      '⌫',
+                      _effacerDernierCharpente,
+                      claire: true,
+                    ),
+                  ]
+                : [
+                    _toucheFonctionGrande('Pi', _committerFeet, claire: true),
+                    _toucheFonctionGrande('Po', _committerPouces, claire: true),
+                    _toucheFonctionGrande(
+                      'x/y',
+                      _committerSeizieme,
+                      claire: true,
+                    ),
+                    _toucheFonctionGrande(
+                      '⌫',
+                      _effacerDernierCharpente,
+                      claire: true,
+                    ),
+                  ],
           ),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _toucheChiffreGrande('4'),
-                _toucheChiffreGrande('5'),
-                _toucheChiffreGrande('6'),
-                _toucheFonctionGrande(
-                  '×',
-                  () => _appuyerOperateurCharpente('×'),
-                  operateur: true,
-                ),
-              ],
+          rangee([
+            _toucheFonctionGrande('(', _ouvrirParenthese, fonction: true),
+            _toucheFonctionGrande(')', _fermerParenthese, fonction: true),
+            _toucheFonctionGrande('x²', _appliquerCarre, fonction: true),
+            _toucheFonctionGrande('√x', _appliquerRacine, fonction: true),
+          ]),
+          rangee([
+            _toucheChiffreGrande('7'),
+            _toucheChiffreGrande('8'),
+            _toucheChiffreGrande('9'),
+            _toucheFonctionGrande(
+              '÷',
+              () => _appuyerOperateurCharpente('÷'),
+              operateur: true,
             ),
-          ),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _toucheChiffreGrande('1'),
-                _toucheChiffreGrande('2'),
-                _toucheChiffreGrande('3'),
-                _toucheFonctionGrande(
-                  '−',
-                  () => _appuyerOperateurCharpente('-'),
-                  operateur: true,
-                ),
-              ],
+          ]),
+          rangee([
+            _toucheChiffreGrande('4'),
+            _toucheChiffreGrande('5'),
+            _toucheChiffreGrande('6'),
+            _toucheFonctionGrande(
+              '×',
+              () => _appuyerOperateurCharpente('×'),
+              operateur: true,
             ),
-          ),
-          Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _toucheChiffreGrande('0'),
-                _toucheChiffreGrande('.'),
-                _toucheFonctionGrande(
-                  '=',
-                  _appuyerEgalCharpente,
-                  fonction: true,
-                ),
-                _toucheFonctionGrande(
-                  '+',
-                  () => _appuyerOperateurCharpente('+'),
-                  operateur: true,
-                ),
-              ],
+          ]),
+          rangee([
+            _toucheChiffreGrande('1'),
+            _toucheChiffreGrande('2'),
+            _toucheChiffreGrande('3'),
+            _toucheFonctionGrande(
+              '−',
+              () => _appuyerOperateurCharpente('-'),
+              operateur: true,
             ),
-          ),
+          ]),
+          rangee([
+            _toucheFonctionGrande('AC', _toutEffacerCharpente, effacer: true),
+            _toucheChiffreGrande('0'),
+            _toucheChiffreGrande('.'),
+            _toucheFonctionGrande(
+              '+',
+              () => _appuyerOperateurCharpente('+'),
+              operateur: true,
+            ),
+          ]),
+          rangee([
+            _toucheFonctionGrande('x³', _appliquerCube, fonction: true),
+            _toucheFonctionGrande('%', _appliquerPourcent, fonction: true),
+            Expanded(
+              flex: 2,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _toucheFonctionGrande(
+                    '=',
+                    _appuyerEgalCharpente,
+                    operateur: true,
+                  ),
+                ],
+              ),
+            ),
+          ]),
         ],
       ),
     );
@@ -1332,6 +1410,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
+          key: ValueKey('touche_$label'),
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonFonction,
@@ -1355,7 +1434,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  valeur == null ? '—' : _formatPoucesFraction(valeur),
+                  valeur == null ? '—' : _formatLongueurAlt(valeur),
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -1374,6 +1453,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
+          key: const ValueKey('touche_DIAG'),
           onPressed: () => _stocker('diag'),
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonFonction,
@@ -1394,7 +1474,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _diag == null ? '—' : _formatPoucesFraction(_diag!),
+                  _diag == null ? '—' : _formatLongueurAlt(_diag!),
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
@@ -1517,7 +1597,6 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   }
 
   Widget _ecranAutre() {
-    final estLineaire = _resultatAutreLineaire != null && _termine;
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.all(16),
@@ -1532,11 +1611,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              _termine
-                  ? 'Résultat'
-                  : (_etapes.isNotEmpty ? _etapes[_etape] : ''),
-              style: const TextStyle(
-                color: _texteLCD,
+              _termine ? 'Résultat' : _etapes[_etape],
+              style: TextStyle(
+                color: _texteLcd,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
@@ -1545,9 +1622,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           const SizedBox(height: 8),
           if (!_termine)
             Text(
-              _saisie.isEmpty ? '0' : _saisie,
-              style: const TextStyle(
-                color: _texteLCD,
+              '${_saisie.isEmpty ? '0' : _saisie} $_uniteBeton',
+              style: TextStyle(
+                color: _texteLcd,
                 fontSize: 40,
                 fontWeight: FontWeight.w700,
                 fontFamily: 'monospace',
@@ -1558,8 +1635,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               alignment: Alignment.centerLeft,
               child: Text(
                 _resultatTitre ?? '',
-                style: const TextStyle(
-                  color: _texteLCD,
+                style: TextStyle(
+                  color: _texteLcd,
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
                 ),
@@ -1571,33 +1648,22 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   l,
-                  style: const TextStyle(
-                    color: _texteLCD,
+                  style: TextStyle(
+                    color: _texteLcd,
                     fontSize: 20,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
             ),
-            if (estLineaire)
-              GestureDetector(
-                onTap: () => setState(
-                  () => _resultatAutreEnPieds = !_resultatAutreEnPieds,
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      _resultatAutreEnPieds
-                          ? _formatPiedsPoucesFraction(_resultatAutreLineaire!)
-                          : _formatPoucesFraction(_resultatAutreLineaire!),
-                      style: const TextStyle(
-                        color: _texteLCD,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+            if (_noteResultat != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _noteResultat!,
+                    style: TextStyle(color: _texteLcdSecondaire, fontSize: 12),
                   ),
                 ),
               ),
@@ -1612,65 +1678,19 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       child: Column(
         children: [
-          if (_mode == _Mode.beton && !_termine) ...[
+          if (!_termine) ...[
             SizedBox(
-              height: 32,
+              height: 34,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _toucheUnite(
-                    'Pi',
-                    'pi',
-                    _uniteBeton,
-                    (u) => setState(() => _uniteBeton = u),
-                  ),
-                  _toucheUnite(
-                    'Po',
-                    'po',
-                    _uniteBeton,
-                    (u) => setState(() => _uniteBeton = u),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
-          ],
-          if (_mode == _Mode.conversion && !_termine) ...[
-            SizedBox(
-              height: 32,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _toucheUnite(
-                    'Pi',
-                    'pi',
-                    _uniteConversion,
-                    (u) => setState(() => _uniteConversion = u),
-                  ),
-                  _toucheUnite(
-                    'Po',
-                    'po',
-                    _uniteConversion,
-                    (u) => setState(() => _uniteConversion = u),
-                  ),
-                  _toucheUnite(
-                    'M',
-                    'm',
-                    _uniteConversion,
-                    (u) => setState(() => _uniteConversion = u),
-                  ),
-                  _toucheUnite(
-                    'CM',
-                    'cm',
-                    _uniteConversion,
-                    (u) => setState(() => _uniteConversion = u),
-                  ),
-                  _toucheUnite(
-                    'MM',
-                    'mm',
-                    _uniteConversion,
-                    (u) => setState(() => _uniteConversion = u),
-                  ),
+                  for (final u in _unitesEtape)
+                    _toucheUnite(
+                      u,
+                      u,
+                      _uniteBeton,
+                      (v) => setState(() => _uniteBeton = v),
+                    ),
                 ],
               ),
             ),
@@ -1713,7 +1733,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(flex: 2, child: _toucheChiffreAutre('0')),
+                // (Avant : Expanded dans Expanded, la rangée ne s'affichait pas.)
+                _toucheChiffreAutre('0', flex: 2),
                 _toucheChiffreAutre('.'),
                 _toucheFonctionAutre('', () {}, vide: true),
               ],
@@ -1735,6 +1756,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 2),
         child: ElevatedButton(
+          key: ValueKey('touche_unite_$valeur'),
           onPressed: () => onChanged(valeur),
           style: ElevatedButton.styleFrom(
             backgroundColor: actif ? _boutonFonction : _boutonChiffreBg,
@@ -1756,11 +1778,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  Widget _toucheChiffreAutre(String chiffre) {
+  Widget _toucheChiffreAutre(String chiffre, {int flex = 1}) {
     return Expanded(
+      flex: flex,
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
+          key: ValueKey('touche_$chiffre'),
           onPressed: () => _appuyerChiffreAutre(chiffre),
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonChiffreBg,
@@ -1791,6 +1815,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
+          key: vide ? null : ValueKey('touche_$label'),
           onPressed: vide ? null : onTap,
           style: ElevatedButton.styleFrom(
             backgroundColor: vide

@@ -211,7 +211,25 @@ class _HomePageState extends State<HomePage> {
     return onglets;
   }
 
-  void _onItemTapped(int index) {
+  void _onItemTapped(int index, List<_OngletInfo> onglets, int indexActuel) {
+    // Toucher l'onglet Calculatrice déjà ouvert : bascule charpente ↔ béton.
+    if (index == indexActuel && onglets[index].label == 'Calculatrice') {
+      final beton = CalculatriceScreen.mode.value == ModeCalculatrice.beton;
+      CalculatriceScreen.mode.value = beton
+          ? ModeCalculatrice.charpente
+          : ModeCalculatrice.beton;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              beton ? 'Calculatrice de charpente' : 'Calculatrice de béton',
+            ),
+            duration: const Duration(milliseconds: 1200),
+          ),
+        );
+      return;
+    }
     setState(() => _selectedIndex = index);
   }
 
@@ -229,7 +247,8 @@ class _HomePageState extends State<HomePage> {
           body: SafeArea(child: onglets[indexSecurise].ecran),
           bottomNavigationBar: NavigationBar(
             selectedIndex: indexSecurise,
-            onDestinationSelected: _onItemTapped,
+            onDestinationSelected: (index) =>
+                _onItemTapped(index, onglets, indexSecurise),
             destinations: onglets
                 .map(
                   (o) => NavigationDestination(
