@@ -4,6 +4,11 @@ import 'package:flutter/material.dart';
 
 enum _Mode { charpente, beton, conversion, materiaux }
 
+/// Levée par l'évaluation quand une division par zéro survient.
+class _DivisionParZero implements Exception {
+  const _DivisionParZero();
+}
+
 const Color _casing = Color(0xFFEAE2D0);
 const Color _lcdBg = Color(0xFFB7C4A8);
 const Color _texteLCD = Color(0xFF1E2E20);
@@ -33,13 +38,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   bool _enAttenteDenominateur = false;
   bool _uniteUtiliseeDansFormule = false;
 
-  double? _accumulateur;
-  String? _operateurEnAttente;
+  /// Expression en cours : nombres (en pouces), opérateurs et parenthèses.
+  final List<Object> _jetons = [];
+
+  /// Message affiché à la place du résultat (ex. division par zéro).
+  String? _erreur;
   String _formulePrecedente = '';
   double? _resultatFinal;
   bool _resultatFormuleEnPieds = true;
-
-  final List<(double?, String?)> _pileParentheses = [];
 
   double? _rise;
   double? _run;
@@ -148,29 +154,157 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         : _formatDecimal(v);
   }
 
-  /// Juste après « ) », un nombre ou une « ( » tapé sans opérateur multiplie
-  /// le groupe, comme en mathématiques : (2+3)4 = 20 et (2+3)(1+1) = 10.
-  void _multiplicationImpliciteApresParenthese() {
-    if (_accumulateur != null &&
-        _operateurEnAttente == null &&
-        _formulePrecedente.trimRight().endsWith(')')) {
-      _operateurEnAttente = '×';
+  // ==================== EXPRESSION (priorité des opérations) ====================
+  //
+  // L'expression est conservée en entier dans _jetons (nombres en pouces,
+  // opérateurs + - × ÷ et parenthèses), puis évaluée selon la priorité des
+  // opérations : parenthèses, puis × et ÷, puis + et −, de gauche à droite.
+  // _formulePrecedente est le texte affiché correspondant.
+
+  static const _operateurs = {'+', '-', '×', '÷'};
+
+  bool _estOperateur(Object? jeton) => _operateurs.contains(jeton);
+
+  /// Vrai si le dernier jeton termine une valeur (nombre ou « ) »).
+  bool get _finitParUneValeur =>
+      _jetons.isNotEmpty && (_jetons.last is double || _jetons.last == ')');
+
+  int get _parenthesesOuvertes =>
+      _jetons.where((j) => j == '(').length -
+      _jetons.where((j) => j == ')').length;
+
+  void _viderOperande() {
+    _feet = null;
+    _inches = null;
+    _fracNum = null;
+    _fracDen = null;
+    _enAttenteDenominateur = false;
+    _entreeCharpente = '';
+  }
+
+  /// Ajoute l'opérande en cours de saisie à l'expression.
+  void _pousserOperande() {
+    _finaliserFraction();
+    if (_operandeVide) return;
+    _jetons.add(_valeurOperandeCourant());
+    _formulePrecedente += '${_texteOperandeEnCours().trim()} ';
+    _viderOperande();
+  }
+
+  /// Multiplication implicite, comme en mathématiques : un nombre ou une
+  /// « ( » collé à une valeur la multiplie, (2+3)4 = 20 et 2(3+1) = 8.
+  void _multiplicationImplicite() {
+    if (_finitParUneValeur) {
+      _jetons.add('×');
       _formulePrecedente += '× ';
     }
   }
 
+  /// Retire l'opérateur final (texte et jeton), ex. « 2 + » → « 2 ».
+  void _retirerOperateurFinal() {
+    if (_jetons.isEmpty || !_estOperateur(_jetons.last)) return;
+    _jetons.removeLast();
+    final texte = _formulePrecedente.trimRight();
+    _formulePrecedente = '${texte.substring(0, texte.length - 1).trimRight()} ';
+  }
+
+  static int _priorite(String op) => (op == '×' || op == '÷') ? 2 : 1;
+
+  /// Évalue une expression en respectant la priorité des opérations
+  /// (algorithme de la gare de triage). Un opérateur final est ignoré et les
+  /// parenthèses restées ouvertes sont fermées. Retourne null si l'expression
+  /// est vide ; lance [_DivisionParZero] en cas de division par zéro.
+  static double? evaluerExpression(List<Object> expression) {
+    final jetons = [...expression];
+    while (jetons.isNotEmpty && _operateurs.contains(jetons.last)) {
+      jetons.removeLast();
+    }
+    var ouvertes = 0;
+    for (final j in jetons) {
+      if (j == '(') ouvertes++;
+      if (j == ')') ouvertes--;
+    }
+    for (var i = 0; i < ouvertes; i++) {
+      jetons.add(')');
+    }
+    // « ( ) » vide : rien à calculer.
+    if (!jetons.any((j) => j is double)) return null;
+
+    final valeurs = <double>[];
+    final operateurs = <String>[];
+
+    void appliquer() {
+      final op = operateurs.removeLast();
+      final b = valeurs.removeLast();
+      final a = valeurs.removeLast();
+      switch (op) {
+        case '+':
+          valeurs.add(a + b);
+        case '-':
+          valeurs.add(a - b);
+        case '×':
+          valeurs.add(a * b);
+        case '÷':
+          if (b == 0) throw const _DivisionParZero();
+          valeurs.add(a / b);
+      }
+    }
+
+    for (final j in jetons) {
+      if (j is double) {
+        valeurs.add(j);
+      } else if (j == '(') {
+        operateurs.add('(');
+      } else if (j == ')') {
+        while (operateurs.isNotEmpty && operateurs.last != '(') {
+          appliquer();
+        }
+        if (operateurs.isNotEmpty) operateurs.removeLast();
+      } else if (j is String) {
+        // Gauche à droite à priorité égale : 10−4−3 = 3.
+        while (operateurs.isNotEmpty &&
+            operateurs.last != '(' &&
+            _priorite(operateurs.last) >= _priorite(j)) {
+          appliquer();
+        }
+        operateurs.add(j);
+      }
+    }
+    while (operateurs.isNotEmpty) {
+      if (operateurs.last == '(') {
+        operateurs.removeLast();
+      } else {
+        appliquer();
+      }
+    }
+    return valeurs.isEmpty ? null : valeurs.last;
+  }
+
+  /// Expression complète (jetons + opérande en cours), sans modifier l'état.
+  List<Object> _expressionComplete() {
+    _finaliserFraction();
+    final expression = [..._jetons];
+    if (!_operandeVide) {
+      if (expression.isNotEmpty &&
+          (expression.last is double || expression.last == ')')) {
+        expression.add('×');
+      }
+      expression.add(_valeurOperandeCourant());
+    }
+    return expression;
+  }
+
   void _appuyerChiffreCharpente(String chiffre) {
     setState(() {
+      _erreur = null;
       if (_resultatFinal != null) {
         _resultatFinal = null;
         _formulePrecedente = '';
-        _accumulateur = null;
-        _operateurEnAttente = null;
-        _pileParentheses.clear();
+        _jetons.clear();
         _uniteUtiliseeDansFormule = false;
         _conversionExtra = null;
       }
-      if (_operandeVide) _multiplicationImpliciteApresParenthese();
+      if (_operandeVide) _multiplicationImplicite();
       if (chiffre == '.' && _entreeCharpente.contains('.')) return;
       if (_entreeCharpente.isEmpty && chiffre == '.') {
         _entreeCharpente = '0.';
@@ -206,32 +340,25 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
 
   void _toutEffacerCharpente() {
     setState(() {
-      _entreeCharpente = '';
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _enAttenteDenominateur = false;
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _viderOperande();
+      _jetons.clear();
+      _erreur = null;
       _formulePrecedente = '';
       _resultatFinal = null;
       _rise = null;
       _run = null;
       _diag = null;
-      _pileParentheses.clear();
       _uniteUtiliseeDansFormule = false;
       _conversionExtra = null;
     });
   }
 
   void _reinitialiserSiResultat() {
+    _erreur = null;
     if (_resultatFinal != null) {
       _resultatFinal = null;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
-      _pileParentheses.clear();
+      _jetons.clear();
       _conversionExtra = null;
     }
   }
@@ -270,160 +397,51 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     });
   }
 
-  double _appliquerOperation(double a, double b, String op) {
-    switch (op) {
-      case '+':
-        return a + b;
-      case '-':
-        return a - b;
-      case '×':
-        return a * b;
-      case '÷':
-        return b == 0 ? 0 : a / b;
-      default:
-        return b;
-    }
-  }
-
   void _appuyerOperateurCharpente(String op) {
     setState(() {
       _conversionExtra = null;
+      _erreur = null;
       if (_resultatFinal != null) {
-        _accumulateur = _resultatFinal;
-        _formulePrecedente = '${_formatResultat(_accumulateur!)} $op ';
+        // Continuer à partir du résultat affiché.
+        _jetons
+          ..clear()
+          ..add(_resultatFinal!);
+        _formulePrecedente = '${_formatResultat(_resultatFinal!)} ';
         _resultatFinal = null;
-        _operateurEnAttente = op;
-        _feet = null;
-        _inches = null;
-        _fracNum = null;
-        _fracDen = null;
-        _enAttenteDenominateur = false;
-        _entreeCharpente = '';
-        return;
-      }
-
-      _finaliserFraction();
-
-      if (_operandeVide) {
-        if (_operateurEnAttente != null &&
-            _formulePrecedente.trim().isNotEmpty) {
-          // Remplace l'opérateur qui vient d'être tapé.
-          final trimmed = _formulePrecedente.trimRight();
-          final sansOperateur = trimmed
-              .substring(0, trimmed.length - 1)
-              .trimRight();
-          _formulePrecedente = '$sansOperateur $op ';
-          _operateurEnAttente = op;
-        } else if (_accumulateur != null) {
-          // Juste après « ) » : le résultat du groupe devient l'opérande de
-          // gauche. (Sans ce cas, l'opérateur était ignoré : (56"×2)+56'
-          // donnait 56'.)
-          _formulePrecedente += '$op ';
-          _operateurEnAttente = op;
-        }
-        return;
-      }
-
-      final valeur = _valeurOperandeCourant();
-      final texteOperande = _texteOperandeEnCours().trim();
-
-      if (_accumulateur != null && _operateurEnAttente != null) {
-        _accumulateur = _appliquerOperation(
-          _accumulateur!,
-          valeur,
-          _operateurEnAttente!,
-        );
+        _viderOperande();
       } else {
-        _accumulateur = valeur;
+        _pousserOperande();
       }
-      _formulePrecedente += '$texteOperande $op ';
-      _operateurEnAttente = op;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _enAttenteDenominateur = false;
-      _entreeCharpente = '';
+
+      if (_jetons.isEmpty || _jetons.last == '(') return; // rien à opérer
+      if (_estOperateur(_jetons.last)) {
+        // Remplace l'opérateur qui vient d'être tapé.
+        _retirerOperateurFinal();
+      }
+      _jetons.add(op);
+      _formulePrecedente += '$op ';
     });
   }
 
   void _ouvrirParenthese() {
     setState(() {
-      _finaliserFraction();
-      _reinitialiserSiResultat();
-      if (_operandeVide) {
-        _multiplicationImpliciteApresParenthese();
-      } else {
-        // Nombre suivi de « ( » : multiplication implicite, 2(3+1) = 8.
-        // (Sans ce cas, le nombre tapé avant la parenthèse était perdu.)
-        final valeur = _valeurOperandeCourant();
-        _accumulateur = _accumulateur != null && _operateurEnAttente != null
-            ? _appliquerOperation(_accumulateur!, valeur, _operateurEnAttente!)
-            : valeur;
-        _formulePrecedente += '${_texteOperandeEnCours().trim()} × ';
-        _operateurEnAttente = '×';
-      }
-      _pileParentheses.add((_accumulateur, _operateurEnAttente));
-      _formulePrecedente += '( ';
-      _accumulateur = null;
-      _operateurEnAttente = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _enAttenteDenominateur = false;
-      _entreeCharpente = '';
-      _resultatFinal = null;
       _conversionExtra = null;
+      _reinitialiserSiResultat();
+      _pousserOperande();
+      _multiplicationImplicite();
+      _jetons.add('(');
+      _formulePrecedente += '( ';
     });
   }
 
   void _fermerParenthese() {
-    if (_pileParentheses.isEmpty) return;
+    if (_parenthesesOuvertes <= 0) return;
     setState(() {
-      _finaliserFraction();
-      final texteOperande = _texteOperandeEnCours().trim();
-      double valeurInterieure;
-      if (!_operandeVide) {
-        final v = _valeurOperandeCourant();
-        if (_accumulateur != null && _operateurEnAttente != null) {
-          valeurInterieure = _appliquerOperation(
-            _accumulateur!,
-            v,
-            _operateurEnAttente!,
-          );
-        } else {
-          valeurInterieure = v;
-        }
-      } else if (_accumulateur != null) {
-        valeurInterieure = _accumulateur!;
-      } else {
-        valeurInterieure = 0;
-      }
-
-      _formulePrecedente += texteOperande.isNotEmpty
-          ? '$texteOperande) '
-          : ') ';
-
-      final frame = _pileParentheses.removeLast();
-      final accExterieur = frame.$1;
-      final opExterieur = frame.$2;
-      double resultatGroupe = valeurInterieure;
-      if (opExterieur != null) {
-        resultatGroupe = _appliquerOperation(
-          accExterieur ?? 0,
-          resultatGroupe,
-          opExterieur,
-        );
-      }
-      _accumulateur = resultatGroupe;
-      _operateurEnAttente = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _enAttenteDenominateur = false;
-      _entreeCharpente = '';
+      _pousserOperande();
+      if (_jetons.last == '(') return; // « ( ) » vide : ignorée
+      _retirerOperateurFinal();
+      _jetons.add(')');
+      _formulePrecedente = '${_formulePrecedente.trimRight()}) ';
     });
   }
 
@@ -438,58 +456,37 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   void _appuyerEgalCharpente() {
     setState(() {
       _conversionExtra = null;
-      _finaliserFraction();
-      double? resultat;
-      String formuleAffichee = (_formulePrecedente + _texteOperandeEnCours())
+      final formuleAffichee = (_formulePrecedente + _texteOperandeEnCours())
           .trim();
-
-      if (!_operandeVide) {
-        final valeur = _valeurOperandeCourant();
-        if (_accumulateur != null && _operateurEnAttente != null) {
-          resultat = _appliquerOperation(
-            _accumulateur!,
-            valeur,
-            _operateurEnAttente!,
-          );
-        } else {
-          resultat = valeur;
-        }
-      } else if (_accumulateur != null) {
-        resultat = _accumulateur;
-        formuleAffichee = _formulePrecedente.trim();
-      } else {
-        return;
+      final expression = _expressionComplete();
+      double? resultat;
+      try {
+        resultat = evaluerExpression(expression);
+      } on _DivisionParZero {
+        _erreur = 'Division par zéro';
       }
+      if (resultat == null && _erreur == null) return;
 
-      if (formuleAffichee.isNotEmpty) {
-        _ajouterHistorique(formuleAffichee, resultat!);
+      if (resultat != null && formuleAffichee.isNotEmpty) {
+        _ajouterHistorique(formuleAffichee, resultat);
       }
-
       _resultatFinal = resultat;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _enAttenteDenominateur = false;
-      _entreeCharpente = '';
-      _pileParentheses.clear();
+      _jetons.clear();
+      _viderOperande();
     });
   }
 
+  /// Valeur de toute l'expression en cours (ou du dernier résultat), utilisée
+  /// par √, %, x², x³, Conv, M+ et RISE/RUN/DIAG. Null si rien à calculer ou
+  /// division par zéro.
   double? _valeurActuelle() {
-    _finaliserFraction();
     if (_resultatFinal != null) return _resultatFinal;
-    if (!_operandeVide) {
-      final v = _valeurOperandeCourant();
-      if (_accumulateur != null && _operateurEnAttente != null) {
-        return _appliquerOperation(_accumulateur!, v, _operateurEnAttente!);
-      }
-      return v;
+    try {
+      return evaluerExpression(_expressionComplete());
+    } on _DivisionParZero {
+      return null;
     }
-    return _accumulateur;
   }
 
   void _appliquerRacine() {
@@ -500,14 +497,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _ajouterHistorique('√(${_formatResultat(v)})', resultat);
       _resultatFinal = resultat;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _jetons.clear();
+      _erreur = null;
       _feet = null;
       _inches = null;
       _fracNum = null;
       _fracDen = null;
       _entreeCharpente = '';
-      _pileParentheses.clear();
       _conversionExtra = null;
     });
   }
@@ -520,14 +516,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _ajouterHistorique('${_formatResultat(v)} %', resultat);
       _resultatFinal = resultat;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _jetons.clear();
+      _erreur = null;
       _feet = null;
       _inches = null;
       _fracNum = null;
       _fracDen = null;
       _entreeCharpente = '';
-      _pileParentheses.clear();
       _conversionExtra = null;
     });
   }
@@ -540,14 +535,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _ajouterHistorique('(${_formatResultat(v)})²', resultat);
       _resultatFinal = resultat;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _jetons.clear();
+      _erreur = null;
       _feet = null;
       _inches = null;
       _fracNum = null;
       _fracDen = null;
       _entreeCharpente = '';
-      _pileParentheses.clear();
       _conversionExtra = null;
     });
   }
@@ -560,14 +554,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _ajouterHistorique('(${_formatResultat(v)})³', resultat);
       _resultatFinal = resultat;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _jetons.clear();
+      _erreur = null;
       _feet = null;
       _inches = null;
       _fracNum = null;
       _fracDen = null;
       _entreeCharpente = '';
-      _pileParentheses.clear();
       _conversionExtra = null;
     });
   }
@@ -582,14 +575,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _resultatFinal = v;
       _uniteUtiliseeDansFormule = true;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _jetons.clear();
+      _erreur = null;
       _feet = null;
       _inches = null;
       _fracNum = null;
       _fracDen = null;
       _entreeCharpente = '';
-      _pileParentheses.clear();
       _conversionExtra = [
         '${_formatPoucesFraction(v)} po',
         '${metres.toStringAsFixed(3)} m',
@@ -609,14 +601,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     setState(() {
       _resultatFinal = _memoire;
       _formulePrecedente = '';
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _jetons.clear();
+      _erreur = null;
       _feet = null;
       _inches = null;
       _fracNum = null;
       _fracDen = null;
       _entreeCharpente = '';
-      _pileParentheses.clear();
       _conversionExtra = null;
     });
   }
@@ -720,11 +711,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _fracNum = null;
       _fracDen = null;
       _enAttenteDenominateur = false;
-      _accumulateur = null;
-      _operateurEnAttente = null;
+      _jetons.clear();
+      _erreur = null;
       _formulePrecedente = '';
       _resultatFinal = null;
-      _pileParentheses.clear();
       _conversionExtra = null;
       _recalculerCharpente();
     });
@@ -1092,6 +1082,19 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                     fontWeight: FontWeight.w700,
                     fontFamily: 'monospace',
                   ),
+                ),
+              ),
+            )
+          else if (_erreur != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Text(
+                _erreur!,
+                style: const TextStyle(
+                  color: _boutonRouille,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  fontFamily: 'monospace',
                 ),
               ),
             )

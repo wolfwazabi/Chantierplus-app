@@ -186,11 +186,104 @@ void main() {
         'Po',
       ], "6' 1\"");
     });
+  });
 
-    testWidgets('décimal sans unités : 2 + 3 × 4 (gauche à droite) = 20', (
+  // Liste de touches à partir d'un texte : chaque caractère est une touche,
+  // sauf les unités « Pi » et « Po » écrites entre crochets : '5[Pi]6[Po]'.
+  List<String> t(String expression) {
+    final touches = <String>[];
+    final re = RegExp(r'\[(Pi|Po)\]|.');
+    for (final m in re.allMatches(expression.replaceAll(' ', ''))) {
+      touches.add(m.group(1) ?? m.group(0)!);
+    }
+    return touches;
+  }
+
+  group('Priorité des opérations', () {
+    final cas = <String, String>{
+      '2+3×4': '14',
+      '10−2×3': '4',
+      '20÷4+1': '6',
+      '2×3+4×5': '26',
+      '100−10÷2': '95',
+      '1+2×(3+4)': '15',
+      '(2+3)×4': '20',
+      '2×3×4': '24',
+      '10−4−3': '3',
+      '100÷10÷2': '5',
+      '5+2(3)': '11',
+      '1+(2+3)(4−1)': '16',
+      '2×(3+(4−1)×2)': '18',
+      '1.5+2.5×2': '6.5',
+    };
+    for (final MapEntry(key: expression, value: attendu) in cas.entries) {
+      testWidgets('$expression = $attendu', (tester) async {
+        await verifierResultat(tester, t(expression), attendu);
+      });
+    }
+
+    testWidgets('pieds et pouces : 5\' + 6" × 2 = 6\' 0"', (tester) async {
+      await verifierResultat(tester, t('5[Pi]+6[Po]×2'), "6' 0\"");
+    });
+
+    testWidgets('pieds et pouces : 8\' − 2\' 6" ÷ 2 = 6\' 9"', (tester) async {
+      await verifierResultat(tester, t('8[Pi]−2[Pi]6[Po]÷2'), "6' 9\"");
+    });
+
+    testWidgets('opérateur final ignoré : 2+3× = 5', (tester) async {
+      await verifierResultat(tester, t('2+3×'), '5');
+    });
+
+    testWidgets('parenthèse non fermée, fermée automatiquement : 2×(3+4 = 14', (
       tester,
     ) async {
-      await verifierResultat(tester, ['2', '+', '3', '×', '4'], '20');
+      await verifierResultat(tester, t('2×(3+4'), '14');
+    });
+
+    testWidgets('continuer après = : (2+3×4) = 14, puis + 1 = 15', (
+      tester,
+    ) async {
+      await ouvrir(tester);
+      await taper(tester, [...t('2+3×4'), '=', '+', '1', '=']);
+      final resultat = find.byWidgetPredicate(
+        (w) => w is Text && w.style?.fontSize == 38,
+      );
+      expect(tester.widget<Text>(resultat).data, '15');
+    });
+
+    testWidgets(
+      'x² s\'applique au résultat de l\'expression : 2+3×4 x² = 196',
+      (tester) async {
+        await ouvrir(tester);
+        await taper(tester, [...t('2+3×4'), 'x²']);
+        final resultat = find.byWidgetPredicate(
+          (w) => w is Text && w.style?.fontSize == 38,
+        );
+        expect(tester.widget<Text>(resultat).data, '196');
+      },
+    );
+
+    testWidgets('division par zéro : message d\'erreur au lieu d\'un faux 0', (
+      tester,
+    ) async {
+      await ouvrir(tester);
+      await taper(tester, [...t('8÷0'), '=']);
+      expect(find.text('Division par zéro'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 38),
+        findsNothing,
+      );
+      // Une nouvelle saisie efface l'erreur.
+      await taper(tester, ['5', '=']);
+      expect(find.text('Division par zéro'), findsNothing);
+    });
+
+    testWidgets('division par zéro dans un groupe : 1+2÷(3−3) → erreur', (
+      tester,
+    ) async {
+      await ouvrir(tester);
+      await taper(tester, [...t('1+2÷(3−3)'), '=']);
+      expect(find.text('Division par zéro'), findsOneWidget);
     });
   });
 }
