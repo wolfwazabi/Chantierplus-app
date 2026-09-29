@@ -60,5 +60,22 @@
       "enabled": false
     },
     "singleProjectMode": true
+  },
+  "hosting": {
+    "public": "hosting_public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/inscription",
+        "function": {
+          "functionId": "creerNip",
+          "region": "northamerica-northeast1"
+        }
+      }
+    ]
   }
 }

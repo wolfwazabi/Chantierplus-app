@@ -1085,11 +1085,6 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           _boutonMode('Charpente', ModeCalculatrice.charpente),
           const SizedBox(width: 8),
           _boutonMode('Béton', ModeCalculatrice.beton),
-          const SizedBox(width: 12),
-          Text(
-            _metrique ? 'Métrique' : 'Impérial',
-            style: const TextStyle(fontSize: 11, color: Color(0xFF6B6455)),
-          ),
         ],
       ),
     );
@@ -1323,7 +1318,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                     _toucheFonctionGrande('Pi', _committerFeet, claire: true),
                     _toucheFonctionGrande('Po', _committerPouces, claire: true),
                     _toucheFonctionGrande(
-                      'x/y',
+                      '/',
                       _committerSeizieme,
                       claire: true,
                     ),

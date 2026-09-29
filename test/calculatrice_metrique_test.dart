@@ -3,7 +3,7 @@ import 'package:construction_app/services/preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Nouvelle disposition (modèle 1), M−, x/y, métrique et béton.
+/// Nouvelle disposition (modèle 1), M−, /, métrique et béton.
 void main() {
   setUp(() {
     Preferences.unites.value = SystemeUnites.imperial;
@@ -11,13 +11,16 @@ void main() {
   });
 
   Future<void> ouvrir(WidgetTester tester, {bool metrique = false}) async {
-    Preferences.unites.value =
-        metrique ? SystemeUnites.metrique : SystemeUnites.imperial;
+    Preferences.unites.value = metrique
+        ? SystemeUnites.metrique
+        : SystemeUnites.imperial;
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 2.5;
     addTearDown(tester.view.reset);
     await tester.pumpWidget(
-      MaterialApp(home: Scaffold(body: CalculatriceScreen(key: UniqueKey()))),
+      MaterialApp(
+        home: Scaffold(body: CalculatriceScreen(key: UniqueKey())),
+      ),
     );
   }
 
@@ -37,13 +40,46 @@ void main() {
       tester.widget<Text>(resultat()).data!;
 
   group('Disposition (modèle 1)', () {
-    testWidgets('toutes les touches du modèle 1 sont présentes', (tester) async {
+    testWidgets('toutes les touches du modèle 1 sont présentes', (
+      tester,
+    ) async {
       await ouvrir(tester);
       for (final t in [
-        'M+', 'M−', 'MR', 'MC', 'RUN', 'RISE', 'DIAG', 'Conv',
-        'Pi', 'Po', 'x/y', '⌫', '(', ')', 'x²', '√x',
-        '7', '8', '9', '÷', '4', '5', '6', '×', '1', '2', '3', '−',
-        'AC', '0', '.', '+', 'x³', '%', '=',
+        'M+',
+        'M−',
+        'MR',
+        'MC',
+        'RUN',
+        'RISE',
+        'DIAG',
+        'Conv',
+        'Pi',
+        'Po',
+        '/',
+        '⌫',
+        '(',
+        ')',
+        'x²',
+        '√x',
+        '7',
+        '8',
+        '9',
+        '÷',
+        '4',
+        '5',
+        '6',
+        '×',
+        '1',
+        '2',
+        '3',
+        '−',
+        'AC',
+        '0',
+        '.',
+        '+',
+        'x³',
+        '%',
+        '=',
       ]) {
         expect(find.byKey(ValueKey('touche_$t')), findsOneWidget, reason: t);
       }
@@ -55,9 +91,9 @@ void main() {
       expect(find.text('Matériaux'), findsNothing);
     });
 
-    testWidgets('x/y : 5 Po 1 x/y 2 = 5 1/2"', (tester) async {
+    testWidgets('/ : 5 Po 1 / 2 = 5 1/2"', (tester) async {
       await ouvrir(tester);
-      await taper(tester, ['5', 'Po', '1', 'x/y', '2', '=']);
+      await taper(tester, ['5', 'Po', '1', '/', '2', '=']);
       expect(texteResultat(tester), '5 1/2"');
     });
   });
@@ -77,12 +113,12 @@ void main() {
   });
 
   group('Métrique', () {
-    testWidgets('touches m, cm, mm à la place de Pi, Po, x/y', (tester) async {
+    testWidgets('touches m, cm, mm à la place de Pi, Po, /', (tester) async {
       await ouvrir(tester, metrique: true);
       for (final t in ['m', 'cm', 'mm']) {
         expect(find.byKey(ValueKey('touche_$t')), findsOneWidget, reason: t);
       }
-      for (final t in ['Pi', 'Po', 'x/y']) {
+      for (final t in ['Pi', 'Po', '/']) {
         expect(find.byKey(ValueKey('touche_$t')), findsNothing, reason: t);
       }
     });
@@ -118,7 +154,9 @@ void main() {
       expect(texteResultat(tester), '2 m 35 cm 4 mm');
     });
 
-    testWidgets('Conv affiche toujours pi-po, pouces et mètres', (tester) async {
+    testWidgets('Conv affiche toujours pi-po, pouces et mètres', (
+      tester,
+    ) async {
       await ouvrir(tester, metrique: true);
       await taper(tester, ['3', '0', '4', '.', '8', 'mm', 'Conv']);
       expect(find.text("1' 0\""), findsOneWidget);
@@ -138,7 +176,11 @@ void main() {
   });
 
   group('Béton', () {
-    Future<void> entrer(WidgetTester tester, List<String> chiffres, [String? unite]) async {
+    Future<void> entrer(
+      WidgetTester tester,
+      List<String> chiffres, [
+      String? unite,
+    ]) async {
       if (unite != null) await taper(tester, ['unite_$unite']);
       await taper(tester, [...chiffres, '↵']);
     }
@@ -167,15 +209,18 @@ void main() {
       expect(find.text('Sacs de 30 kg : 65'), findsOneWidget);
     });
 
-    testWidgets('métrique : unités au choix (cm pour la longueur, mm pour l\'épaisseur)', (tester) async {
-      await ouvrir(tester, metrique: true);
-      CalculatriceScreen.mode.value = ModeCalculatrice.beton;
-      await tester.pump();
-      await entrer(tester, ['3', '0', '0'], 'cm');
-      await entrer(tester, ['3']);
-      await entrer(tester, ['1', '0', '0'], 'mm');
-      expect(find.text('Volume : 0.900 m³'), findsOneWidget);
-    });
+    testWidgets(
+      'métrique : unités au choix (cm pour la longueur, mm pour l\'épaisseur)',
+      (tester) async {
+        await ouvrir(tester, metrique: true);
+        CalculatriceScreen.mode.value = ModeCalculatrice.beton;
+        await tester.pump();
+        await entrer(tester, ['3', '0', '0'], 'cm');
+        await entrer(tester, ['3']);
+        await entrer(tester, ['1', '0', '0'], 'mm');
+        expect(find.text('Volume : 0.900 m³'), findsOneWidget);
+      },
+    );
 
     testWidgets('retour en charpente : clavier de charpente', (tester) async {
       await ouvrir(tester);

@@ -58,6 +58,14 @@ class JourTravail {
             ) /
             60;
 
+  /// Quelque chose a été saisi (même si la journée est incomplète).
+  bool get aDesDonnees =>
+      chantier != null ||
+      projetTexte.trim().isNotEmpty ||
+      heureDebut != null ||
+      heureFin != null ||
+      tempsVoyagement != null;
+
   bool get estRempli {
     if (estAucun) return true;
     final aChantier = chantier != null || projetTexte.trim().isNotEmpty;
@@ -77,6 +85,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   late List<JourTravail> _jours;
   bool _chargement = false;
   bool _envoiSemaineEnCours = false;
+
+  /// Journées à compléter, affichées en rouge après une soumission.
+  Set<String> _joursEnErreur = {};
   List<Chantier> _chantiers = [];
 
   static DateTime _trouverLundi(DateTime date) {
@@ -128,6 +139,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   void _initialiserSemaineVide() {
     const noms = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
     _jours = noms.map((n) => JourTravail(n)).toList();
+    _joursEnErreur = {};
   }
 
   bool get _estIndividuel => AppSession.current?.estIndividuel == true;
@@ -538,6 +550,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       return;
     }
 
+    final aCompleter = _verifierJours();
     setState(() => _envoiSemaineEnCours = true);
     final succes = await _sauvegarderDocument();
     if (succes) {
@@ -553,14 +566,43 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${_nombreJoursActifs >= 2 ? 'Journées soumises' : 'Journée soumise'} : ${(_totalServeur ?? _totalSemaine).toStringAsFixed(2)}h au total',
+              '${_nombreJoursActifs >= 2 ? 'Journées soumises' : 'Journée soumise'} : ${(_totalServeur ?? _totalSemaine).toStringAsFixed(2)}h au total'
+              '${aCompleter.isEmpty ? '' : '\nÀ compléter : ${aCompleter.join(', ')}'}',
             ),
-            backgroundColor: Colors.green,
+            duration: Duration(seconds: aCompleter.isEmpty ? 4 : 8),
+            backgroundColor: aCompleter.isEmpty ? Colors.green : Colors.red,
           ),
         );
       }
     }
     if (mounted) setState(() => _envoiSemaineEnCours = false);
+  }
+
+  /// Journées à mettre en rouge à la soumission :
+  ///  - incomplète (chantier ou heures manquants) : toujours ;
+  ///  - jamais saisie : seulement quand on soumet le vendredi, qui clôt la
+  ///    semaine de travail (lundi → vendredi).
+  /// Retourne le texte de chaque journée à compléter.
+  List<String> _verifierJours() {
+    final vendrediSoumis =
+        _jours.length > 4 &&
+        _jours[4].estRempli &&
+        (!_jours[4].verrouilleLocalement || _jours[4].modifieApresVerrouillage);
+    final erreurs = <String, String>{};
+    for (var i = 0; i < _jours.length; i++) {
+      final j = _jours[i];
+      if (j.estRempli) continue;
+      if (j.aDesDonnees) {
+        final sansChantier = j.chantier == null && j.projetTexte.trim().isEmpty;
+        erreurs[j.nomJour] = sansChantier
+            ? '${j.nomJour} (chantier)'
+            : '${j.nomJour} (heures)';
+      } else if (vendrediSoumis && i < 4) {
+        erreurs[j.nomJour] = '${j.nomJour} (non saisie)';
+      }
+    }
+    setState(() => _joursEnErreur = erreurs.keys.toSet());
+    return erreurs.values.toList();
   }
 
   void _debloquerJour(JourTravail jour) {
@@ -823,9 +865,19 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       );
     }
 
+    // Rouge tant que la journée signalée n'est pas complétée.
+    final enErreur = _joursEnErreur.contains(jour.nomJour) && !jour.estRempli;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      color: verrouillee ? Colors.grey.shade100 : null,
+      color: enErreur
+          ? Colors.red.shade50
+          : (verrouillee ? Colors.grey.shade100 : null),
+      shape: enErreur
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: const BorderSide(color: Colors.red, width: 2),
+            )
+          : null,
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -836,9 +888,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
               children: [
                 Text(
                   jour.nomJour,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
+                    color: enErreur ? Colors.red.shade800 : null,
                   ),
                 ),
                 if (jour.estAucun)
