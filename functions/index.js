@@ -2,7 +2,7 @@ const {initializeApp} = require("firebase-admin/app");
 initializeApp();
 
 const {setGlobalOptions} = require("firebase-functions/v2");
-const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {
   db, FieldValue, Timestamp,
   PIN_PEPPER, REGION, ROLES, FORMAT_NIP, FORMAT_NUMERO,
@@ -12,6 +12,8 @@ const {
   limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,
 } = require("./src/commun");
 const {RESEND_API_KEY, envoyerCourriel, courrielConfigure, NOM_APP} = require("./src/courriel");
+const {hacherJeton, creerInvitation} = require("./src/invitation");
+const PAGE_CREER_NIP = require("./src/page_creer_nip");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
@@ -211,27 +213,31 @@ exports.approuverCompagnie = onCall({secrets: [RESEND_API_KEY]}, async (request)
 // Gestion des employés (admins de la compagnie)
 // =============================================================================
 
-async function envoyerNip(employe, pin, compagnie, nouveau) {
+async function envoyerInvitation(employe, lien, compagnie, nouveau) {
   return envoyerCourriel({
     a: employe.courriel,
-    sujet: nouveau ? `Votre accès à ${NOM_APP}` : `Votre nouveau NIP — ${NOM_APP}`,
+    sujet: nouveau ?
+      `Bienvenue chez ${compagnie.nomEntreprise} — ${NOM_APP}` :
+      `Créez votre nouveau NIP — ${NOM_APP}`,
     lignes: [
       `Bonjour ${employe.nom},`,
       nouveau ?
-        `${compagnie.nomEntreprise} vous a créé un accès à ${NOM_APP}.` :
-        `Un nouveau NIP vous a été attribué par ${compagnie.nomEntreprise}.`,
-      `Numéro de compagnie : ${compagnie.numero}\nCourriel : ${employe.courriel}\nNIP : ${pin}`,
-      "Vous pouvez changer ce NIP en tout temps dans l'onglet Compte de l'application.",
-      "Ne partagez jamais votre NIP.",
+        `Votre inscription est confirmée : ${compagnie.nomEntreprise} vous a créé un accès à ${NOM_APP}.` :
+        `${compagnie.nomEntreprise} a réinitialisé votre NIP. L'ancien ne fonctionne plus.`,
+      `Numéro de compagnie : ${compagnie.numero}\nCourriel : ${employe.courriel}`,
+      `Créez votre NIP en ouvrant ce lien (valide 7 jours, une seule fois) :\n${lien}`,
+      "Vous pourrez ensuite vous connecter avec votre numéro de compagnie, votre courriel et votre NIP.",
+      "Si vous n'attendiez pas ce courriel, ignorez-le.",
     ],
   });
 }
 
 /**
- * Crée ou modifie un employé. Le NIP n'est jamais choisi par l'admin : un NIP
- * aléatoire est généré et envoyé par courriel à l'employé (création, ou
- * modification avec envoyerNouveauNip). Si le courriel ne peut pas partir
- * (Resend non configuré), le NIP est retourné une seule fois à l'admin.
+ * Crée ou modifie un employé. Le NIP n'est jamais choisi par l'admin :
+ * l'employé reçoit par courriel son numéro de compagnie et un lien à usage
+ * unique pour créer lui-même son NIP (création, ou modification avec
+ * reinitialiserNip : l'ancien NIP est alors désactivé). Si le courriel ne
+ * peut pas partir, le lien est retourné une seule fois à l'admin.
  *
  * Seul le super-admin de la compagnie (estProprietaire) peut nommer un admin,
  * modifier un admin ou changer le rôle d'un admin. Un admin peut modifier sa
@@ -245,13 +251,12 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
   const nom = texte(d.nom, "nom complet", {max: 100});
   const adresse = courriel(d.courriel);
   if (!ROLES.includes(d.role)) throw new HttpsError("invalid-argument", "Rôle invalide.");
-  const nouveauNipDemande = !employeeId || d.envoyerNouveauNip === true;
+  const invitationDemandee = !employeeId || d.reinitialiserNip === true;
   const appelantSuperAdmin = ctx.employe.estProprietaire === true;
 
   const employes = db.collection("employees");
   const ref = employeeId ? employes.doc(employeeId) : employes.doc();
   const soiMeme = ref.id === ctx.employeeId;
-  const pin = nouveauNipDemande ? nombreAleatoire(6) : null;
 
   const enregistre = await db.runTransaction(async (t) => {
     let existant = null;
@@ -279,22 +284,109 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
     }
 
     const maj = {nom, courriel: adresse, role};
-    if (pin) {
-      maj.pinHash = hacherNip(ctx.companyId, pin);
-      maj.pinModifieLe = FieldValue.serverTimestamp();
-    }
     if (existant) {
-      t.update(ref, maj);
+      // Réinitialisation : l'ancien NIP cesse de fonctionner immédiatement.
+      t.update(ref, invitationDemandee ? {...maj, pinHash: FieldValue.delete()} : maj);
     } else {
+      // Pas de NIP tant que l'employé ne l'a pas créé avec son lien.
       t.set(ref, {...maj, companyId: ctx.companyId, estProprietaire: false});
     }
     return {...existant, ...maj};
   });
 
-  if (!pin) return {id: ref.id};
+  if (!invitationDemandee) return {id: ref.id};
   if (employeeId) await supprimerSessionsDe(ref.id, soiMeme ? ctx.uid : null);
-  const envoye = await envoyerNip(enregistre, pin, ctx.compagnie, !employeeId);
-  return envoye ? {id: ref.id, courrielEnvoye: true} : {id: ref.id, courrielEnvoye: false, nipTemporaire: pin};
+  const lien = await creerInvitation(ref.id);
+  const envoye = await envoyerInvitation(enregistre, lien, ctx.compagnie, !employeeId);
+  return envoye ?
+    {id: ref.id, courrielEnvoye: true} :
+    {id: ref.id, courrielEnvoye: false, lienInvitation: lien};
+});
+
+/**
+ * Page de création du NIP (lien d'invitation reçu par courriel).
+ * GET : la page ; POST {employeeId, jeton, nip} : crée le NIP.
+ * Jeton à usage unique, 7 jours, comparé par empreinte ; tentatives limitées.
+ */
+exports.creerNip = onRequest({secrets: SECRETS_NIP_COURRIEL}, async (req, res) => {
+  res.set({
+    "Content-Security-Policy": "default-src 'none'; script-src 'unsafe-inline'; " +
+      "style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; " +
+      "form-action 'none'; frame-ancestors 'none'",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+    "Cache-Control": "no-store",
+  });
+  if (req.method === "GET") {
+    res.status(200).type("html").send(PAGE_CREER_NIP);
+    return;
+  }
+  if (req.method !== "POST") {
+    res.status(405).json({erreur: "Méthode non permise."});
+    return;
+  }
+
+  const lienInvalide = "Ce lien est invalide ou expiré. Demandez un nouveau lien à votre employeur.";
+  const limite = limiteur(`lien_ip_${empreinteIp({rawRequest: req})}`, 10, HEURE);
+  try {
+    await limite.verifier();
+  } catch (_) {
+    res.status(429).json({erreur: "Trop de tentatives. Réessayez plus tard."});
+    return;
+  }
+
+  const {employeeId, jeton, nip} = req.body || {};
+  if (typeof nip !== "string" || !FORMAT_NIP.test(nip)) {
+    res.status(400).json({erreur: "Le NIP doit contenir de 6 à 8 chiffres."});
+    return;
+  }
+  // Identifiant Firestore simple : aucune barre oblique (pas de chemin forgé).
+  if (typeof employeeId !== "string" || !/^[A-Za-z0-9]{1,128}$/.test(employeeId) ||
+      typeof jeton !== "string" || jeton.length < 20 || jeton.length > 100) {
+    await limite.compter();
+    res.status(400).json({erreur: lienInvalide});
+    return;
+  }
+
+  const invRef = db.collection("invitations_nip").doc(employeeId);
+  const empRef = db.collection("employees").doc(employeeId);
+  let employe = null;
+  try {
+    employe = await db.runTransaction(async (t) => {
+      const [inv, emp] = await Promise.all([t.get(invRef), t.get(empRef)]);
+      if (!inv.exists || !emp.exists) return null;
+      const i = inv.data();
+      if (i.expireLe.toMillis() < Date.now() || !egalConstant(i.jetonHash, hacherJeton(jeton))) return null;
+      t.update(empRef, {
+        pinHash: hacherNip(emp.data().companyId, nip),
+        pinModifieLe: FieldValue.serverTimestamp(),
+      });
+      t.delete(invRef); // usage unique
+      return emp.data();
+    });
+  } catch (e) {
+    res.status(500).json({erreur: "Une erreur est survenue. Réessayez."});
+    return;
+  }
+  if (!employe) {
+    await limite.compter();
+    res.status(400).json({erreur: lienInvalide});
+    return;
+  }
+
+  await supprimerSessionsDe(employeeId);
+  const compagnie = (await db.collection("companies").doc(employe.companyId).get()).data() || {};
+  await envoyerCourriel({
+    a: employe.courriel,
+    sujet: `Votre NIP a été créé — ${NOM_APP}`,
+    lignes: [
+      `Bonjour ${employe.nom},`,
+      "Votre NIP vient d'être créé. Vous pouvez maintenant vous connecter à l'application.",
+      "Si vous n'êtes pas à l'origine de ce changement, avertissez votre employeur.",
+    ],
+  });
+  res.status(200).json({ok: true, numero: compagnie.numero || "", courriel: employe.courriel});
 });
 
 exports.supprimerEmploye = onCall(async (request) => {
@@ -322,6 +414,7 @@ exports.supprimerEmploye = onCall(async (request) => {
   });
   await supprimerSessionsDe(employeeId);
   await db.collection("reinitialisations_nip").doc(employeeId).delete();
+  await db.collection("invitations_nip").doc(employeeId).delete();
   return {ok: true};
 });
 

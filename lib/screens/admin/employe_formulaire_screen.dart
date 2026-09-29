@@ -6,8 +6,8 @@ import '../../services/fonctions.dart';
 
 /// Création / modification d'un employé.
 ///
-/// L'admin ne choisit jamais le NIP : un NIP aléatoire est généré par le
-/// serveur et envoyé par courriel à l'employé, qui peut ensuite le changer.
+/// L'admin ne choisit jamais le NIP : l'employé reçoit par courriel son
+/// numéro de compagnie et un lien pour créer lui-même son NIP.
 class EmployeFormulaireScreen extends StatefulWidget {
   final String? docId;
   final Map<String, dynamic>? donneesExistantes;
@@ -57,7 +57,7 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
     super.dispose();
   }
 
-  Future<void> _enregistrer({bool envoyerNouveauNip = false}) async {
+  Future<void> _enregistrer({bool reinitialiserNip = false}) async {
     final nom = _nomCtrl.text.trim();
     final courriel = _courrielCtrl.text.trim();
 
@@ -79,25 +79,27 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
       _erreur = null;
     });
 
-    // Validation, unicité du courriel, génération et envoi du NIP, protection
-    // du propriétaire : côté serveur (Cloud Function enregistrerEmploye).
+    // Validation, unicité du courriel, lien d'invitation, protection du
+    // super-admin : côté serveur (Cloud Function enregistrerEmploye).
     try {
       final resultat = await Fonctions.appeler('enregistrerEmploye', {
         'employeeId': widget.docId,
         'nom': nom,
         'courriel': courriel,
         'role': _estProprietaireExistant ? 'admin' : _role,
-        'envoyerNouveauNip': envoyerNouveauNip,
+        'reinitialiserNip': reinitialiserNip,
       });
       if (!mounted) return;
 
-      final nipTemporaire = resultat['nipTemporaire'] as String?;
-      if (nipTemporaire != null) {
-        await _afficherNipTemporaire(nom, nipTemporaire);
+      final lien = resultat['lienInvitation'] as String?;
+      if (lien != null) {
+        await _afficherLienDeSecours(nom, lien);
       } else if (resultat['courrielEnvoye'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Le NIP a été envoyé à $courriel.'),
+            content: Text(
+              'Courriel envoyé à $courriel : numéro de compagnie et lien pour créer son NIP.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -111,9 +113,9 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
     }
   }
 
-  /// Solution de repli tant que l'envoi de courriels n'est pas configuré :
-  /// le NIP est montré une seule fois à l'admin, qui le transmet en personne.
-  Future<void> _afficherNipTemporaire(String nom, String nip) {
+  /// Solution de repli si le courriel n'a pas pu partir : le lien (usage
+  /// unique, 7 jours) est montré une seule fois à l'admin, qui le transmet.
+  Future<void> _afficherLienDeSecours(String nom, String lien) {
     return showDialog(
       context: context,
       barrierDismissible: false,
@@ -124,31 +126,18 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'L\'envoi de courriels n\'est pas encore disponible. '
-              'Transmettez ce NIP à $nom en personne ; il ne sera plus affiché.',
+              'Le courriel n\'a pas pu partir. Transmettez ce lien à $nom '
+              '(texto, par exemple) pour qu\'il crée son NIP. Il ne sera plus '
+              'affiché, fonctionne une seule fois et expire dans 7 jours.',
             ),
-            const SizedBox(height: 16),
-            Center(
-              child: SelectableText(
-                nip,
-                style: const TextStyle(
-                  fontSize: 28,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 6,
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'L\'employé pourra le changer dans l\'onglet Compte.',
-              style: TextStyle(fontSize: 13),
-            ),
+            const SizedBox(height: 12),
+            SelectableText(lien, style: const TextStyle(fontSize: 12)),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Clipboard.setData(ClipboardData(text: nip)),
-            child: const Text('Copier'),
+            onPressed: () => Clipboard.setData(ClipboardData(text: lien)),
+            child: const Text('Copier le lien'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx),
@@ -159,14 +148,15 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
     );
   }
 
-  Future<void> _confirmerNouveauNip() async {
+  Future<void> _confirmerReinitialisation() async {
     final confirme = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Envoyer un nouveau NIP ?'),
+        title: const Text('Réinitialiser le NIP ?'),
         content: Text(
-          'Un nouveau NIP sera envoyé à ${_courrielCtrl.text.trim()}. '
-          'L\'ancien ne fonctionnera plus et l\'employé sera déconnecté de ses appareils.',
+          'Le NIP actuel cessera de fonctionner et l\'employé sera déconnecté '
+          'de ses appareils. Un lien pour créer un nouveau NIP sera envoyé à '
+          '${_courrielCtrl.text.trim()}.',
         ),
         actions: [
           TextButton(
@@ -175,12 +165,12 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Envoyer'),
+            child: const Text('Réinitialiser'),
           ),
         ],
       ),
     );
-    if (confirme == true) await _enregistrer(envoyerNouveauNip: true);
+    if (confirme == true) await _enregistrer(reinitialiserNip: true);
   }
 
   @override
@@ -219,7 +209,8 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
             if (!_modeEdition) ...[
               const SizedBox(height: 8),
               const Text(
-                'Un NIP aléatoire sera envoyé à ce courriel. L\'employé pourra le changer.',
+                'Un courriel de confirmation lui sera envoyé avec le numéro de '
+                'compagnie et un lien pour créer son propre NIP.',
                 style: TextStyle(fontSize: 13),
               ),
             ],
@@ -285,7 +276,7 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
                     : Text(
                         _modeEdition
                             ? 'Enregistrer les modifications'
-                            : 'Créer l\'employé et envoyer son NIP',
+                            : 'Créer l\'employé et l\'inviter',
                       ),
               ),
             ),
@@ -294,9 +285,9 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton.icon(
-                  onPressed: _enCours ? null : _confirmerNouveauNip,
+                  onPressed: _enCours ? null : _confirmerReinitialisation,
                   icon: const Icon(Icons.send_outlined),
-                  label: const Text('Envoyer un nouveau NIP'),
+                  label: const Text('Réinitialiser le NIP'),
                 ),
               ),
             ],

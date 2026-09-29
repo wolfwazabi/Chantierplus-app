@@ -163,6 +163,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Liens de création du NIP (empreintes des jetons) : serveur seulement.
+    match /invitations_nip/{doc=**} {
+      allow read, write: if false;
+    }
+
     match /config/{doc=**} {
       allow read, write: if false;
     }

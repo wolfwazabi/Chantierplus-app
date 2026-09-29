@@ -139,6 +139,15 @@ class EmployesListeScreen extends StatelessWidget {
                               color: Colors.grey.shade600,
                             ),
                           ),
+                          // Pas encore de NIP : lien d'invitation non utilisé.
+                          if (data['pinHash'] == null)
+                            const Text(
+                              'Invitation en attente : NIP pas encore créé',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF9A5B00),
+                              ),
+                            ),
                         ],
                       ),
                       trailing: !gerable
