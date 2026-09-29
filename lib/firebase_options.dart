@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyAI6eCJKu0OP9E8SUGYvlVQr1ArW3t5kwM',
-    appId: '1:328147837496:android:5c6a24aa83327f923cfccd',
+    appId: '1:328147837496:android:2e1803fb781a7a283cfccd',
     messagingSenderId: '328147837496',
     projectId: 'boreal-8cd7c',
     storageBucket: 'boreal-8cd7c.firebasestorage.app',
@@ -59,20 +59,20 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyBpfHlqjlC0qoe7GY2easPoUfpiylfphqA',
-    appId: '1:328147837496:ios:aa725c3badc08b1f3cfccd',
+    appId: '1:328147837496:ios:202c3c75be81da9f3cfccd',
     messagingSenderId: '328147837496',
     projectId: 'boreal-8cd7c',
     storageBucket: 'boreal-8cd7c.firebasestorage.app',
-    iosBundleId: 'com.example.constructionApp',
+    iosBundleId: 'app.chantierplus',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
     apiKey: 'AIzaSyBpfHlqjlC0qoe7GY2easPoUfpiylfphqA',
-    appId: '1:328147837496:ios:aa725c3badc08b1f3cfccd',
+    appId: '1:328147837496:ios:202c3c75be81da9f3cfccd',
     messagingSenderId: '328147837496',
     projectId: 'boreal-8cd7c',
     storageBucket: 'boreal-8cd7c.firebasestorage.app',
-    iosBundleId: 'com.example.constructionApp',
+    iosBundleId: 'app.chantierplus',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(

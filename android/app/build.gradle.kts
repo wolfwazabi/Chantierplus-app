@@ -1,3 +1,6 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // START: FlutterFire Configuration
@@ -7,8 +10,16 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Clé de signature de production : android/key.properties (jamais dans git).
+// Voir la procédure de création dans le README ou l'historique du projet.
+val proprietesCle = Properties()
+val fichierProprietesCle = rootProject.file("key.properties")
+if (fichierProprietesCle.exists()) {
+    FileInputStream(fichierProprietesCle).use { proprietesCle.load(it) }
+}
+
 android {
-    namespace = "com.example.construction_app"
+    namespace = "app.chantierplus"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -20,8 +31,8 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.construction_app"
+        // Identifiant définitif (Google Play) : domaine chantierplus.app à l'envers.
+        applicationId = "app.chantierplus"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -34,11 +45,27 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        if (fichierProprietesCle.exists()) {
+            create("release") {
+                keyAlias = proprietesCle["keyAlias"] as String
+                keyPassword = proprietesCle["keyPassword"] as String
+                storeFile = file(proprietesCle["storeFile"] as String)
+                storePassword = proprietesCle["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Sans key.properties, la version release est signée avec la clé de
+            // débogage : pratique pour tester, mais refusée par Google Play.
+            signingConfig = if (fichierProprietesCle.exists()) {
+                signingConfigs.getByName("release")
+            } else {
+                logger.warn("key.properties absent : release signée avec la clé de DÉBOGAGE (non publiable).")
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

@@ -1,4 +1,4 @@
-package com.example.construction_app
+package app.chantierplus
 
 import io.flutter.embedding.android.FlutterActivity
 

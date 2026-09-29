@@ -7,6 +7,25 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:328147837496:android:2e1803fb781a7a283cfccd",
+        "android_client_info": {
+          "package_name": "app.chantierplus"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAI6eCJKu0OP9E8SUGYvlVQr1ArW3t5kwM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:328147837496:android:5c6a24aa83327f923cfccd",
         "android_client_info": {
           "package_name": "com.example.construction_app"
