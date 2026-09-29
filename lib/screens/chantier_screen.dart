@@ -9,6 +9,7 @@ import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
+import 'materiaux/calcul_materiaux.dart';
 import '../widgets/recherche_chantier.dart';
 import '../services/theme_compagnie.dart';
 
@@ -84,7 +85,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
             }
 
             return DefaultTabController(
-              length: 4,
+              length: 5,
               child: Column(
                 children: [
                   Padding(
@@ -138,6 +139,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
                       Tab(icon: Icon(Icons.assignment), text: 'Travaux'),
                       Tab(icon: Icon(Icons.shopping_cart), text: 'Matériel'),
                       Tab(icon: Icon(Icons.folder_open), text: 'Documents'),
+                      Tab(icon: Icon(Icons.calculate), text: 'Calcul'),
                     ],
                   ),
                   Expanded(
@@ -177,6 +179,8 @@ class _ChantierScreenState extends State<ChantierScreen> {
                           chantierId: _chantierSelectionne!.id,
                           peutGerer: false,
                         ),
+                        // Calcul de matériaux (feuilles), ex-onglet de la calculatrice.
+                        const CalculMateriaux(),
                       ],
                     ),
                   ),
