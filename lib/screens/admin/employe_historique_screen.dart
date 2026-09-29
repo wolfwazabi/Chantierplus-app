@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/app_session.dart';
+import '../../services/theme_compagnie.dart';
 
 class EmployeHistoriqueScreen extends StatelessWidget {
   final String employeeId;
@@ -62,9 +63,9 @@ class EmployeHistoriqueScreen extends StatelessWidget {
                   (data['totalHeures'] as num?)?.toDouble() ?? 0;
 
               return ListTile(
-                leading: const Icon(
+                leading: Icon(
                   Icons.calendar_month,
-                  color: const Color(0xFF8A3B24),
+                  color: ThemeCompagnie.accentDe(context),
                 ),
                 title: Text(_formatSemaine(lundiDate)),
                 subtitle: Text('Total : ${totalHeures.toStringAsFixed(2)} h'),

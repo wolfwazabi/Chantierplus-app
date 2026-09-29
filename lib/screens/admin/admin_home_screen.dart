@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../services/theme_compagnie.dart';
+import 'couleur_compagnie_screen.dart';
 import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
 import 'chantiers_gestion_screen.dart';
@@ -10,6 +12,7 @@ class AdminHomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = ThemeCompagnie.accentDe(context);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -20,7 +23,7 @@ class AdminHomeScreen extends StatelessWidget {
         const SizedBox(height: 16),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.access_time, color: Colors.orange),
+            leading: Icon(Icons.access_time, color: accent),
             title: const Text('Heures employés'),
             subtitle: const Text('Voir les heures soumises par semaine'),
             trailing: const Icon(Icons.chevron_right),
@@ -34,7 +37,7 @@ class AdminHomeScreen extends StatelessWidget {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.construction, color: Colors.orange),
+            leading: Icon(Icons.construction, color: accent),
             title: const Text('Gérer les chantiers'),
             subtitle: const Text('Ajouter, modifier ou retirer des chantiers'),
             trailing: const Icon(Icons.chevron_right),
@@ -48,7 +51,7 @@ class AdminHomeScreen extends StatelessWidget {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.folder_open, color: Colors.orange),
+            leading: Icon(Icons.folder_open, color: accent),
             title: const Text('Documents des chantiers'),
             subtitle: const Text('Déposer des plans, devis, photos…'),
             trailing: const Icon(Icons.chevron_right),
@@ -62,7 +65,7 @@ class AdminHomeScreen extends StatelessWidget {
         const SizedBox(height: 12),
         Card(
           child: ListTile(
-            leading: const Icon(Icons.people, color: Colors.orange),
+            leading: Icon(Icons.people, color: accent),
             title: const Text('Gestion des employés'),
             subtitle: const Text('Ajouter, modifier ou retirer des comptes'),
             trailing: const Icon(Icons.chevron_right),
@@ -70,6 +73,22 @@ class AdminHomeScreen extends StatelessWidget {
               Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => EmployesListeScreen()));
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.palette_outlined, color: accent),
+            title: const Text('Couleur de l\'application'),
+            subtitle: const Text('Aux couleurs de votre compagnie'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const CouleurCompagnieScreen(),
+                ),
+              );
             },
           ),
         ),

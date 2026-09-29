@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'models/employee.dart';
 import 'services/app_session.dart';
+import 'services/theme_compagnie.dart';
 import 'screens/compte_screen.dart';
 import 'screens/calculatrice_screen.dart';
 import 'screens/feuille_temps_screen.dart';
@@ -54,7 +55,11 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
   await _activerAppCheck();
-  if (FirebaseAuth.instance.currentUser == null) {
+  // Attendre que Firebase ait restauré la session enregistrée : sur le web,
+  // currentUser vaut null tant que la restauration n'est pas terminée, et un
+  // nouveau compte anonyme ferait perdre la connexion à chaque lancement.
+  final utilisateur = await FirebaseAuth.instance.authStateChanges().first;
+  if (utilisateur == null) {
     await FirebaseAuth.instance.signInAnonymously();
   }
   await AppSession.tenterReconnexionAutomatique();
@@ -66,53 +71,16 @@ class ConstructionApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Chantier+',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFFEAE2D0),
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF2F4A34),
-          primary: const Color(0xFF2F4A34),
-          secondary: const Color(0xFF8A3B24),
-          surface: const Color(0xFFDDD2B8),
-          brightness: Brightness.light,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF2F4A34),
-          foregroundColor: Color(0xFFEAE2D0),
-        ),
-        navigationBarTheme: NavigationBarThemeData(
-          backgroundColor: const Color(0xFFDDD2B8),
-          indicatorColor: const Color(0xFF2F4A34).withValues(alpha: 0.15),
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            final selectionne = states.contains(WidgetState.selected);
-            return TextStyle(
-              fontSize: 12,
-              color: selectionne
-                  ? const Color(0xFF2F4A34)
-                  : const Color(0xFF8A8066),
-              fontWeight: selectionne ? FontWeight.w600 : FontWeight.normal,
-            );
-          }),
-          iconTheme: WidgetStateProperty.resolveWith((states) {
-            final selectionne = states.contains(WidgetState.selected);
-            return IconThemeData(
-              color: selectionne
-                  ? const Color(0xFF2F4A34)
-                  : const Color(0xFF8A8066),
-            );
-          }),
-        ),
-        filledButtonTheme: FilledButtonThemeData(
-          style: FilledButton.styleFrom(
-            backgroundColor: const Color(0xFF2F4A34),
-            foregroundColor: const Color(0xFFEAE2D0),
-          ),
-        ),
+    // Couleur de la compagnie connectée (vert par défaut) : toute l'app se
+    // redessine quand un admin la change.
+    return ValueListenableBuilder<Color>(
+      valueListenable: ThemeCompagnie.couleur,
+      builder: (context, couleur, _) => MaterialApp(
+        title: 'Chantier+',
+        debugShowCheckedModeBanner: false,
+        theme: ThemeCompagnie.construire(couleur),
+        home: const HomePage(),
       ),
-      home: const HomePage(),
     );
   }
 }

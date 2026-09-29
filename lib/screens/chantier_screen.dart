@@ -10,6 +10,7 @@ import '../models/employee.dart';
 import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
 import '../widgets/recherche_chantier.dart';
+import '../services/theme_compagnie.dart';
 
 class ChantierScreen extends StatefulWidget {
   const ChantierScreen({super.key});
@@ -127,8 +128,9 @@ class _ChantierScreenState extends State<ChantierScreen> {
                       ],
                     ),
                   ),
-                  const TabBar(
-                    labelColor: Colors.orange,
+                  TabBar(
+                    labelColor: ThemeCompagnie.accentDe(context),
+                    indicatorColor: ThemeCompagnie.accentDe(context),
                     isScrollable: true,
                     tabAlignment: TabAlignment.center,
                     tabs: [
@@ -781,12 +783,19 @@ class _ListeTabState extends State<_ListeTab> {
                   width: double.infinity,
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: Colors.orange.shade50,
+                    color: ThemeCompagnie.teintePale(
+                      Theme.of(context).colorScheme.primary,
+                      0.12,
+                    ),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Row(
+                  child: Row(
                     children: [
-                      Icon(Icons.login, color: Colors.orange, size: 18),
+                      Icon(
+                        Icons.login,
+                        color: ThemeCompagnie.accentDe(context),
+                        size: 18,
+                      ),
                       SizedBox(width: 8),
                       Expanded(
                         child: Text(
@@ -885,7 +894,9 @@ class _ListeTabState extends State<_ListeTab> {
                           )
                         : Icon(
                             widget.icone,
-                            color: complete ? Colors.grey : Colors.orange,
+                            color: complete
+                                ? Colors.grey
+                                : ThemeCompagnie.accentDe(context),
                           ),
                     title: Text(
                       data['texte'] ?? '',

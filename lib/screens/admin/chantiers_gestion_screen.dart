@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../models/chantier.dart';
 import '../../services/app_session.dart';
 import '../../widgets/recherche_chantier.dart';
+import '../../services/theme_compagnie.dart';
 
 class ChantiersGestionScreen extends StatefulWidget {
   const ChantiersGestionScreen({super.key});
@@ -208,9 +209,9 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                                 final doc = visibles[index];
                                 final data = doc.data() as Map<String, dynamic>;
                                 return ListTile(
-                                  leading: const Icon(
+                                  leading: Icon(
                                     Icons.construction,
-                                    color: Colors.orange,
+                                    color: ThemeCompagnie.accentDe(context),
                                   ),
                                   title: Text(data['nom'] ?? ''),
                                   subtitle: Text(data['adresse'] ?? ''),

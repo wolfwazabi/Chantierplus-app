@@ -181,7 +181,17 @@ service cloud.firestore {
     match /companies/{companyId} {
       allow get: if membreDe(companyId) || estProprioApp();
       allow list: if estProprioApp();
-      allow write: if false; // inscrireCompagnie / approuverCompagnie
+
+      // Couleur de l'application : les admins (dont le super-admin) de la
+      // compagnie peuvent modifier ce seul champ, au format « #RRGGBB ».
+      allow update: if adminDe(companyId)
+        && champsModifiesPermis(['couleurTheme'])
+        && request.resource.data.couleurTheme is string
+        && request.resource.data.couleurTheme.matches('#[0-9A-F]{6}');
+
+      // Création, statut, numéro… : Cloud Functions seulement
+      // (inscrireCompagnie / approuverCompagnie).
+      allow create, delete: if false;
     }
 
     // ----------------------------------------------------------------- Employés

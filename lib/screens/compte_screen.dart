@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 import '../services/fonctions.dart';
+import '../services/theme_compagnie.dart';
 
 const List<String> metiersQuebec = [
   'Charpentier-menuisier',
@@ -353,10 +354,14 @@ class _CompteScreenState extends State<CompteScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const CircleAvatar(
+                  CircleAvatar(
                     radius: 40,
-                    backgroundColor: Colors.orange,
-                    child: Icon(Icons.person, size: 40, color: Colors.white),
+                    backgroundColor: Theme.of(context).colorScheme.primary,
+                    child: Icon(
+                      Icons.person,
+                      size: 40,
+                      color: Theme.of(context).colorScheme.onPrimary,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(
@@ -439,7 +444,7 @@ class _CompteScreenState extends State<CompteScreen> {
                   Icon(
                     Icons.construction,
                     size: 56,
-                    color: Colors.orange.shade700,
+                    color: ThemeCompagnie.accentDe(context),
                   ),
                   const SizedBox(height: 16),
                   ToggleButtons(

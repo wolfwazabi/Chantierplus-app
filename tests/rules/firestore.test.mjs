@@ -122,9 +122,46 @@ describe('Compagnies et Proprio', () => {
     await assertFails(getDocs(query(collection(d, 'feuilles_temps'), where('companyId', '==', 'B'))));
   });
 
-  test('personne ne modifie une compagnie côté client', async () => {
+  test('personne ne modifie le statut ou le numéro d\'une compagnie côté client', async () => {
     await assertFails(updateDoc(doc(ctxDe('uid-adminP'), 'companies/P'), { statut: 'approuvee' }));
     await assertFails(updateDoc(doc(ctxDe('uid-superA'), 'companies/P'), { statut: 'approuvee' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'companies/A'), { statut: 'refusee' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'companies/A'), { numero: '9999' }));
+    await assertFails(deleteDoc(doc(ctxDe('uid-adminA'), 'companies/A')));
+    await assertFails(setDoc(doc(ctxDe('uid-adminA'), 'companies/Z'), { couleurTheme: '#C62828' }));
+  });
+});
+
+// =============================================================================
+describe('Couleur de l\'application (par compagnie)', () => {
+  test('admin et super-admin de la compagnie : changent la couleur', async () => {
+    await assertSucceeds(updateDoc(doc(ctxDe('uid-adminA'), 'companies/A'), { couleurTheme: '#C62828' }));
+    await assertSucceeds(updateDoc(doc(ctxDe('uid-superA'), 'companies/A'), { couleurTheme: '#1565C0' }));
+  });
+
+  test('contremaître et employé : refusé', async () => {
+    await assertFails(updateDoc(doc(ctxDe('uid-plusA'), 'companies/A'), { couleurTheme: '#C62828' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-empA'), 'companies/A'), { couleurTheme: '#C62828' }));
+  });
+
+  test('autre compagnie, compagnie en attente, particulier : refusé', async () => {
+    await assertFails(updateDoc(doc(ctxDe('uid-adminB'), 'companies/A'), { couleurTheme: '#C62828' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminP'), 'companies/P'), { couleurTheme: '#C62828' }));
+    await assertFails(updateDoc(doc(db(individu(env, 'uid-ind')), 'companies/A'), { couleurTheme: '#C62828' }));
+  });
+
+  test('format strict « #RRGGBB » en majuscules', async () => {
+    const ref = doc(ctxDe('uid-adminA'), 'companies/A');
+    for (const mauvais of ['#c62828', 'C62828', '#FFF', '#C628289', 'rouge', 123, '#GGGGGG', "#C62828'; x"]) {
+      await assertFails(updateDoc(ref, { couleurTheme: mauvais }));
+    }
+  });
+
+  test('la couleur seulement : pas en même temps qu\'un autre champ', async () => {
+    await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'companies/A'),
+      { couleurTheme: '#C62828', statut: 'refusee' }));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'companies/A'),
+      { couleurTheme: '#C62828', nomEntreprise: 'Piratée' }));
   });
 });
 

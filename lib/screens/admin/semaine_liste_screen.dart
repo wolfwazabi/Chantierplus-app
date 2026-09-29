@@ -3,6 +3,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../services/app_session.dart';
 import 'semaine_detail_screen.dart';
+import '../../services/theme_compagnie.dart';
 
 class SemaineListeScreen extends StatelessWidget {
   const SemaineListeScreen({super.key});
@@ -65,9 +66,9 @@ class SemaineListeScreen extends StatelessWidget {
                     final semaine = semainesTriees[index];
                     final nbEmployes = semaines[semaine]!.length;
                     return ListTile(
-                      leading: const Icon(
+                      leading: Icon(
                         Icons.calendar_month,
-                        color: Colors.orange,
+                        color: ThemeCompagnie.accentDe(context),
                       ),
                       title: Text(_formatSemaine(semaine)),
                       subtitle: Text(

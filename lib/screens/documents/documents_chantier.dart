@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/app_session.dart';
+import '../../services/theme_compagnie.dart';
 
 /// Taille maximale d'un document (identique à storage.rules / firestore.rules).
 const int tailleMaxDocument = 50 * 1024 * 1024;
@@ -366,7 +367,10 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                   final data = doc.data();
                   final nom = data['nom'] as String? ?? '';
                   return ListTile(
-                    leading: Icon(_icone(nom), color: const Color(0xFF8A3B24)),
+                    leading: Icon(
+                      _icone(nom),
+                      color: ThemeCompagnie.accentDe(context),
+                    ),
                     title: Text(nom, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
                       '${formaterTaille((data['taille'] as num?) ?? 0)} • ${_date(data['dateAjout'] as Timestamp?)}',

@@ -6,6 +6,7 @@ import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 import '../widgets/recherche_chantier.dart';
+import '../services/theme_compagnie.dart';
 
 const Chantier chantierAucun = Chantier(
   id: '_aucun',
@@ -507,12 +508,18 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   if (pasConnecte) ...[
                     const SizedBox(height: 12),
                     Card(
-                      color: Colors.orange.shade50,
-                      child: const Padding(
-                        padding: EdgeInsets.all(12),
+                      color: ThemeCompagnie.teintePale(
+                        Theme.of(context).colorScheme.primary,
+                        0.12,
+                      ),
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
                         child: Row(
                           children: [
-                            Icon(Icons.login, color: Colors.orange),
+                            Icon(
+                              Icons.login,
+                              color: ThemeCompagnie.accentDe(context),
+                            ),
                             SizedBox(width: 10),
                             Expanded(
                               child: Text(
@@ -569,7 +576,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   ),
                   const SizedBox(height: 8),
                   Card(
-                    color: Colors.blue.shade50,
+                    color: ThemeCompagnie.teintePale(
+                      Theme.of(context).colorScheme.primary,
+                      0.12,
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(16),
                       child: Column(
@@ -715,7 +725,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                     '${jour.heuresTravaillees!.toStringAsFixed(2)} h',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
-                      color: Colors.orange.shade800,
+                      color: ThemeCompagnie.accentDe(context),
                     ),
                   ),
               ],

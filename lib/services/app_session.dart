@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 
 import '../models/employee.dart';
 import 'fonctions.dart';
+import 'theme_compagnie.dart';
 
 /// État de connexion de l'application.
 ///
@@ -19,6 +20,7 @@ class AppSession {
   static Employee? get current => notifier.value;
 
   static StreamSubscription<DocumentSnapshot>? _ecouteSuppression;
+  static StreamSubscription<DocumentSnapshot>? _ecouteCompagnie;
 
   static bool get estConnecte => current != null;
   static bool get estProprioApp => current?.estProprioApp == true;
@@ -71,7 +73,8 @@ class AppSession {
       // règles et les fonctions revérifient config/proprio_app à chaque requête.
       estProprioApp: session?['proprioApp'] == true,
     );
-    _demarrerEcouteSuppression(employeeId);
+    ThemeCompagnie.appliquer(companyDoc.data()!['couleurTheme'] as String?);
+    _demarrerEcoutes(employeeId, companyId);
   }
 
   static Future<void> _restaurerIndividu(User user) async {
@@ -117,7 +120,7 @@ class AppSession {
         estProprioApp: data['estProprioApp'] == true,
       );
       notifier.value = employee;
-      _demarrerEcouteSuppression(employee.id);
+      _demarrerEcoutes(employee.id, employee.companyId!);
       return null;
     } catch (e) {
       return Fonctions.message(e, 'Erreur de connexion. Réessayez plus tard.');
@@ -297,8 +300,8 @@ class AppSession {
   static Future<void> deconnecter() async {
     final user = FirebaseAuth.instance.currentUser;
     notifier.value = null;
-    await _ecouteSuppression?.cancel();
-    _ecouteSuppression = null;
+    await _arreterEcoutes();
+    ThemeCompagnie.reinitialiser();
 
     if (user != null && !user.isAnonymous) {
       await FirebaseAuth.instance.signOut();
@@ -316,16 +319,36 @@ class AppSession {
     } catch (_) {}
   }
 
-  /// Déconnecte l'employé dès que sa fiche disparaît. Une fois l'employé
-  /// supprimé, les règles refusent la lecture : l'erreur déclenche aussi la
-  /// déconnexion.
-  static void _demarrerEcouteSuppression(String id) {
-    _ecouteSuppression?.cancel();
-    _ecouteSuppression = _db.collection('employees').doc(id).snapshots().listen(
-      (snap) {
-        if (!snap.exists) deconnecter();
-      },
-      onError: (_) => deconnecter(),
-    );
+  /// Écoutes en direct pendant la session d'un employé :
+  ///  - sa fiche : déconnexion dès qu'elle disparaît (une fois l'employé
+  ///    supprimé, les règles refusent la lecture : l'erreur déconnecte aussi) ;
+  ///  - sa compagnie : la couleur de l'application change sur tous les
+  ///    appareils dès qu'un admin la modifie.
+  static void _demarrerEcoutes(String employeeId, String companyId) {
+    _arreterEcoutes();
+    _ecouteSuppression = _db
+        .collection('employees')
+        .doc(employeeId)
+        .snapshots()
+        .listen((snap) {
+          if (!snap.exists) deconnecter();
+        }, onError: (_) => deconnecter());
+    _ecouteCompagnie = _db
+        .collection('companies')
+        .doc(companyId)
+        .snapshots()
+        .listen(
+          (snap) =>
+              ThemeCompagnie.appliquer(snap.data()?['couleurTheme'] as String?),
+          // Accès perdu : la fiche employé déclenche déjà la déconnexion.
+          onError: (_) {},
+        );
+  }
+
+  static Future<void> _arreterEcoutes() async {
+    await _ecouteSuppression?.cancel();
+    await _ecouteCompagnie?.cancel();
+    _ecouteSuppression = null;
+    _ecouteCompagnie = null;
   }
 }
