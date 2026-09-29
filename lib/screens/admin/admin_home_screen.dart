@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../services/theme_compagnie.dart';
 import 'couleur_compagnie_screen.dart';
+import 'regles_paie_screen.dart';
 import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
 import 'chantiers_gestion_screen.dart';
@@ -31,6 +32,20 @@ class AdminHomeScreen extends StatelessWidget {
               Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => SemaineListeScreen()));
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.rule, color: accent),
+            title: const Text('Heures et voyagement'),
+            subtitle: const Text('Pauses, dîner et voyagement payés'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ReglesPaieScreen()),
+              );
             },
           ),
         ),

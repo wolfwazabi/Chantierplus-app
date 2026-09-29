@@ -189,10 +189,16 @@ service cloud.firestore {
 
       // Couleur de l'application : les admins (dont le super-admin) de la
       // compagnie peuvent modifier ce seul champ, au format « #RRGGBB ».
+      // Réglages de la compagnie : les admins (dont le super-admin) peuvent
+      // modifier la couleur de l'application et les règles de paie, et rien
+      // d'autre (statut, numéro… : Cloud Functions seulement).
       allow update: if adminDe(companyId)
-        && champsModifiesPermis(['couleurTheme'])
-        && request.resource.data.couleurTheme is string
-        && request.resource.data.couleurTheme.matches('#[0-9A-F]{6}');
+        && champsModifiesPermis(['couleurTheme', 'reglesPaie'])
+        && (!request.resource.data.keys().hasAny(['couleurTheme'])
+            || (request.resource.data.couleurTheme is string
+                && request.resource.data.couleurTheme.matches('#[0-9A-F]{6}')))
+        && (!request.resource.data.keys().hasAny(['reglesPaie'])
+            || reglesPaieValides(request.resource.data.reglesPaie));
 
       // Création, statut, numéro… : Cloud Functions seulement
       // (inscrireCompagnie / approuverCompagnie).
@@ -222,6 +228,28 @@ service cloud.firestore {
         && texte(request.resource.data.nom, 1, 100)
         && request.resource.data.email == request.auth.token.email;
       allow list, delete: if false;
+    }
+
+    // Règles de paie (pauses, voyagement) : mêmes bornes que ReglesPaie.
+    function entierEntre(v, min, max) {
+      return v is int && v >= min && v <= max;
+    }
+
+    function reglesPaieValides(r) {
+      return r is map
+        && r.keys().hasOnly(['pauseMatinMinutes', 'pauseMatinPayee', 'dinerMinutes',
+                             'dinerPaye', 'voyagementActif', 'voyagementSeuilMinutes',
+                             'voyagementPourcentage'])
+        && r.keys().hasAll(['pauseMatinMinutes', 'pauseMatinPayee', 'dinerMinutes',
+                            'dinerPaye', 'voyagementActif', 'voyagementSeuilMinutes',
+                            'voyagementPourcentage'])
+        && entierEntre(r.pauseMatinMinutes, 0, 120)
+        && r.pauseMatinPayee is bool
+        && entierEntre(r.dinerMinutes, 0, 120)
+        && r.dinerPaye is bool
+        && r.voyagementActif is bool
+        && entierEntre(r.voyagementSeuilMinutes, 0, 600)
+        && entierEntre(r.voyagementPourcentage, 0, 100);
     }
 
     // ---------------------------------------------------------------- Chantiers
@@ -362,12 +390,20 @@ service cloud.firestore {
         && d.totalHeures is number
         && d.totalHeures >= 0
         && d.totalHeures <= 168
-        && d.dateModification == request.time;
+        && d.dateModification == request.time
+        && (!d.keys().hasAny(['totalHeuresTravaillees'])
+            || (d.totalHeuresTravaillees is number
+                && d.totalHeuresTravaillees >= 0 && d.totalHeuresTravaillees <= 168))
+        && (!d.keys().hasAny(['totalVoyagementPaye'])
+            || (d.totalVoyagementPaye is number
+                && d.totalVoyagementPaye >= 0 && d.totalVoyagementPaye <= 168))
+        && (!d.keys().hasAny(['reglesPaie']) || reglesPaieValides(d.reglesPaie));
     }
 
     function feuilleEmployeValide(d, feuilleId) {
       return champsPermis(d, ['companyId', 'estIndividuel', 'employeeId', 'employeeNom',
-                              'lundiDate', 'jours', 'totalHeures', 'dateModification'])
+                              'lundiDate', 'jours', 'totalHeures', 'dateModification',
+                              'totalHeuresTravaillees', 'totalVoyagementPaye', 'reglesPaie'])
         && d.companyId == maCompagnie()
         && d.employeeId == session().employeeId
         && d.employeeNom == moi().nom
@@ -380,7 +416,8 @@ service cloud.firestore {
 
     function feuilleIndividuValide(d, feuilleId) {
       return champsPermis(d, ['estIndividuel', 'employeeId', 'employeeNom',
-                              'lundiDate', 'jours', 'totalHeures', 'dateModification'])
+                              'lundiDate', 'jours', 'totalHeures', 'dateModification',
+                              'totalHeuresTravaillees', 'totalVoyagementPaye', 'reglesPaie'])
         && d.employeeId == request.auth.uid
         && d.estIndividuel == true
         && contenuFeuilleValide(d, feuilleId);

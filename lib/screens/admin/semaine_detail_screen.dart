@@ -58,6 +58,7 @@ class SemaineDetailScreen extends StatelessWidget {
                       ...joursOrdre.map(
                         (j) => DataColumn(label: Text(j.substring(0, 3))),
                       ),
+                      const DataColumn(label: Text('Voy. payé')),
                       const DataColumn(label: Text('Total')),
                     ],
                     rows: docs.map((doc) {
@@ -69,6 +70,9 @@ class SemaineDetailScreen extends StatelessWidget {
                       );
                       final totalHeures =
                           (data['totalHeures'] as num?)?.toDouble() ?? 0;
+                      final voyagementPaye =
+                          (data['totalVoyagementPaye'] as num?)?.toDouble() ??
+                          0;
 
                       final heuresParJour = <String, double?>{};
                       for (final j in jours) {
@@ -106,6 +110,13 @@ class SemaineDetailScreen extends StatelessWidget {
                               Text(h != null ? h.toStringAsFixed(2) : '-'),
                             );
                           }),
+                          DataCell(
+                            Text(
+                              voyagementPaye > 0
+                                  ? voyagementPaye.toStringAsFixed(2)
+                                  : '-',
+                            ),
+                          ),
                           DataCell(
                             Text(
                               totalHeures.toStringAsFixed(2),

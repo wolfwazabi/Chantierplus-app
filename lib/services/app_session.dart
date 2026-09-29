@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../models/employee.dart';
+import '../models/regles_paie.dart';
 import 'fonctions.dart';
 import 'theme_compagnie.dart';
 
@@ -74,6 +75,7 @@ class AppSession {
       estProprioApp: session?['proprioApp'] == true,
     );
     ThemeCompagnie.appliquer(companyDoc.data()!['couleurTheme'] as String?);
+    _appliquerReglesPaie(companyDoc.data());
     _demarrerEcoutes(employeeId, companyId);
   }
 
@@ -302,6 +304,7 @@ class AppSession {
     notifier.value = null;
     await _arreterEcoutes();
     ThemeCompagnie.reinitialiser();
+    reglesPaie.value = ReglesPaie.defaut;
 
     if (user != null && !user.isAnonymous) {
       await FirebaseAuth.instance.signOut();
@@ -338,11 +341,26 @@ class AppSession {
         .doc(companyId)
         .snapshots()
         .listen(
-          (snap) =>
-              ThemeCompagnie.appliquer(snap.data()?['couleurTheme'] as String?),
+          (snap) {
+            ThemeCompagnie.appliquer(snap.data()?['couleurTheme'] as String?);
+            _appliquerReglesPaie(snap.data());
+          },
           // Accès perdu : la fiche employé déclenche déjà la déconnexion.
           onError: (_) {},
         );
+  }
+
+  /// Règles de paie de la compagnie (pauses, voyagement), en direct.
+  /// Défaut pour les particuliers et hors connexion.
+  static final ValueNotifier<ReglesPaie> reglesPaie = ValueNotifier(
+    ReglesPaie.defaut,
+  );
+
+  static void _appliquerReglesPaie(Map<String, dynamic>? compagnie) {
+    final brut = compagnie?['reglesPaie'];
+    reglesPaie.value = ReglesPaie.depuisMap(
+      brut is Map ? Map<String, dynamic>.from(brut) : null,
+    );
   }
 
   static Future<void> _arreterEcoutes() async {

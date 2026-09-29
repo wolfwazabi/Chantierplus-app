@@ -61,6 +61,8 @@ class EmployeHistoriqueScreen extends StatelessWidget {
               final lundiDate = data['lundiDate'] as String? ?? '';
               final totalHeures =
                   (data['totalHeures'] as num?)?.toDouble() ?? 0;
+              final voyagementPaye =
+                  (data['totalVoyagementPaye'] as num?)?.toDouble() ?? 0;
 
               return ListTile(
                 leading: Icon(
@@ -68,7 +70,10 @@ class EmployeHistoriqueScreen extends StatelessWidget {
                   color: ThemeCompagnie.accentDe(context),
                 ),
                 title: Text(_formatSemaine(lundiDate)),
-                subtitle: Text('Total : ${totalHeures.toStringAsFixed(2)} h'),
+                subtitle: Text(
+                  'Total : ${totalHeures.toStringAsFixed(2)} h'
+                  '${voyagementPaye > 0 ? ' (dont ${voyagementPaye.toStringAsFixed(2)} h de voyagement)' : ''}',
+                ),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   Navigator.of(context).push(
@@ -124,10 +129,12 @@ class _JourDetailScreen extends StatelessWidget {
             DataColumn(label: Text('Début')),
             DataColumn(label: Text('Fin')),
             DataColumn(label: Text('Voyagement')),
+            DataColumn(label: Text('Voy. payé')),
             DataColumn(label: Text('Heures')),
           ],
           rows: jours.map((j) {
             final heures = (j['heuresTravaillees'] as num?)?.toDouble();
+            final voyPaye = (j['voyagementPayeHeures'] as num?)?.toDouble();
             return DataRow(
               cells: [
                 DataCell(Text(j['nomJour'] ?? '')),
@@ -136,6 +143,13 @@ class _JourDetailScreen extends StatelessWidget {
                 DataCell(Text(_formatHeure(j['heureFinMinutes'] as int?))),
                 DataCell(
                   Text(_formatDuree(j['tempsVoyagementMinutes'] as int?)),
+                ),
+                DataCell(
+                  Text(
+                    voyPaye != null && voyPaye > 0
+                        ? voyPaye.toStringAsFixed(2)
+                        : '-',
+                  ),
                 ),
                 DataCell(
                   Text(heures != null ? heures.toStringAsFixed(2) : '-'),

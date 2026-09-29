@@ -368,6 +368,57 @@ describe('Documents de chantier (dépôt : admin ; consultation : admin et contr
 });
 
 // =============================================================================
+describe('Règles de paie (pauses, voyagement) par compagnie', () => {
+  const regles = (over = {}) => ({
+    pauseMatinMinutes: 15, pauseMatinPayee: false, dinerMinutes: 30, dinerPaye: true,
+    voyagementActif: true, voyagementSeuilMinutes: 60, voyagementPourcentage: 50, ...over,
+  });
+
+  test('admin et super-admin : modifient les règles de paie', async () => {
+    await assertSucceeds(updateDoc(doc(ctxDe('uid-adminA'), 'companies/A'), { reglesPaie: regles() }));
+    await assertSucceeds(updateDoc(doc(ctxDe('uid-superA'), 'companies/A'),
+      { reglesPaie: regles({ voyagementActif: false }), couleurTheme: '#1565C0' }));
+  });
+
+  test('contremaître, employé, autre compagnie : refusé', async () => {
+    await assertFails(updateDoc(doc(ctxDe('uid-plusA'), 'companies/A'), { reglesPaie: regles() }));
+    await assertFails(updateDoc(doc(ctxDe('uid-empA'), 'companies/A'), { reglesPaie: regles() }));
+    await assertFails(updateDoc(doc(ctxDe('uid-adminB'), 'companies/A'), { reglesPaie: regles() }));
+  });
+
+  test('valeurs hors bornes, champ manquant ou inconnu : refusé', async () => {
+    const ref = doc(ctxDe('uid-adminA'), 'companies/A');
+    for (const mauvais of [
+      regles({ voyagementPourcentage: 150 }), regles({ voyagementPourcentage: -1 }),
+      regles({ voyagementSeuilMinutes: 601 }), regles({ dinerMinutes: 121 }),
+      regles({ pauseMatinMinutes: 7.5 }), regles({ dinerPaye: 'oui' }),
+      regles({ bonus: 1 }), (({ dinerPaye, ...r }) => r)(regles()), 'pas-un-map',
+    ]) {
+      await assertFails(updateDoc(ref, { reglesPaie: mauvais }));
+    }
+  });
+
+  test('feuille de temps : totaux détaillés et photo des règles acceptés', async () => {
+    await assertSucceeds(setDoc(doc(ctxDe('uid-empA'), `feuilles_temps/empA_${LUNDI_PROCHAIN}`), {
+      companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',
+      lundiDate: LUNDI_PROCHAIN, jours: [], totalHeures: 8.25, totalHeuresTravaillees: 7.75,
+      totalVoyagementPaye: 0.5, reglesPaie: regles(), dateModification: serverTimestamp(),
+    }));
+  });
+
+  test('feuille de temps : totaux absurdes ou règles invalides refusés', async () => {
+    const base = {
+      companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',
+      lundiDate: LUNDI_PROCHAIN, jours: [], totalHeures: 8, dateModification: serverTimestamp(),
+    };
+    const ref = doc(ctxDe('uid-empA'), `feuilles_temps/empA_${LUNDI_PROCHAIN}`);
+    await assertFails(setDoc(ref, { ...base, totalVoyagementPaye: 500 }));
+    await assertFails(setDoc(ref, { ...base, totalHeuresTravaillees: -1 }));
+    await assertFails(setDoc(ref, { ...base, reglesPaie: regles({ voyagementPourcentage: 900 }) }));
+  });
+});
+
+// =============================================================================
 describe('Feuilles de temps — employé', () => {
   const feuille = (lundiDate, over = {}) => ({
     companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',

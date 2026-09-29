@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/chantier.dart';
 import '../models/employee.dart';
+import '../models/regles_paie.dart';
 import '../services/app_session.dart';
 import '../widgets/recherche_chantier.dart';
 import '../services/theme_compagnie.dart';
@@ -27,23 +28,34 @@ class JourTravail {
   bool verrouilleLocalement = false;
   bool modifieApresVerrouillage = false;
 
-  static const int minutesPauseMatin = 15;
-  static const int minutesDiner = 30;
-
   JourTravail(this.nomJour, {this.pauseMatin = true, this.diner = true});
 
   bool get estAucun => chantier?.id == '_aucun';
 
+  /// Heures payées de la journée selon les règles de la compagnie (pauses).
   double? get heuresTravaillees {
     if (estAucun) return null;
-    if (heureDebut == null || heureFin == null) return null;
-    final debutMin = heureDebut!.hour * 60 + heureDebut!.minute;
-    final finMin = heureFin!.hour * 60 + heureFin!.minute;
-    final soustraction = pauseMatin ? minutesPauseMatin : 0;
-    final total = finMin - debutMin - soustraction;
-    if (total < 0) return null;
-    return total / 60;
+    final minutes = AppSession.reglesPaie.value.minutesTravaillees(
+      debutMinutes: heureDebut == null
+          ? null
+          : heureDebut!.hour * 60 + heureDebut!.minute,
+      finMinutes: heureFin == null
+          ? null
+          : heureFin!.hour * 60 + heureFin!.minute,
+      pauseMatinPrise: pauseMatin,
+      dinerPris: diner,
+    );
+    return minutes == null ? null : minutes / 60;
   }
+
+  /// Voyagement payé de la journée (heures) : seuil et pourcentage de la
+  /// compagnie.
+  double get heuresVoyagementPayees => estAucun
+      ? 0
+      : AppSession.reglesPaie.value.minutesVoyagementPayees(
+              tempsVoyagement?.inMinutes,
+            ) /
+            60;
 
   bool get estRempli {
     if (estAucun) return true;
@@ -90,6 +102,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     super.initState();
     _initialiserSemaineVide();
     AppSession.notifier.addListener(_onSessionChange);
+    AppSession.reglesPaie.addListener(_onReglesPaie);
     _chargerChantiers();
     _chargerDonnees();
   }
@@ -97,7 +110,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   @override
   void dispose() {
     AppSession.notifier.removeListener(_onSessionChange);
+    AppSession.reglesPaie.removeListener(_onReglesPaie);
     super.dispose();
+  }
+
+  /// L'admin a changé les règles de paie : recalcul immédiat des totaux.
+  void _onReglesPaie() {
+    if (mounted) setState(() {});
   }
 
   void _onSessionChange() {
@@ -220,7 +239,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     if (verrouillee) return;
     final initial =
         (debut ? jour.heureDebut : jour.heureFin) ??
-        const TimeOfDay(hour: 8, minute: 0);
+        (debut
+            ? const TimeOfDay(hour: 7, minute: 0)
+            : const TimeOfDay(hour: 15, minute: 0));
     var dateTemp = DateTime(2024, 1, 1, initial.hour, initial.minute);
 
     final resultat = await showModalBottomSheet<DateTime>(
@@ -324,13 +345,46 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     }
   }
 
-  double get _totalSemaine =>
+  ReglesPaie get _regles => AppSession.reglesPaie.value;
+
+  /// Voyagement payé par l'employeur (jamais pour un particulier).
+  bool get _voyagementPaye => !_estIndividuel && _regles.voyagementActif;
+
+  /// Le particulier note son voyagement pour lui-même ; en compagnie, le
+  /// champ disparaît si l'employeur ne paie pas le voyagement.
+  bool get _afficherVoyagement => _estIndividuel || _regles.voyagementActif;
+
+  double get _totalHeuresTravaillees =>
       _jours.fold(0.0, (total, j) => total + (j.heuresTravaillees ?? 0));
+
+  double get _totalVoyagementPaye => _voyagementPaye
+      ? _jours.fold(0.0, (total, j) => total + j.heuresVoyagementPayees)
+      : 0;
+
+  /// Total payé de la semaine : heures travaillées + voyagement payé.
+  double get _totalSemaine => _totalHeuresTravaillees + _totalVoyagementPaye;
 
   Duration get _totalVoyagementSemaine => _jours.fold(
     Duration.zero,
     (total, j) => total + (j.tempsVoyagement ?? Duration.zero),
   );
+
+  Widget _ligneTotal(String libelle, String valeur) {
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            libelle,
+            style: const TextStyle(fontSize: 14, color: Colors.black54),
+          ),
+        ),
+        Text(
+          valeur,
+          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
 
   String _formatDureeAffichage(Duration? d) {
     if (d == null || d.inMinutes == 0) return '--';
@@ -372,7 +426,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
         'pauseMatin': j.pauseMatin,
         'diner': j.diner,
         'heuresTravaillees': j.heuresTravaillees,
-        'tempsVoyagementMinutes': j.tempsVoyagement?.inMinutes,
+        'tempsVoyagementMinutes': _afficherVoyagement
+            ? j.tempsVoyagement?.inMinutes
+            : null,
+        'voyagementPayeHeures': _voyagementPaye ? j.heuresVoyagementPayees : 0,
         'verrouille': j.verrouilleLocalement || j.estRempli,
         if (j.modifieApresVerrouillage)
           'modifieApresVerrouillageLe': DateTime.now().toIso8601String(),
@@ -391,6 +448,11 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
             'lundiDate': _isoDate(_lundiDeLaSemaine),
             'jours': joursData,
             'totalHeures': _totalSemaine,
+            'totalHeuresTravaillees': _totalHeuresTravaillees,
+            'totalVoyagementPaye': _totalVoyagementPaye,
+            // Règles appliquées au moment de la saisie : un changement futur
+            // ne modifie pas les semaines déjà remises.
+            if (!_estIndividuel) 'reglesPaie': _regles.versMap(),
             'dateModification': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
       return true;
@@ -603,26 +665,43 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                               ),
                             ],
                           ),
-                          const Divider(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Voyagement total',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  color: Colors.black54,
+                          if (_voyagementPaye) ...[
+                            const Divider(height: 20),
+                            _ligneTotal(
+                              'Heures travaillées',
+                              '${_totalHeuresTravaillees.toStringAsFixed(2)} h',
+                            ),
+                            const SizedBox(height: 4),
+                            _ligneTotal(
+                              'Voyagement payé (${_regles.voyagementPourcentage} %, '
+                                  'dès ${_regles.voyagementSeuilMinutes} min/jour)',
+                              '${_totalVoyagementPaye.toStringAsFixed(2)} h',
+                            ),
+                          ],
+                          if (_afficherVoyagement) ...[
+                            const Divider(height: 20),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Voyagement saisi',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.black54,
+                                  ),
                                 ),
-                              ),
-                              Text(
-                                _formatDureeAffichage(_totalVoyagementSemaine),
-                                style: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
+                                Text(
+                                  _formatDureeAffichage(
+                                    _totalVoyagementSemaine,
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
                                 ),
-                              ),
-                            ],
-                          ),
+                              ],
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -813,26 +892,28 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              InkWell(
-                onTap: verrouillee
-                    ? null
-                    : () => _choisirVoyagement(jour, verrouillee),
-                child: InputDecorator(
-                  decoration: InputDecoration(
-                    labelText: 'Temps de voyagement',
-                    border: const OutlineInputBorder(),
-                    isDense: true,
-                    prefixIcon: const Icon(Icons.directions_car, size: 20),
-                    filled: verrouillee,
-                    fillColor: verrouillee ? Colors.grey.shade200 : null,
-                  ),
-                  child: Text(
-                    _formatDureeAffichage(jour.tempsVoyagement),
-                    style: TextStyle(color: verrouillee ? Colors.grey : null),
+              if (_afficherVoyagement) ...[
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: verrouillee
+                      ? null
+                      : () => _choisirVoyagement(jour, verrouillee),
+                  child: InputDecorator(
+                    decoration: InputDecoration(
+                      labelText: 'Temps de voyagement',
+                      border: const OutlineInputBorder(),
+                      isDense: true,
+                      prefixIcon: const Icon(Icons.directions_car, size: 20),
+                      filled: verrouillee,
+                      fillColor: verrouillee ? Colors.grey.shade200 : null,
+                    ),
+                    child: Text(
+                      _formatDureeAffichage(jour.tempsVoyagement),
+                      style: TextStyle(color: verrouillee ? Colors.grey : null),
+                    ),
                   ),
                 ),
-              ),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -847,9 +928,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                         'Pause matin',
                         style: TextStyle(fontSize: 13),
                       ),
-                      subtitle: const Text(
-                        '15 min',
-                        style: TextStyle(fontSize: 11),
+                      subtitle: Text(
+                        '${_regles.pauseMatinMinutes} min'
+                        '${_regles.pauseMatinPayee ? ', payée' : ', non payée'}',
+                        style: const TextStyle(fontSize: 11),
                       ),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
@@ -866,9 +948,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                         'Dîner',
                         style: TextStyle(fontSize: 13),
                       ),
-                      subtitle: const Text(
-                        '30 min',
-                        style: TextStyle(fontSize: 11),
+                      subtitle: Text(
+                        '${_regles.dinerMinutes} min'
+                        '${_regles.dinerPaye ? ', payé' : ', non payé'}',
+                        style: const TextStyle(fontSize: 11),
                       ),
                       dense: true,
                       contentPadding: EdgeInsets.zero,
