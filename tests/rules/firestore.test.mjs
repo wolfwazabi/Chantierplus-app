@@ -398,24 +398,6 @@ describe('Règles de paie (pauses, voyagement) par compagnie', () => {
     }
   });
 
-  test('feuille de temps : totaux détaillés et photo des règles acceptés', async () => {
-    await assertSucceeds(setDoc(doc(ctxDe('uid-empA'), `feuilles_temps/empA_${LUNDI_PROCHAIN}`), {
-      companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',
-      lundiDate: LUNDI_PROCHAIN, jours: [], totalHeures: 8.25, totalHeuresTravaillees: 7.75,
-      totalVoyagementPaye: 0.5, reglesPaie: regles(), dateModification: serverTimestamp(),
-    }));
-  });
-
-  test('feuille de temps : totaux absurdes ou règles invalides refusés', async () => {
-    const base = {
-      companyId: 'A', estIndividuel: false, employeeId: 'empA', employeeNom: 'Emp A',
-      lundiDate: LUNDI_PROCHAIN, jours: [], totalHeures: 8, dateModification: serverTimestamp(),
-    };
-    const ref = doc(ctxDe('uid-empA'), `feuilles_temps/empA_${LUNDI_PROCHAIN}`);
-    await assertFails(setDoc(ref, { ...base, totalVoyagementPaye: 500 }));
-    await assertFails(setDoc(ref, { ...base, totalHeuresTravaillees: -1 }));
-    await assertFails(setDoc(ref, { ...base, reglesPaie: regles({ voyagementPourcentage: 900 }) }));
-  });
 });
 
 // =============================================================================
@@ -434,33 +416,34 @@ describe('Feuilles de temps — employé', () => {
     await assertFails(getDoc(doc(d, `feuilles_temps/adminB_${LUNDI}`)));
   });
 
-  test('enregistre sa feuille de la semaine courante et suivante (set merge) → OK', async () => {
-    const d = ctxDe('uid-empA');
-    await assertSucceeds(setDoc(doc(d, `feuilles_temps/empA_${LUNDI}`), feuille(LUNDI), { merge: true }));
-    await assertSucceeds(setDoc(doc(d, `feuilles_temps/empA_${LUNDI_PROCHAIN}`), feuille(LUNDI_PROCHAIN), { merge: true }));
+  // Les feuilles de compagnie s'écrivent uniquement par la Cloud Function
+  // enregistrerFeuilleTemps (calcul des heures côté serveur, testée dans
+  // functions.test.mjs). Aucun rôle ne peut les écrire depuis l'app.
+  test('AUCUN rôle n\'écrit une feuille de compagnie directement (heures truquées impossibles)', async () => {
+    const cas = [
+      ['uid-empA', 'empA', 'Emp A'], ['uid-plusA', 'plusA', 'Plus A'],
+      ['uid-adminA', 'adminA', 'Admin A'], ['uid-superA', 'superA', 'Super A'],
+    ];
+    for (const [uid, employeeId, employeeNom] of cas) {
+      const d = ctxDe(uid);
+      for (const lundiDate of [LUNDI, LUNDI_PROCHAIN, LUNDI_PASSE]) {
+        const ref = doc(d, `feuilles_temps/${employeeId}_${lundiDate}`);
+        const f = feuille(lundiDate, { employeeId, employeeNom });
+        await assertFails(setDoc(ref, f));
+        await assertFails(setDoc(ref, f, { merge: true }));
+        await assertFails(updateDoc(ref, { totalHeures: 1 }));
+      }
+    }
   });
 
-  test('refusé : autre employé, id incohérent, autre compagnie, faux nom, heures absurdes', async () => {
-    const d = ctxDe('uid-empA');
-    const id = `feuilles_temps/empA_${LUNDI}`;
-    await assertFails(setDoc(doc(d, `feuilles_temps/adminA_${LUNDI}`), feuille(LUNDI, { employeeId: 'adminA' })));
-    await assertFails(setDoc(doc(d, `feuilles_temps/empA_${LUNDI_PROCHAIN}`), feuille(LUNDI)));
-    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { companyId: 'B' })));
-    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { employeeNom: 'Admin A' })));
-    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { totalHeures: 500 })));
-    await assertFails(setDoc(doc(d, id), feuille(LUNDI, { estIndividuel: true })));
-  });
-
-  test('verrouillage : employé et contremaître ne modifient plus une semaine échue', async () => {
-    await assertFails(setDoc(doc(ctxDe('uid-empA'), `feuilles_temps/empA_${LUNDI_PASSE}`),
-      feuille(LUNDI_PASSE), { merge: true }));
-    await assertFails(setDoc(doc(ctxDe('uid-plusA'), `feuilles_temps/plusA_${LUNDI_PASSE}`),
-      feuille(LUNDI_PASSE, { employeeId: 'plusA', employeeNom: 'Plus A' })));
-  });
-
-  test('verrouillage : l\'admin peut encore corriger sa semaine échue', async () => {
-    await assertSucceeds(setDoc(doc(ctxDe('uid-adminA'), `feuilles_temps/adminA_${LUNDI_PASSE}`),
-      feuille(LUNDI_PASSE, { employeeId: 'adminA', employeeNom: 'Admin A' })));
+  test('un employé ne peut pas gonfler les heures d\'une feuille existante', async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      await setDoc(doc(c.firestore(), `feuilles_temps/empA_${LUNDI}`), feuille(LUNDI, { dateModification: new Date() }));
+    });
+    const ref = doc(ctxDe('uid-empA'), `feuilles_temps/empA_${LUNDI}`);
+    await assertFails(updateDoc(ref, { totalHeures: 160, totalHeuresTravaillees: 160 }));
+    await assertFails(setDoc(ref, feuille(LUNDI, { totalHeures: 100 }), { merge: true }));
+    await assertSucceeds(getDoc(ref)); // lecture de sa propre feuille : permise
   });
 
   test('suppression → refusée', async () => {

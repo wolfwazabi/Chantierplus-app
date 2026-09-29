@@ -5,7 +5,8 @@
   "scripts": {
     "test:regles": "firebase emulators:exec --project demo-construction-rules --only firestore,storage \"node --test --test-concurrency=1 firestore.test.mjs storage.test.mjs\"",
     "test:functions": "firebase emulators:exec --project demo-construction-rules --only auth,functions,firestore \"node --test functions.test.mjs\"",
-    "test": "npm run test:regles && npm run test:functions"
+    "test": "npm run test:unitaires && npm run test:regles && npm run test:functions",
+    "test:unitaires": "node --test feuille_temps.unit.test.mjs"
   },
   "type": "commonjs",
   "devDependencies": {

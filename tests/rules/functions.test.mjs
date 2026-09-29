@@ -9,8 +9,9 @@ import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
 import {
-  collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, where,
+  collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, setDoc, updateDoc, where,
 } from 'firebase/firestore';
+import { lundi } from './helpers.mjs';
 import { initializeApp as initAdmin } from 'firebase-admin/app';
 import { getFirestore as getAdminDb } from 'firebase-admin/firestore';
 
@@ -490,6 +491,147 @@ describe('Retrait et isolation', () => {
     await rejette(adminB.appeler('supprimerEmploye', { employeeId: proprioId }), 'not-found');
     await assert.rejects(getDocs(query(collection(adminB.db, 'employees'), where('companyId', '==', companyId))));
     await assert.rejects(getDoc(doc(adminB.db, 'companies', companyId)));
+  });
+});
+
+// =============================================================================
+describe('Feuille de temps : heures calculées par le serveur', () => {
+  const NUM = '880001';
+  const cid = 'ft-compagnie'; const autreCid = 'ft-autre';
+  const PIN = '482915';
+  const SEMAINE = lundi(0); const PASSEE = lundi(-2); const PROCHAINE = lundi(1); const TROP_LOIN = lundi(2);
+  let emp; let adm;
+
+  const jour = (over = {}) => ({
+    estAucun: false, chantierId: 'ft-chA', heureDebutMinutes: 7 * 60, heureFinMinutes: 15 * 60,
+    pauseMatin: true, diner: true, tempsVoyagementMinutes: null, ...over,
+  });
+  const envoyer = (a, jours, lundiDate = SEMAINE, extra = {}) =>
+    a.appeler('enregistrerFeuilleTemps', { lundiDate, jours, ...extra });
+  const feuilleDe = async (employeeId, lundiDate = SEMAINE) =>
+    (await adminDb.collection('feuilles_temps').doc(`${employeeId}_${lundiDate}`).get()).data();
+
+  before(async () => {
+    const reglesBase = { pauseMatinMinutes: 15, pauseMatinPayee: false, dinerMinutes: 30, dinerPaye: true,
+      voyagementActif: true, voyagementSeuilMinutes: 60, voyagementPourcentage: 50 };
+    await adminDb.collection('companies').doc(cid).set(
+      { numero: NUM, nomEntreprise: 'Feuilles inc.', statut: 'approuvee', reglesPaie: reglesBase });
+    await adminDb.collection('companies').doc(autreCid).set(
+      { numero: '880002', nomEntreprise: 'Autre inc.', statut: 'approuvee' });
+    const fiche = (nom, role, courriel) => ({
+      companyId: cid, nom, role, estProprietaire: false, courriel, pinHash: hacher(cid, PIN),
+    });
+    await adminDb.collection('employees').doc('ft-emp').set(fiche('Marie Employée', 'employe', 'ft-emp@exemple.ca'));
+    await adminDb.collection('employees').doc('ft-adm').set(fiche('Alex Admin', 'admin', 'ft-adm@exemple.ca'));
+    await adminDb.collection('chantiers').doc('ft-chA').set({ companyId: cid, nom: 'Chantier Alpha', adresse: '1 rue A' });
+    await adminDb.collection('chantiers').doc('ft-chB').set({ companyId: autreCid, nom: 'Chantier Étranger', adresse: '2 rue B' });
+    emp = await connecter(NUM, 'ft-emp@exemple.ca', PIN);
+    adm = await connecter(NUM, 'ft-adm@exemple.ca', PIN);
+  });
+
+  test('calcule heures, voyagement payé et totaux avec les règles de la compagnie', async () => {
+    const r = await envoyer(emp, [jour({ tempsVoyagementMinutes: 90 }), jour({ tempsVoyagementMinutes: 40 })]);
+    assert.deepEqual(r, {
+      totalHeures: 7.75 * 2 + 0.75, totalHeuresTravaillees: 15.5, totalVoyagementPaye: 0.75,
+      jours: [{ heuresTravaillees: 7.75, voyagementPayeHeures: 0.75 }, { heuresTravaillees: 7.75, voyagementPayeHeures: 0 }],
+    });
+    const f = await feuilleDe('ft-emp');
+    assert.equal(f.companyId, cid);
+    assert.equal(f.employeeNom, 'Marie Employée');
+    assert.equal(f.estIndividuel, false);
+    assert.equal(f.jours[0].chantierNom, 'Chantier Alpha');
+    assert.equal(f.jours[0].nomJour, 'Lundi');
+    assert.equal(f.jours[1].tempsVoyagementMinutes, 40);
+    assert.equal(f.reglesPaie.voyagementPourcentage, 50);
+    assert.ok(f.dateModification);
+  });
+
+  test('valeurs calculées, nom et identité envoyés par le client : ignorés', async () => {
+    await envoyer(emp, [jour({ heuresTravaillees: 99, voyagementPayeHeures: 40, chantierNom: 'Faux' })], SEMAINE, {
+      totalHeures: 500, employeeId: 'ft-adm', employeeNom: 'Alex Admin', companyId: autreCid,
+      reglesPaie: { voyagementPourcentage: 100, voyagementActif: true, voyagementSeuilMinutes: 0 },
+    });
+    const f = await feuilleDe('ft-emp');
+    assert.equal(f.totalHeures, 7.75);
+    assert.equal(f.jours[0].chantierNom, 'Chantier Alpha');
+    assert.equal(f.employeeNom, 'Marie Employée');
+    assert.equal(f.reglesPaie.voyagementPourcentage, 50);
+    assert.equal((await feuilleDe('ft-adm')), undefined, 'rien écrit au nom d\'un autre');
+  });
+
+  test('écriture directe dans Firestore : refusée à tous, lecture de sa feuille permise', async () => {
+    const ref = doc(emp.db, 'feuilles_temps', `ft-emp_${SEMAINE}`);
+    await assert.rejects(updateDoc(ref, { totalHeures: 160 }));
+    await assert.rejects(setDoc(ref, { totalHeures: 160 }, { merge: true }));
+    await assert.rejects(setDoc(doc(adm.db, 'feuilles_temps', `ft-adm_${SEMAINE}`),
+      { companyId: cid, estIndividuel: false, employeeId: 'ft-adm', employeeNom: 'Alex Admin', lundiDate: SEMAINE, jours: [], totalHeures: 1 }));
+    assert.equal((await getDoc(ref)).data().totalHeures, 7.75);
+    assert.equal((await feuilleDe('ft-emp')).totalHeures, 7.75, 'inchangée');
+  });
+
+  test('chantier d\'une autre compagnie ou inexistant : refusé', async () => {
+    await rejette(envoyer(emp, [jour({ chantierId: 'ft-chB' })]), 'invalid-argument');
+    await rejette(envoyer(emp, [jour({ chantierId: 'fantome' })]), 'invalid-argument');
+  });
+
+  test('saisie invalide : refusée (heures inversées, hors plage, jour incomplet, semaine qui n\'est pas un lundi)', async () => {
+    await rejette(envoyer(emp, [jour({ heureFinMinutes: 6 * 60 })]), 'invalid-argument');
+    await rejette(envoyer(emp, [jour({ heureFinMinutes: 24 * 60 })]), 'invalid-argument');
+    await rejette(envoyer(emp, [jour({ heureFinMinutes: null })]), 'invalid-argument');
+    await rejette(envoyer(emp, [jour({ tempsVoyagementMinutes: 900 })]), 'invalid-argument');
+    await rejette(envoyer(emp, Array(8).fill(jour())), 'invalid-argument');
+    await rejette(envoyer(emp, [jour()], '2026-01-06'), 'invalid-argument');
+    await rejette(envoyer(emp, [jour()], null), 'invalid-argument');
+    await rejette(envoyer(emp, 'lundi'), 'invalid-argument');
+  });
+
+  test('verrouillage : semaine échue refusée à l\'employé, permise à l\'admin', async () => {
+    await rejette(envoyer(emp, [jour()], PASSEE), 'permission-denied');
+    assert.equal(await feuilleDe('ft-emp', PASSEE), undefined);
+    const r = await envoyer(adm, [jour()], PASSEE);
+    assert.equal(r.totalHeures, 7.75);
+    assert.equal((await feuilleDe('ft-adm', PASSEE)).employeeNom, 'Alex Admin');
+  });
+
+  test('semaine prochaine permise ; au-delà : refusée', async () => {
+    await envoyer(emp, [jour()], PROCHAINE);
+    await rejette(envoyer(emp, [jour()], TROP_LOIN), 'failed-precondition');
+    await rejette(envoyer(adm, [jour()], TROP_LOIN), 'failed-precondition');
+  });
+
+  test('appareil sans session de compagnie : refusé', async () => {
+    const inconnu = await appareil();
+    await rejette(envoyer(inconnu, [jour()]), 'permission-denied');
+  });
+
+  test('règles modifiées par l\'admin : nouveau calcul et copie des règles à jour', async () => {
+    await adminDb.collection('companies').doc(cid).update({
+      'reglesPaie.voyagementActif': false, 'reglesPaie.dinerPaye': false,
+    });
+    const r = await envoyer(emp, [jour({ tempsVoyagementMinutes: 120 })], PROCHAINE);
+    // 8 h − pause 15 min − dîner 30 min (désormais non payé) ; voyagement ignoré.
+    assert.equal(r.totalHeures, 7.25);
+    assert.equal(r.totalVoyagementPaye, 0);
+    const f = await feuilleDe('ft-emp', PROCHAINE);
+    assert.equal(f.reglesPaie.voyagementActif, false);
+    assert.equal(f.jours[0].tempsVoyagementMinutes, null);
+    await adminDb.collection('companies').doc(cid).update({
+      'reglesPaie.voyagementActif': true, 'reglesPaie.dinerPaye': true,
+    });
+  });
+
+  test('correction d\'une journée déjà soumise : date de la modification consignée par le serveur', async () => {
+    await envoyer(emp, [jour({ heureFinMinutes: 16 * 60 })]);
+    const f = await feuilleDe('ft-emp');
+    assert.equal(f.jours[0].verrouille, true);
+    assert.ok(Date.parse(f.jours[0].modifieApresVerrouillageLe) > Date.now() - 60_000);
+    assert.equal(f.totalHeures, 8.75);
+  });
+
+  test('l\'admin liste les feuilles de sa compagnie, pas celles d\'une autre', async () => {
+    const snap = await getDocs(query(collection(adm.db, 'feuilles_temps'), where('companyId', '==', cid)));
+    assert.ok(snap.size >= 2);
+    await assert.rejects(getDocs(query(collection(adm.db, 'feuilles_temps'), where('companyId', '==', autreCid))));
   });
 });
 

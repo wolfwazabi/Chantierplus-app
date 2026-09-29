@@ -6,6 +6,7 @@ import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../models/regles_paie.dart';
 import '../services/app_session.dart';
+import '../services/fonctions.dart';
 import '../widgets/recherche_chantier.dart';
 import '../services/theme_compagnie.dart';
 
@@ -329,7 +330,12 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                 child: SizedBox(
                   width: double.infinity,
                   child: FilledButton(
-                    onPressed: () => Navigator.pop(ctx, temp),
+                    onPressed: () => Navigator.pop(
+                      ctx,
+                      temp > const Duration(hours: 12)
+                          ? const Duration(hours: 12)
+                          : temp,
+                    ),
                     child: const Text('Confirmer'),
                   ),
                 ),
@@ -402,10 +408,61 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       )
       .length;
 
+  /// Total de la semaine calculé par le serveur lors du dernier envoi.
+  double? _totalServeur;
+
+  /// Compagnie : le serveur recalcule les heures (règles de paie de la
+  /// compagnie, chantiers, verrouillage) ; l'app n'envoie que la saisie.
+  Future<bool> _envoyerAuServeur() async {
+    final jours = _jours.map((j) {
+      // Une journée incomplète n'est pas soumise : elle est envoyée vide.
+      if (!j.estRempli) return <String, dynamic>{'estAucun': false};
+      return <String, dynamic>{
+        'estAucun': j.estAucun,
+        'chantierId': j.estAucun ? null : j.chantier?.id,
+        'heureDebutMinutes': j.heureDebut == null
+            ? null
+            : j.heureDebut!.hour * 60 + j.heureDebut!.minute,
+        'heureFinMinutes': j.heureFin == null
+            ? null
+            : j.heureFin!.hour * 60 + j.heureFin!.minute,
+        'pauseMatin': j.pauseMatin,
+        'diner': j.diner,
+        'tempsVoyagementMinutes': _afficherVoyagement
+            ? j.tempsVoyagement?.inMinutes
+            : null,
+      };
+    }).toList();
+
+    try {
+      final reponse = await Fonctions.appeler('enregistrerFeuilleTemps', {
+        'lundiDate': _isoDate(_lundiDeLaSemaine),
+        'jours': jours,
+      });
+      _totalServeur = (reponse['totalHeures'] as num?)?.toDouble();
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              Fonctions.message(
+                e,
+                'Erreur lors de la sauvegarde. Vérifiez votre réseau et réessayez.',
+              ),
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return false;
+    }
+  }
+
   Future<bool> _sauvegarderDocument() async {
     final employee = AppSession.current;
     if (employee == null) return false;
-    final companyId = employee.companyId;
+    if (!_estIndividuel) return _envoyerAuServeur();
 
     final joursData = _jours.map((j) {
       return {
@@ -441,8 +498,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           .collection('feuilles_temps')
           .doc(_docId(employee.id))
           .set({
-            if (companyId != null) 'companyId': companyId,
-            'estIndividuel': _estIndividuel,
+            'estIndividuel': true,
             'employeeId': employee.id,
             'employeeNom': employee.nom,
             'lundiDate': _isoDate(_lundiDeLaSemaine),
@@ -450,9 +506,6 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
             'totalHeures': _totalSemaine,
             'totalHeuresTravaillees': _totalHeuresTravaillees,
             'totalVoyagementPaye': _totalVoyagementPaye,
-            // Règles appliquées au moment de la saisie : un changement futur
-            // ne modifie pas les semaines déjà remises.
-            if (!_estIndividuel) 'reglesPaie': _regles.versMap(),
             'dateModification': FieldValue.serverTimestamp(),
           }, SetOptions(merge: true));
       return true;
@@ -460,12 +513,9 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            // permission-denied : semaine échue (verrouillage imposé par le
-            // serveur aux contremaîtres et employés) ou session expirée.
             content: Text(
               e is FirebaseException && e.code == 'permission-denied'
-                  ? 'Enregistrement refusé : cette semaine est verrouillée. '
-                        'Contactez votre superviseur pour toute correction.'
+                  ? 'Enregistrement refusé : session expirée. Reconnectez-vous.'
                   : 'Erreur lors de la sauvegarde. Vérifiez votre réseau et réessayez.',
             ),
             backgroundColor: Colors.red,
@@ -503,7 +553,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              '${_nombreJoursActifs >= 2 ? 'Journées soumises' : 'Journée soumise'} : ${_totalSemaine.toStringAsFixed(2)}h au total',
+              '${_nombreJoursActifs >= 2 ? 'Journées soumises' : 'Journée soumise'} : ${(_totalServeur ?? _totalSemaine).toStringAsFixed(2)}h au total',
             ),
             backgroundColor: Colors.green,
           ),

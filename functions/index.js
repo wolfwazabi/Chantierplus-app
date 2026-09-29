@@ -13,6 +13,9 @@ const {
 } = require("./src/commun");
 const {RESEND_API_KEY, envoyerCourriel, courrielConfigure, NOM_APP} = require("./src/courriel");
 const {hacherJeton, creerInvitation} = require("./src/invitation");
+const {
+  reglesPaieDepuis, analyserLundi, echeanceSemaine, lundiCourant, lireJours, calculerFeuille,
+} = require("./src/feuille_temps");
 const PAGE_CREER_NIP = require("./src/page_creer_nip");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
@@ -416,6 +419,88 @@ exports.supprimerEmploye = onCall(async (request) => {
   await db.collection("reinitialisations_nip").doc(employeeId).delete();
   await db.collection("invitations_nip").doc(employeeId).delete();
   return {ok: true};
+});
+
+// =============================================================================
+// Feuille de temps : calculée et enregistrée par le serveur
+// =============================================================================
+
+// Le client envoie seulement sa saisie ; les heures payées, le voyagement payé
+// et les totaux sont recalculés ici avec les règles de la compagnie. Les règles
+// Firestore interdisent toute écriture directe d'une feuille de compagnie.
+exports.enregistrerFeuilleTemps = onCall(async (request) => {
+  verifierAppCheck(request, "enregistrerFeuilleTemps");
+  const ctx = await contexteEmploye(request);
+  const lundiDate = request.data?.lundiDate;
+  analyserLundi(lundiDate);
+  const jours = lireJours(request.data?.jours);
+
+  const maintenant = Date.now();
+  // Contremaîtres et employés : semaine échue = verrouillée (les admins
+  // peuvent encore corriger).
+  if (ctx.employe.role !== "admin" && maintenant >= echeanceSemaine(lundiDate)) {
+    throw new HttpsError("permission-denied",
+        "Cette semaine est verrouillée. Contactez votre superviseur pour toute correction.");
+  }
+  // Pas de saisie au-delà de la semaine prochaine.
+  const lundiMax = new Date(Date.parse(`${lundiCourant(maintenant)}T00:00:00Z`) + 7 * JOUR)
+      .toISOString().slice(0, 10);
+  if (lundiDate > lundiMax) {
+    throw new HttpsError("failed-precondition", "Cette semaine n'est pas encore ouverte.");
+  }
+
+  const limite = limiteur(`feuille_${ctx.employeeId}`, 200, HEURE);
+  await limite.verifier();
+  await limite.compter();
+
+  // Chantiers : doivent appartenir à la compagnie ; le nom vient du serveur.
+  const ids = [...new Set(jours.filter((j) => j.chantierId).map((j) => j.chantierId))];
+  const nomsChantiers = new Map();
+  if (ids.length > 0) {
+    const snaps = await db.getAll(...ids.map((id) => db.collection("chantiers").doc(id)));
+    for (const s of snaps) {
+      if (!s.exists || s.data().companyId !== ctx.companyId) {
+        throw new HttpsError("invalid-argument", "Chantier introuvable.");
+      }
+      nomsChantiers.set(s.id, s.data().nom);
+    }
+  }
+
+  const regles = reglesPaieDepuis(ctx.compagnie.reglesPaie);
+  const ref = db.collection("feuilles_temps").doc(`${ctx.employeeId}_${lundiDate}`);
+
+  const resultat = await db.runTransaction(async (t) => {
+    const existante = (await t.get(ref)).data();
+    const calcul = calculerFeuille({
+      jours, nomsChantiers, regles, existante,
+      maintenantIso: new Date(maintenant).toISOString(),
+    });
+    t.set(ref, {
+      companyId: ctx.companyId,
+      estIndividuel: false,
+      employeeId: ctx.employeeId,
+      employeeNom: ctx.employe.nom,
+      lundiDate,
+      jours: calcul.jours,
+      totalHeures: calcul.totalHeures,
+      totalHeuresTravaillees: calcul.totalHeuresTravaillees,
+      totalVoyagementPaye: calcul.totalVoyagementPaye,
+      // Copie des règles appliquées : un changement futur ne réécrit pas le passé.
+      reglesPaie: regles,
+      dateModification: FieldValue.serverTimestamp(),
+    });
+    return calcul;
+  });
+
+  return {
+    totalHeures: resultat.totalHeures,
+    totalHeuresTravaillees: resultat.totalHeuresTravaillees,
+    totalVoyagementPaye: resultat.totalVoyagementPaye,
+    jours: resultat.jours.map((j) => ({
+      heuresTravaillees: j.heuresTravaillees,
+      voyagementPayeHeures: j.voyagementPayeHeures,
+    })),
+  };
 });
 
 // =============================================================================
