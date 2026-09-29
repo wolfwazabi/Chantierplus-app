@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:construction_app/screens/calculatrice_screen.dart';
 import 'package:construction_app/services/theme_compagnie.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -99,5 +100,48 @@ void main() {
     expect(ThemeCompagnie.couleur.value, ThemeCompagnie.couleurParDefaut);
     ThemeCompagnie.appliquer(null);
     expect(ThemeCompagnie.couleur.value, ThemeCompagnie.couleurParDefaut);
+  });
+
+  group('calculatrice aux couleurs de la compagnie', () {
+    for (final nom in [
+      'Vert forêt',
+      'Jaune chantier',
+      'Rouge',
+      'Noir',
+      'Bleu',
+    ]) {
+      testWidgets('$nom : touches lisibles (≥ 4,5:1)', (tester) async {
+        tester.view.physicalSize = const Size(1080, 2400);
+        tester.view.devicePixelRatio = 2.5;
+        addTearDown(tester.view.reset);
+        final couleur = ThemeCompagnie.palette[nom]!;
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: ThemeCompagnie.construire(couleur),
+            home: const Scaffold(body: CalculatriceScreen()),
+          ),
+        );
+        var verifiees = 0;
+        for (final touche in ['+', '×', '=', '(', 'x²', '√x', 'Conv']) {
+          final bouton = tester.widget<ElevatedButton>(
+            find.byKey(ValueKey('touche_$touche')),
+          );
+          final fond = bouton.style!.backgroundColor!.resolve({})!;
+          final texte = bouton.style!.foregroundColor!.resolve({})!;
+          expect(
+            contrasteTest(fond, texte),
+            greaterThanOrEqualTo(4.5),
+            reason: '$nom, touche $touche',
+          );
+          verifiees++;
+        }
+        expect(verifiees, 7);
+        // Les touches d'opération prennent bien la couleur de la compagnie.
+        final plus = tester.widget<ElevatedButton>(
+          find.byKey(const ValueKey('touche_+')),
+        );
+        expect(plus.style!.backgroundColor!.resolve({}), couleur);
+      });
+    }
   });
 }

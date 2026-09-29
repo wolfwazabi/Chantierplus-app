@@ -2,6 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import '../services/theme_compagnie.dart';
+
 enum _Mode { charpente, beton, conversion, materiaux }
 
 /// Levée par l'évaluation quand une division par zéro survient.
@@ -10,14 +12,10 @@ class _DivisionParZero implements Exception {
 }
 
 const Color _casing = Color(0xFFEAE2D0);
-const Color _lcdBg = Color(0xFFB7C4A8);
 const Color _texteLCD = Color(0xFF1E2E20);
 const Color _boutonChiffreBg = Color(0xFFDDD2B8);
 const Color _boutonChiffreBorder = Color(0xFFB8AC90);
 const Color _boutonChiffreTexte = Color(0xFF2C2A22);
-const Color _boutonOperateur = Color(0xFF2F4A34);
-// Touches de fonction : vert plus clair que les opérateurs (texte crème lisible).
-const Color _boutonFonction = Color(0xFF46604B);
 const Color _boutonEffacer = Color(0xFF6B2A1C);
 const Color _texteClaire = Color(0xFFEAE2D0);
 
@@ -29,6 +27,15 @@ class CalculatriceScreen extends StatefulWidget {
 }
 
 class _CalculatriceScreenState extends State<CalculatriceScreen> {
+  // Couleurs tirées de la couleur de la compagnie (thème) ; les chiffres
+  // (beige) et AC (rouge) gardent leurs couleurs fixes.
+  Color get _boutonOperateur => Theme.of(context).colorScheme.primary;
+  Color get _boutonFonction => ThemeCompagnie.variante(_boutonOperateur);
+  Color get _lcdBg => ThemeCompagnie.teintePale(_boutonOperateur, 0.30);
+
+  /// Texte lisible sur une touche (contraste WCAG ≥ 4,5:1).
+  Color _texteSur(Color fond) => ThemeCompagnie.texteSur(fond);
+
   _Mode _mode = _Mode.charpente;
 
   String _entreeCharpente = '';
@@ -1022,7 +1029,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         onPressed: () => _choisirMode(mode),
         style: ElevatedButton.styleFrom(
           backgroundColor: actif ? _boutonFonction : _boutonOperateur,
-          foregroundColor: _texteClaire,
+          foregroundColor: _texteSur(
+            actif ? _boutonFonction : _boutonOperateur,
+          ),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(20),
@@ -1326,7 +1335,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonFonction,
-            foregroundColor: _texteClaire,
+            foregroundColor: _texteSur(_boutonFonction),
             padding: EdgeInsets.zero,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -1368,7 +1377,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           onPressed: () => _stocker('diag'),
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonFonction,
-            foregroundColor: _texteClaire,
+            foregroundColor: _texteSur(_boutonFonction),
             padding: EdgeInsets.zero,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
@@ -1417,7 +1426,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
             backgroundColor: fonction ? _boutonFonction : _boutonOperateur,
-            foregroundColor: _texteClaire,
+            foregroundColor: _texteSur(
+              fonction ? _boutonFonction : _boutonOperateur,
+            ),
             padding: EdgeInsets.zero,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(8),
@@ -1471,16 +1482,16 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       fg = _texteClaire;
     } else if (fonction) {
       bg = _boutonFonction;
-      fg = _texteClaire;
+      fg = _texteSur(bg);
     } else if (operateur) {
       bg = _boutonOperateur;
-      fg = _texteClaire;
+      fg = _texteSur(bg);
     } else if (claire) {
       bg = _boutonChiffreBg;
       fg = _boutonChiffreTexte;
     } else {
       bg = _boutonOperateur;
-      fg = _texteClaire;
+      fg = _texteSur(bg);
     }
     return Expanded(
       child: Padding(
@@ -1727,7 +1738,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           onPressed: () => onChanged(valeur),
           style: ElevatedButton.styleFrom(
             backgroundColor: actif ? _boutonFonction : _boutonChiffreBg,
-            foregroundColor: actif ? _texteClaire : _boutonChiffreTexte,
+            foregroundColor: actif
+                ? _texteSur(_boutonFonction)
+                : _boutonChiffreTexte,
             padding: EdgeInsets.zero,
             side: actif ? null : const BorderSide(color: _boutonChiffreBorder),
             shape: RoundedRectangleBorder(
@@ -1789,7 +1802,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 : claire
                 ? _boutonChiffreBg
                 : _boutonOperateur,
-            foregroundColor: claire ? _boutonChiffreTexte : _texteClaire,
+            foregroundColor: claire
+                ? _boutonChiffreTexte
+                : fonction
+                ? _texteSur(_boutonFonction)
+                : effacer
+                ? _texteClaire
+                : _texteSur(_boutonOperateur),
             side: (claire && !vide)
                 ? const BorderSide(color: _boutonChiffreBorder)
                 : null,
