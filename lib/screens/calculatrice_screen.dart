@@ -148,6 +148,17 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         : _formatDecimal(v);
   }
 
+  /// Juste après « ) », un nombre ou une « ( » tapé sans opérateur multiplie
+  /// le groupe, comme en mathématiques : (2+3)4 = 20 et (2+3)(1+1) = 10.
+  void _multiplicationImpliciteApresParenthese() {
+    if (_accumulateur != null &&
+        _operateurEnAttente == null &&
+        _formulePrecedente.trimRight().endsWith(')')) {
+      _operateurEnAttente = '×';
+      _formulePrecedente += '× ';
+    }
+  }
+
   void _appuyerChiffreCharpente(String chiffre) {
     setState(() {
       if (_resultatFinal != null) {
@@ -159,6 +170,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         _uniteUtiliseeDansFormule = false;
         _conversionExtra = null;
       }
+      if (_operandeVide) _multiplicationImpliciteApresParenthese();
       if (chiffre == '.' && _entreeCharpente.contains('.')) return;
       if (_entreeCharpente.isEmpty && chiffre == '.') {
         _entreeCharpente = '0.';
@@ -295,11 +307,18 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       if (_operandeVide) {
         if (_operateurEnAttente != null &&
             _formulePrecedente.trim().isNotEmpty) {
+          // Remplace l'opérateur qui vient d'être tapé.
           final trimmed = _formulePrecedente.trimRight();
           final sansOperateur = trimmed
               .substring(0, trimmed.length - 1)
               .trimRight();
           _formulePrecedente = '$sansOperateur $op ';
+          _operateurEnAttente = op;
+        } else if (_accumulateur != null) {
+          // Juste après « ) » : le résultat du groupe devient l'opérande de
+          // gauche. (Sans ce cas, l'opérateur était ignoré : (56"×2)+56'
+          // donnait 56'.)
+          _formulePrecedente += '$op ';
           _operateurEnAttente = op;
         }
         return;
@@ -331,6 +350,19 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   void _ouvrirParenthese() {
     setState(() {
       _finaliserFraction();
+      _reinitialiserSiResultat();
+      if (_operandeVide) {
+        _multiplicationImpliciteApresParenthese();
+      } else {
+        // Nombre suivi de « ( » : multiplication implicite, 2(3+1) = 8.
+        // (Sans ce cas, le nombre tapé avant la parenthèse était perdu.)
+        final valeur = _valeurOperandeCourant();
+        _accumulateur = _accumulateur != null && _operateurEnAttente != null
+            ? _appliquerOperation(_accumulateur!, valeur, _operateurEnAttente!)
+            : valeur;
+        _formulePrecedente += '${_texteOperandeEnCours().trim()} × ';
+        _operateurEnAttente = '×';
+      }
       _pileParentheses.add((_accumulateur, _operateurEnAttente));
       _formulePrecedente += '( ';
       _accumulateur = null;
@@ -1356,6 +1388,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
+          key: ValueKey('touche_$chiffre'),
           onPressed: () => _appuyerChiffreCharpente(chiffre),
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonChiffreBg,
@@ -1404,6 +1437,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
+          key: ValueKey('touche_$label'),
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
             backgroundColor: bg,
