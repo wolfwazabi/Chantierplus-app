@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 import '../services/fonctions.dart';
+import 'preferences_screen.dart';
 import '../services/theme_compagnie.dart';
 
 const List<String> metiersQuebec = [
@@ -132,6 +133,11 @@ class _CompteScreenState extends State<CompteScreen> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  void _ouvrirPreferences() {
+    Navigator.of(context)
+        .push(MaterialPageRoute(builder: (_) => const PreferencesScreen()));
   }
 
   Future<void> _seDeconnecter() async {
@@ -422,6 +428,16 @@ class _CompteScreenState extends State<CompteScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: OutlinedButton.icon(
+                      key: const ValueKey('bouton_preferences'),
+                      onPressed: _ouvrirPreferences,
+                      icon: const Icon(Icons.tune),
+                      label: const Text('Préférences'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
                       onPressed: _seDeconnecter,
                       icon: const Icon(Icons.logout),
                       label: const Text('Se déconnecter'),
@@ -485,6 +501,14 @@ class _CompteScreenState extends State<CompteScreen> {
                     _formulaireInscription()
                   else
                     _formulaireIndividuel(),
+                  const SizedBox(height: 24),
+                  // Accessible sans connexion : la calculatrice l'utilise.
+                  TextButton.icon(
+                    key: const ValueKey('bouton_preferences'),
+                    onPressed: _ouvrirPreferences,
+                    icon: const Icon(Icons.tune),
+                    label: const Text('Préférences (unités de mesure)'),
+                  ),
                 ],
               ),
             ),

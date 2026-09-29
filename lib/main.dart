@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'models/employee.dart';
 import 'services/app_session.dart';
+import 'services/preferences.dart';
 import 'services/theme_compagnie.dart';
 import 'screens/compte_screen.dart';
 import 'screens/calculatrice_screen.dart';
@@ -62,6 +63,7 @@ void main() async {
   if (utilisateur == null) {
     await FirebaseAuth.instance.signInAnonymously();
   }
+  await Preferences.charger();
   await AppSession.tenterReconnexionAutomatique();
   runApp(const ConstructionApp());
 }
