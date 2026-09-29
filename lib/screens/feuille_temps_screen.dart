@@ -5,6 +5,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
+import '../widgets/recherche_chantier.dart';
 
 const Chantier chantierAucun = Chantier(
   id: '_aucun',
@@ -733,33 +734,51 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                 onChanged: (val) => jour.projetTexte = val,
               )
             else
-              DropdownButtonFormField<Chantier>(
-                initialValue: jour.chantier,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Chantier',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.construction),
-                  isDense: true,
-                ),
-                items: [
-                  const DropdownMenuItem<Chantier>(
-                    value: chantierAucun,
-                    child: Text('Aucun (jour non travaillé)'),
-                  ),
-                  ..._chantiers.map((c) {
-                    return DropdownMenuItem(
-                      value: c,
-                      child: Text(
-                        '${c.nom}\n${c.adresse}',
-                        style: const TextStyle(fontSize: 13),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<Chantier>(
+                      // La clé suit la valeur : la liste affiche aussi un
+                      // chantier choisi par la recherche « … ».
+                      key: ValueKey(
+                        'chantier_${jour.nomJour}_${jour.chantier?.id}',
                       ),
-                    );
-                  }),
+                      initialValue: jour.chantier,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Chantier',
+                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.construction),
+                        isDense: true,
+                      ),
+                      items: [
+                        const DropdownMenuItem<Chantier>(
+                          value: chantierAucun,
+                          child: Text('Aucun (jour non travaillé)'),
+                        ),
+                        ..._chantiers.map((c) {
+                          return DropdownMenuItem(
+                            value: c,
+                            child: Text(
+                              '${c.nom}\n${c.adresse}',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          );
+                        }),
+                      ],
+                      onChanged: verrouillee
+                          ? null
+                          : (valeur) => setState(() => jour.chantier = valeur),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  BoutonRechercheChantier(
+                    chantiers: _chantiers,
+                    onChoisi: verrouillee
+                        ? null
+                        : (c) => setState(() => jour.chantier = c),
+                  ),
                 ],
-                onChanged: verrouillee
-                    ? null
-                    : (valeur) => setState(() => jour.chantier = valeur),
               ),
             if (!jour.estAucun) ...[
               const SizedBox(height: 10),

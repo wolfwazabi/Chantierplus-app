@@ -9,6 +9,7 @@ import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
+import '../widgets/recherche_chantier.dart';
 
 class ChantierScreen extends StatefulWidget {
   const ChantierScreen({super.key});
@@ -87,23 +88,43 @@ class _ChantierScreenState extends State<ChantierScreen> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: DropdownButtonFormField<Chantier>(
-                      initialValue: _chantierSelectionne,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Chantier',
-                        border: OutlineInputBorder(),
-                        prefixIcon: Icon(Icons.construction),
-                      ),
-                      items: chantiers.map((c) {
-                        return DropdownMenuItem(
-                          value: c,
-                          child: Text(c.nom, overflow: TextOverflow.ellipsis),
-                        );
-                      }).toList(),
-                      onChanged: (valeur) {
-                        setState(() => _chantierSelectionne = valeur);
-                      },
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<Chantier>(
+                            // La clé suit la valeur : la liste affiche aussi
+                            // un chantier choisi par la recherche « … ».
+                            key: ValueKey(
+                              'chantier_${_chantierSelectionne?.id}',
+                            ),
+                            initialValue: _chantierSelectionne,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Chantier',
+                              border: OutlineInputBorder(),
+                              prefixIcon: Icon(Icons.construction),
+                            ),
+                            items: chantiers.map((c) {
+                              return DropdownMenuItem(
+                                value: c,
+                                child: Text(
+                                  c.nom,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (valeur) {
+                              setState(() => _chantierSelectionne = valeur);
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        BoutonRechercheChantier(
+                          chantiers: chantiers,
+                          onChoisi: (c) =>
+                              setState(() => _chantierSelectionne = c),
+                        ),
+                      ],
                     ),
                   ),
                   const TabBar(

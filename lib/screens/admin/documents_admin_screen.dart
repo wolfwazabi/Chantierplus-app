@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../models/chantier.dart';
 import '../../services/app_session.dart';
 import '../documents/documents_chantier.dart';
+import '../../widgets/recherche_chantier.dart';
 
 /// Dépôt et suppression des documents de chantier (plans, devis, photos…).
 /// Réservé aux admins, dont le super-admin de la compagnie.
@@ -65,26 +66,41 @@ class _DocumentsAdminScreenState extends State<DocumentsAdminScreen> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                      child: DropdownButtonFormField<String>(
-                        initialValue: _chantierId,
-                        isExpanded: true,
-                        decoration: const InputDecoration(
-                          labelText: 'Chantier',
-                          border: OutlineInputBorder(),
-                          prefixIcon: Icon(Icons.construction),
-                        ),
-                        items: chantiers
-                            .map(
-                              (c) => DropdownMenuItem(
-                                value: c.id,
-                                child: Text(
-                                  c.nom,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: DropdownButtonFormField<String>(
+                              // La clé suit la valeur : la liste affiche aussi
+                              // un chantier choisi par la recherche « … ».
+                              key: ValueKey('chantier_$_chantierId'),
+                              initialValue: _chantierId,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Chantier',
+                                border: OutlineInputBorder(),
+                                prefixIcon: Icon(Icons.construction),
                               ),
-                            )
-                            .toList(),
-                        onChanged: (id) => setState(() => _chantierId = id),
+                              items: chantiers
+                                  .map(
+                                    (c) => DropdownMenuItem(
+                                      value: c.id,
+                                      child: Text(
+                                        c.nom,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (id) =>
+                                  setState(() => _chantierId = id),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          BoutonRechercheChantier(
+                            chantiers: chantiers,
+                            onChoisi: (c) => setState(() => _chantierId = c.id),
+                          ),
+                        ],
                       ),
                     ),
                     Expanded(
