@@ -16,7 +16,8 @@ const Color _boutonChiffreBg = Color(0xFFDDD2B8);
 const Color _boutonChiffreBorder = Color(0xFFB8AC90);
 const Color _boutonChiffreTexte = Color(0xFF2C2A22);
 const Color _boutonOperateur = Color(0xFF2F4A34);
-const Color _boutonRouille = Color(0xFF8A3B24);
+// Touches de fonction : vert plus clair que les opérateurs (texte crème lisible).
+const Color _boutonFonction = Color(0xFF46604B);
 const Color _boutonEffacer = Color(0xFF6B2A1C);
 const Color _texteClaire = Color(0xFFEAE2D0);
 
@@ -1020,7 +1021,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: ElevatedButton(
         onPressed: () => _choisirMode(mode),
         style: ElevatedButton.styleFrom(
-          backgroundColor: actif ? _boutonRouille : _boutonOperateur,
+          backgroundColor: actif ? _boutonFonction : _boutonOperateur,
           foregroundColor: _texteClaire,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           shape: RoundedRectangleBorder(
@@ -1131,7 +1132,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               child: Text(
                 _erreur!,
                 style: const TextStyle(
-                  color: _boutonRouille,
+                  color: _boutonEffacer,
                   fontSize: 24,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'monospace',
@@ -1219,10 +1220,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _toucheFonctionGrande('(', _ouvrirParenthese, rouille: true),
-                _toucheFonctionGrande(')', _fermerParenthese, rouille: true),
-                _toucheFonctionGrande('x²', _appliquerCarre, rouille: true),
-                _toucheFonctionGrande('x³', _appliquerCube, rouille: true),
+                _toucheFonctionGrande('(', _ouvrirParenthese, fonction: true),
+                _toucheFonctionGrande(')', _fermerParenthese, fonction: true),
+                _toucheFonctionGrande('x²', _appliquerCarre, fonction: true),
+                _toucheFonctionGrande('x³', _appliquerCube, fonction: true),
               ],
             ),
           ),
@@ -1236,7 +1237,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheExtraPetite('M+', _memoirePlus),
                 _toucheExtraPetite('MR', _memoireRappel),
                 _toucheExtraPetite('MC', _memoireEffacer),
-                _toucheExtraPetite('Conv', _appliquerConversion, rouille: true),
+                _toucheExtraPetite(
+                  'Conv',
+                  _appliquerConversion,
+                  fonction: true,
+                ),
               ],
             ),
           ),
@@ -1294,7 +1299,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheFonctionGrande(
                   '=',
                   _appuyerEgalCharpente,
-                  rouille: true,
+                  fonction: true,
                 ),
                 _toucheFonctionGrande(
                   '+',
@@ -1320,7 +1325,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         child: ElevatedButton(
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
-            backgroundColor: _boutonRouille,
+            backgroundColor: _boutonFonction,
             foregroundColor: _texteClaire,
             padding: EdgeInsets.zero,
             shape: RoundedRectangleBorder(
@@ -1362,7 +1367,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         child: ElevatedButton(
           onPressed: () => _stocker('diag'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: _boutonRouille,
+            backgroundColor: _boutonFonction,
             foregroundColor: _texteClaire,
             padding: EdgeInsets.zero,
             shape: RoundedRectangleBorder(
@@ -1402,7 +1407,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   Widget _toucheExtraPetite(
     String label,
     VoidCallback onTap, {
-    bool rouille = false,
+    bool fonction = false,
   }) {
     return Expanded(
       child: Padding(
@@ -1411,7 +1416,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           key: ValueKey('touche_$label'),
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
-            backgroundColor: rouille ? _boutonRouille : _boutonOperateur,
+            backgroundColor: fonction ? _boutonFonction : _boutonOperateur,
             foregroundColor: _texteClaire,
             padding: EdgeInsets.zero,
             shape: RoundedRectangleBorder(
@@ -1457,15 +1462,15 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     bool operateur = false,
     bool claire = false,
     bool effacer = false,
-    bool rouille = false,
+    bool fonction = false,
   }) {
     Color bg;
     Color fg;
     if (effacer) {
       bg = _boutonEffacer;
       fg = _texteClaire;
-    } else if (rouille) {
-      bg = _boutonRouille;
+    } else if (fonction) {
+      bg = _boutonFonction;
       fg = _texteClaire;
     } else if (operateur) {
       bg = _boutonOperateur;
@@ -1689,7 +1694,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _toucheChiffreAutre('1'),
                 _toucheChiffreAutre('2'),
                 _toucheChiffreAutre('3'),
-                _toucheFonctionAutre('↵', _entreeAutre, rouille: true),
+                _toucheFonctionAutre('↵', _entreeAutre, fonction: true),
               ],
             ),
           ),
@@ -1721,7 +1726,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         child: ElevatedButton(
           onPressed: () => onChanged(valeur),
           style: ElevatedButton.styleFrom(
-            backgroundColor: actif ? _boutonRouille : _boutonChiffreBg,
+            backgroundColor: actif ? _boutonFonction : _boutonChiffreBg,
             foregroundColor: actif ? _texteClaire : _boutonChiffreTexte,
             padding: EdgeInsets.zero,
             side: actif ? null : const BorderSide(color: _boutonChiffreBorder),
@@ -1764,7 +1769,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   Widget _toucheFonctionAutre(
     String label,
     VoidCallback onTap, {
-    bool rouille = false,
+    bool fonction = false,
     bool claire = false,
     bool effacer = false,
     bool vide = false,
@@ -1777,8 +1782,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: vide
                 ? Colors.transparent
-                : rouille
-                ? _boutonRouille
+                : fonction
+                ? _boutonFonction
                 : effacer
                 ? _boutonEffacer
                 : claire
