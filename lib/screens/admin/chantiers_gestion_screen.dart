@@ -1,10 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../models/chantier.dart';
 import '../../services/app_session.dart';
+import '../../widgets/recherche_chantier.dart';
 
-class ChantiersGestionScreen extends StatelessWidget {
+class ChantiersGestionScreen extends StatefulWidget {
   const ChantiersGestionScreen({super.key});
+
+  @override
+  State<ChantiersGestionScreen> createState() => _ChantiersGestionScreenState();
+}
+
+class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
+  /// Filtre de la liste (nom ou adresse), même logique que la recherche « … ».
+  String _requete = '';
 
   void _confirmerSuppression(BuildContext context, String docId, String nom) {
     showDialog(
@@ -133,7 +143,9 @@ class ChantiersGestionScreen extends StatelessWidget {
                   .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
-                  return Center(child: Text('Erreur : ${snapshot.error}'));
+                  return const Center(
+                    child: Text('Impossible de charger les chantiers.'),
+                  );
                 }
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
@@ -153,47 +165,87 @@ class ChantiersGestionScreen extends StatelessWidget {
                   );
                 }
 
-                return ListView.builder(
-                  itemCount: docs.length,
-                  itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final data = doc.data() as Map<String, dynamic>;
-                    return ListTile(
-                      leading: const Icon(
-                        Icons.construction,
-                        color: Colors.orange,
+                final visibles = docs.where((d) {
+                  final chantier = Chantier.fromFirestore(
+                    d.id,
+                    d.data() as Map<String, dynamic>,
+                  );
+                  return chantierCorrespond(chantier, _requete);
+                }).toList();
+
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                      child: TextField(
+                        key: const ValueKey('filtre_chantiers'),
+                        decoration: InputDecoration(
+                          labelText: 'Rechercher par nom ou adresse',
+                          border: const OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.search),
+                          isDense: true,
+                          suffixText: _requete.isEmpty
+                              ? null
+                              : '${visibles.length} / ${docs.length}',
+                        ),
+                        onChanged: (v) => setState(() => _requete = v),
                       ),
-                      title: Text(data['nom'] ?? ''),
-                      subtitle: Text(data['adresse'] ?? ''),
-                      trailing: PopupMenuButton<String>(
-                        onSelected: (v) {
-                          if (v == 'modifier') {
-                            _ouvrirFormulaire(
-                              context,
-                              docId: doc.id,
-                              donnees: data,
-                            );
-                          } else if (v == 'supprimer') {
-                            _confirmerSuppression(
-                              context,
-                              doc.id,
-                              data['nom'] ?? '',
-                            );
-                          }
-                        },
-                        itemBuilder: (ctx) => const [
-                          PopupMenuItem(
-                            value: 'modifier',
-                            child: Text('Modifier'),
-                          ),
-                          PopupMenuItem(
-                            value: 'supprimer',
-                            child: Text('Supprimer'),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                    ),
+                    Expanded(
+                      child: visibles.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text(
+                                  'Aucun chantier ne correspond à ce nom ou à cette adresse.',
+                                  textAlign: TextAlign.center,
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              itemCount: visibles.length,
+                              itemBuilder: (context, index) {
+                                final doc = visibles[index];
+                                final data = doc.data() as Map<String, dynamic>;
+                                return ListTile(
+                                  leading: const Icon(
+                                    Icons.construction,
+                                    color: Colors.orange,
+                                  ),
+                                  title: Text(data['nom'] ?? ''),
+                                  subtitle: Text(data['adresse'] ?? ''),
+                                  trailing: PopupMenuButton<String>(
+                                    onSelected: (v) {
+                                      if (v == 'modifier') {
+                                        _ouvrirFormulaire(
+                                          context,
+                                          docId: doc.id,
+                                          donnees: data,
+                                        );
+                                      } else if (v == 'supprimer') {
+                                        _confirmerSuppression(
+                                          context,
+                                          doc.id,
+                                          data['nom'] ?? '',
+                                        );
+                                      }
+                                    },
+                                    itemBuilder: (ctx) => const [
+                                      PopupMenuItem(
+                                        value: 'modifier',
+                                        child: Text('Modifier'),
+                                      ),
+                                      PopupMenuItem(
+                                        value: 'supprimer',
+                                        child: Text('Supprimer'),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
                 );
               },
             ),
