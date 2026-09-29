@@ -43,7 +43,32 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
 
   /// Message affiché à la place du résultat (ex. division par zéro).
   String? _erreur;
-  String _formulePrecedente = '';
+
+  /// Texte affiché de chaque jeton de l'expression (même ordre que _jetons).
+  final List<String> _textes = [];
+
+  /// Formule affichée, construite à partir des textes des jetons.
+  String get _formulePrecedente => _joindreTextes(_textes);
+
+  /// « ( » collée à ce qui suit, « ) » collée à ce qui précède :
+  /// ['(', '1', '+', '8', ')'] → « (1 + 8) ».
+  static String _joindreTextes(List<String> textes) {
+    final b = StringBuffer();
+    for (final t in textes) {
+      if (t == ')') {
+        final avant = b.toString().trimRight();
+        b
+          ..clear()
+          ..write('$avant) ');
+      } else if (t == '(') {
+        b.write('(');
+      } else {
+        b.write('$t ');
+      }
+    }
+    return b.toString();
+  }
+
   double? _resultatFinal;
   bool _resultatFormuleEnPieds = true;
 
@@ -159,7 +184,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   // L'expression est conservée en entier dans _jetons (nombres en pouces,
   // opérateurs + - × ÷ et parenthèses), puis évaluée selon la priorité des
   // opérations : parenthèses, puis × et ÷, puis + et −, de gauche à droite.
-  // _formulePrecedente est le texte affiché correspondant.
+  // _textes contient le texte affiché de chaque jeton (voir _formulePrecedente).
 
   static const _operateurs = {'+', '-', '×', '÷'};
 
@@ -187,7 +212,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     _finaliserFraction();
     if (_operandeVide) return;
     _jetons.add(_valeurOperandeCourant());
-    _formulePrecedente += '${_texteOperandeEnCours().trim()} ';
+    _textes.add(_texteOperandeEnCours().trim());
     _viderOperande();
   }
 
@@ -196,7 +221,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   void _multiplicationImplicite() {
     if (_finitParUneValeur) {
       _jetons.add('×');
-      _formulePrecedente += '× ';
+      _textes.add('×');
     }
   }
 
@@ -204,8 +229,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   void _retirerOperateurFinal() {
     if (_jetons.isEmpty || !_estOperateur(_jetons.last)) return;
     _jetons.removeLast();
-    final texte = _formulePrecedente.trimRight();
-    _formulePrecedente = '${texte.substring(0, texte.length - 1).trimRight()} ';
+    _textes.removeLast();
   }
 
   static int _priorite(String op) => (op == '×' || op == '÷') ? 2 : 1;
@@ -299,7 +323,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _erreur = null;
       if (_resultatFinal != null) {
         _resultatFinal = null;
-        _formulePrecedente = '';
+        _textes.clear();
         _jetons.clear();
         _uniteUtiliseeDansFormule = false;
         _conversionExtra = null;
@@ -343,7 +367,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _viderOperande();
       _jetons.clear();
       _erreur = null;
-      _formulePrecedente = '';
+      _textes.clear();
       _resultatFinal = null;
       _rise = null;
       _run = null;
@@ -357,7 +381,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     _erreur = null;
     if (_resultatFinal != null) {
       _resultatFinal = null;
-      _formulePrecedente = '';
+      _textes.clear();
       _jetons.clear();
       _conversionExtra = null;
     }
@@ -406,7 +430,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         _jetons
           ..clear()
           ..add(_resultatFinal!);
-        _formulePrecedente = '${_formatResultat(_resultatFinal!)} ';
+        _textes
+          ..clear()
+          ..add(_formatResultat(_resultatFinal!));
         _resultatFinal = null;
         _viderOperande();
       } else {
@@ -419,7 +445,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         _retirerOperateurFinal();
       }
       _jetons.add(op);
-      _formulePrecedente += '$op ';
+      _textes.add(op);
     });
   }
 
@@ -430,7 +456,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _pousserOperande();
       _multiplicationImplicite();
       _jetons.add('(');
-      _formulePrecedente += '( ';
+      _textes.add('(');
     });
   }
 
@@ -441,7 +467,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       if (_jetons.last == '(') return; // « ( ) » vide : ignorée
       _retirerOperateurFinal();
       _jetons.add(')');
-      _formulePrecedente = '${_formulePrecedente.trimRight()}) ';
+      _textes.add(')');
     });
   }
 
@@ -471,7 +497,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         _ajouterHistorique(formuleAffichee, resultat);
       }
       _resultatFinal = resultat;
-      _formulePrecedente = '';
+      _textes.clear();
       _jetons.clear();
       _viderOperande();
     });
@@ -489,81 +515,95 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     }
   }
 
-  void _appliquerRacine() {
+  // ==================== √, x², x³, % ====================
+  //
+  // Après « = » : s'applique à la réponse affichée.
+  // Pendant la saisie : s'applique au dernier nombre, ou au groupe « ( … ) »
+  // qui vient d'être fermé. 2 + 3 × 4² = 50 ; (2 + 3)² = 25.
+
+  /// Index du « ( » correspondant au « ) » final de l'expression.
+  int _indexParentheseOuvrante() {
+    var profondeur = 0;
+    for (var i = _jetons.length - 1; i >= 0; i--) {
+      if (_jetons[i] == ')') profondeur++;
+      if (_jetons[i] == '(') profondeur--;
+      if (profondeur == 0) return i;
+    }
+    return 0;
+  }
+
+  /// Met un texte entre parenthèses s'il ne se lit pas comme un seul bloc :
+  /// « 4 » reste « 4 », « 1' 6" » devient « (1' 6") », « 2² » devient « (2²) ».
+  static String _bloc(String texte) {
+    final estNombreSimple = RegExp(r'^[0-9.]+$').hasMatch(texte);
+    final estGroupe = texte.startsWith('(') && texte.endsWith(')');
+    return estNombreSimple || estGroupe ? texte : '($texte)';
+  }
+
+  void _appliquerAuDernierNombre({
+    required double? Function(double v) calcul,
+    required String Function(String bloc) libelle,
+  }) {
     setState(() {
-      final v = _valeurActuelle();
-      if (v == null || v < 0) return;
-      final resultat = sqrt(v);
-      _ajouterHistorique('√(${_formatResultat(v)})', resultat);
-      _resultatFinal = resultat;
-      _formulePrecedente = '';
-      _jetons.clear();
-      _erreur = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _entreeCharpente = '';
       _conversionExtra = null;
+      if (_resultatFinal != null) {
+        final v = _resultatFinal!;
+        final r = calcul(v);
+        if (r == null) return;
+        _ajouterHistorique(libelle(_bloc(_formatResultat(v))), r);
+        _resultatFinal = r;
+        return;
+      }
+
+      _pousserOperande();
+      if (_jetons.isEmpty) return;
+
+      final int debut;
+      final double? v;
+      if (_jetons.last is double) {
+        debut = _jetons.length - 1;
+        v = _jetons.last as double;
+      } else if (_jetons.last == ')') {
+        debut = _indexParentheseOuvrante();
+        double? valeurGroupe;
+        try {
+          valeurGroupe = evaluerExpression(_jetons.sublist(debut));
+        } on _DivisionParZero {
+          valeurGroupe = null;
+        }
+        v = valeurGroupe;
+      } else {
+        return; // juste après un opérateur ou « ( » : rien à quoi l'appliquer
+      }
+      if (v == null) return;
+      final r = calcul(v);
+      if (r == null) return;
+
+      final texte = _joindreTextes(_textes.sublist(debut)).trim();
+      _jetons
+        ..removeRange(debut, _jetons.length)
+        ..add(r);
+      _textes
+        ..removeRange(debut, _textes.length)
+        ..add(libelle(_bloc(texte)));
     });
   }
 
-  void _appliquerPourcent() {
-    setState(() {
-      final v = _valeurActuelle();
-      if (v == null) return;
-      final resultat = v / 100;
-      _ajouterHistorique('${_formatResultat(v)} %', resultat);
-      _resultatFinal = resultat;
-      _formulePrecedente = '';
-      _jetons.clear();
-      _erreur = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _entreeCharpente = '';
-      _conversionExtra = null;
-    });
-  }
+  void _appliquerRacine() => _appliquerAuDernierNombre(
+    calcul: (v) => v < 0 ? null : sqrt(v),
+    libelle: (b) => '√$b',
+  );
 
-  void _appliquerCarre() {
-    setState(() {
-      final v = _valeurActuelle();
-      if (v == null) return;
-      final resultat = v * v;
-      _ajouterHistorique('(${_formatResultat(v)})²', resultat);
-      _resultatFinal = resultat;
-      _formulePrecedente = '';
-      _jetons.clear();
-      _erreur = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _entreeCharpente = '';
-      _conversionExtra = null;
-    });
-  }
+  void _appliquerPourcent() =>
+      _appliquerAuDernierNombre(calcul: (v) => v / 100, libelle: (b) => '$b%');
 
-  void _appliquerCube() {
-    setState(() {
-      final v = _valeurActuelle();
-      if (v == null) return;
-      final resultat = v * v * v;
-      _ajouterHistorique('(${_formatResultat(v)})³', resultat);
-      _resultatFinal = resultat;
-      _formulePrecedente = '';
-      _jetons.clear();
-      _erreur = null;
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _entreeCharpente = '';
-      _conversionExtra = null;
-    });
-  }
+  void _appliquerCarre() =>
+      _appliquerAuDernierNombre(calcul: (v) => v * v, libelle: (b) => '$b²');
+
+  void _appliquerCube() => _appliquerAuDernierNombre(
+    calcul: (v) => v * v * v,
+    libelle: (b) => '$b³',
+  );
 
   void _appliquerConversion() {
     setState(() {
@@ -574,7 +614,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _ajouterHistorique('Conv(${_formatDecimal(v)}")', v);
       _resultatFinal = v;
       _uniteUtiliseeDansFormule = true;
-      _formulePrecedente = '';
+      _textes.clear();
       _jetons.clear();
       _erreur = null;
       _feet = null;
@@ -600,7 +640,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     if (_memoire == null) return;
     setState(() {
       _resultatFinal = _memoire;
-      _formulePrecedente = '';
+      _textes.clear();
       _jetons.clear();
       _erreur = null;
       _feet = null;
@@ -713,7 +753,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _enAttenteDenominateur = false;
       _jetons.clear();
       _erreur = null;
-      _formulePrecedente = '';
+      _textes.clear();
       _resultatFinal = null;
       _conversionExtra = null;
       _recalculerCharpente();
@@ -1368,6 +1408,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
+          key: ValueKey('touche_$label'),
           onPressed: onTap,
           style: ElevatedButton.styleFrom(
             backgroundColor: rouille ? _boutonRouille : _boutonOperateur,

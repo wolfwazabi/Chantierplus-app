@@ -250,19 +250,91 @@ void main() {
       );
       expect(tester.widget<Text>(resultat).data, '15');
     });
+  });
 
-    testWidgets(
-      'x² s\'applique au résultat de l\'expression : 2+3×4 x² = 196',
-      (tester) async {
+  group('√, x², x³, % : sur le dernier nombre, ou sur la réponse après =', () {
+    // Formule affichée pendant la saisie (texte de taille 26 sur le LCD).
+    String formule(WidgetTester tester) => tester
+        .widget<Text>(
+          find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 26),
+        )
+        .data!
+        .trim();
+
+    final cas = <List<String>, String>{
+      // Dernier nombre saisi
+      [...t('2+3×4'), 'x²', '=']: '50',
+      [...t('2+2'), 'x³', '=']: '10',
+      [...t('1+9'), '√x', '=']: '4',
+      [...t('200×15'), '%', '=']: '30',
+      ['2', 'x²', 'x²', '=']: '16',
+      // Groupe juste fermé
+      [...t('(2+3)'), 'x²', '=']: '25',
+      [...t('(20+5)'), '√x', '×', '2', '=']: '10',
+      [...t('1+(1+1)'), 'x³', '=']: '9',
+      // Après = : sur la réponse (affichée tout de suite)
+      [...t('2+3×4'), '=', 'x²']: '196',
+      [...t('2+3×4'), '=', 'x²', '+', '4', '=']: '200',
+    };
+    for (final MapEntry(key: touches, value: attendu) in cas.entries) {
+      testWidgets('${touches.join(' ')} = $attendu', (tester) async {
         await ouvrir(tester);
-        await taper(tester, [...t('2+3×4'), 'x²']);
+        await taper(tester, touches);
         final resultat = find.byWidgetPredicate(
           (w) => w is Text && w.style?.fontSize == 38,
         );
-        expect(tester.widget<Text>(resultat).data, '196');
+        expect(
+          tester.widget<Text>(resultat).data,
+          attendu,
+          reason: touches.join(' '),
+        );
+      });
+    }
+
+    testWidgets('la formule affiche l\'exposant sur le bon nombre', (
+      tester,
+    ) async {
+      await ouvrir(tester);
+      await taper(tester, [...t('2+3×4'), 'x²']);
+      expect(formule(tester), '2 + 3 × 4²');
+      await taper(tester, ['+', '(', '1', '+', '8', ')', '√x']);
+      expect(formule(tester), '2 + 3 × 4² + √(1 + 8)');
+    });
+
+    testWidgets(
+      'pieds et pouces : √ de 9" est affiché entre parenthèses si besoin',
+      (tester) async {
+        await ouvrir(tester);
+        await taper(tester, [...t('1[Pi]6[Po]'), 'x²']);
+        expect(formule(tester), '(1\' 6")²');
       },
     );
 
+    testWidgets(
+      '√ d\'un nombre négatif : refusé, l\'expression reste intacte',
+      (tester) async {
+        await ouvrir(tester);
+        await taper(tester, [...t('(1−5)'), '√x', '=']);
+        final resultat = find.byWidgetPredicate(
+          (w) => w is Text && w.style?.fontSize == 38,
+        );
+        expect(tester.widget<Text>(resultat).data, '-4');
+      },
+    );
+
+    testWidgets('sans nombre (juste après un opérateur) : sans effet', (
+      tester,
+    ) async {
+      await ouvrir(tester);
+      await taper(tester, [...t('5+'), 'x²', '3', '=']);
+      final resultat = find.byWidgetPredicate(
+        (w) => w is Text && w.style?.fontSize == 38,
+      );
+      expect(tester.widget<Text>(resultat).data, '8');
+    });
+  });
+
+  group('Division par zéro', () {
     testWidgets('division par zéro : message d\'erreur au lieu d\'un faux 0', (
       tester,
     ) async {
