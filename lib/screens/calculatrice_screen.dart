@@ -5,8 +5,7 @@ import 'package:flutter/material.dart';
 import '../services/preferences.dart';
 import '../services/theme_compagnie.dart';
 
-/// Calculatrice affichée. On bascule en touchant deux fois l'onglet
-/// Calculatrice de la barre du bas (voir main.dart).
+/// Calculatrice affichée, choisie avec les boutons Charpente | Béton en haut.
 enum ModeCalculatrice { charpente, beton }
 
 /// Levée par l'évaluation quand une division par zéro survient.
@@ -1077,45 +1076,16 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  /// En-tête : calculatrice affichée et unités. Toucher le titre bascule
-  /// aussi entre charpente et béton.
+  /// En-tête : choix Charpente | Béton, et unités en vigueur.
   Widget _enteteMode() {
-    final beton = _mode == ModeCalculatrice.beton;
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
       child: Row(
         children: [
-          InkWell(
-            key: const ValueKey('titre_mode_calculatrice'),
-            onTap: () => CalculatriceScreen.mode.value = beton
-                ? ModeCalculatrice.charpente
-                : ModeCalculatrice.beton,
-            child: Row(
-              children: [
-                Text(
-                  beton ? 'Béton' : 'Charpente',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 16,
-                    color: ThemeCompagnie.accentDe(context),
-                  ),
-                ),
-                Icon(
-                  Icons.swap_horiz,
-                  size: 18,
-                  color: ThemeCompagnie.accentDe(context),
-                ),
-              ],
-            ),
-          ),
+          _boutonMode('Charpente', ModeCalculatrice.charpente),
           const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              'Touchez deux fois l\'onglet pour ${beton ? 'la charpente' : 'le béton'}',
-              style: const TextStyle(fontSize: 11, color: Color(0xFF6B6455)),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
+          _boutonMode('Béton', ModeCalculatrice.beton),
+          const SizedBox(width: 12),
           Text(
             _metrique ? 'Métrique' : 'Impérial',
             style: const TextStyle(fontSize: 11, color: Color(0xFF6B6455)),
@@ -1125,10 +1095,41 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
+  Widget _boutonMode(String libelle, ModeCalculatrice mode) {
+    final actif = _mode == mode;
+    final fond = actif ? _boutonOperateur : _boutonChiffreBg;
+    return Expanded(
+      child: SizedBox(
+        height: 40,
+        child: ElevatedButton(
+          key: ValueKey('mode_${mode.name}'),
+          onPressed: actif ? null : () => CalculatriceScreen.mode.value = mode,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: fond,
+            foregroundColor: actif ? _texteSur(fond) : _boutonChiffreTexte,
+            disabledBackgroundColor: fond,
+            disabledForegroundColor: _texteSur(fond),
+            elevation: actif ? 2 : 0,
+            padding: EdgeInsets.zero,
+            side: actif ? null : const BorderSide(color: _boutonChiffreBorder),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
+          ),
+          child: Text(
+            libelle,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _ecranCharpente() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
+      constraints: const BoxConstraints(minHeight: 150),
       decoration: BoxDecoration(
         color: _lcdBg,
         borderRadius: BorderRadius.circular(8),
@@ -1149,7 +1150,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                           : 'PITCH ${_pitch!.toStringAsFixed(2)}/12',
                       style: TextStyle(
                         color: _texteLcd,
-                        fontSize: 11,
+                        fontSize: 13,
                         fontFamily: 'monospace',
                         letterSpacing: 1,
                       ),
@@ -1161,7 +1162,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                         'M',
                         style: TextStyle(
                           color: _texteLcd,
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -1170,7 +1171,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               ),
               InkWell(
                 onTap: _ouvrirHistorique,
-                child: Icon(Icons.history, size: 18, color: _texteLcd),
+                child: Icon(Icons.history, size: 22, color: _texteLcd),
               ),
             ],
           ),
@@ -1185,13 +1186,13 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       : _formatLongueurAlt(_diag!),
                   style: TextStyle(
                     color: _texteLcdSecondaire,
-                    fontSize: 13,
+                    fontSize: 16,
                     fontFamily: 'monospace',
                   ),
                 ),
               ),
             ),
-          const SizedBox(height: 2),
+          const SizedBox(height: 6),
           if (_resultatFinal != null)
             GestureDetector(
               onTap: _uniteUtiliseeDansFormule
@@ -1206,7 +1207,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       : _formatDecimal(_resultatFinal!),
                   style: TextStyle(
                     color: _texteLcd,
-                    fontSize: 38,
+                    fontSize: 50,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'monospace',
                   ),
@@ -1220,7 +1221,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _erreur!,
                 style: TextStyle(
                   color: _texteLcd,
-                  fontSize: 24,
+                  fontSize: 30,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'monospace',
                 ),
@@ -1237,7 +1238,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       : (_formulePrecedente + _texteOperandeEnCours()),
                   style: TextStyle(
                     color: _texteLcd,
-                    fontSize: 26,
+                    fontSize: 34,
                     fontWeight: FontWeight.w600,
                     fontFamily: 'monospace',
                   ),
@@ -1255,7 +1256,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                         l,
                         style: TextStyle(
                           color: _texteLcdSecondaire,
-                          fontSize: 14,
+                          fontSize: 17,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -1599,7 +1600,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   Widget _ecranAutre() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
+      constraints: const BoxConstraints(minHeight: 150),
       decoration: BoxDecoration(
         color: _lcdBg,
         borderRadius: BorderRadius.circular(8),
@@ -1614,7 +1616,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               _termine ? 'Résultat' : _etapes[_etape],
               style: TextStyle(
                 color: _texteLcd,
-                fontSize: 13,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -1625,7 +1627,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               '${_saisie.isEmpty ? '0' : _saisie} $_uniteBeton',
               style: TextStyle(
                 color: _texteLcd,
-                fontSize: 40,
+                fontSize: 50,
                 fontWeight: FontWeight.w700,
                 fontFamily: 'monospace',
               ),
@@ -1637,7 +1639,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _resultatTitre ?? '',
                 style: TextStyle(
                   color: _texteLcd,
-                  fontSize: 14,
+                  fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
@@ -1650,7 +1652,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                   l,
                   style: TextStyle(
                     color: _texteLcd,
-                    fontSize: 20,
+                    fontSize: 24,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -1663,7 +1665,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                   alignment: Alignment.centerLeft,
                   child: Text(
                     _noteResultat!,
-                    style: TextStyle(color: _texteLcdSecondaire, fontSize: 12),
+                    style: TextStyle(color: _texteLcdSecondaire, fontSize: 14),
                   ),
                 ),
               ),

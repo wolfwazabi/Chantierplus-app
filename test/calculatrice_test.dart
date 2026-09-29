@@ -37,7 +37,7 @@ void main() {
     // Le résultat est le grand texte de l'écran LCD (taille 38), à ne pas
     // confondre avec les libellés des touches (« 5 », « 4 »…).
     final resultat = find.byWidgetPredicate(
-      (w) => w is Text && w.style?.fontSize == 38,
+      (w) => w is Text && w.style?.fontSize == 50,
     );
     expect(
       resultat,
@@ -246,7 +246,7 @@ void main() {
       await ouvrir(tester);
       await taper(tester, [...t('2+3×4'), '=', '+', '1', '=']);
       final resultat = find.byWidgetPredicate(
-        (w) => w is Text && w.style?.fontSize == 38,
+        (w) => w is Text && w.style?.fontSize == 50,
       );
       expect(tester.widget<Text>(resultat).data, '15');
     });
@@ -256,7 +256,7 @@ void main() {
     // Formule affichée pendant la saisie (texte de taille 26 sur le LCD).
     String formule(WidgetTester tester) => tester
         .widget<Text>(
-          find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 26),
+          find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 34),
         )
         .data!
         .trim();
@@ -281,7 +281,7 @@ void main() {
         await ouvrir(tester);
         await taper(tester, touches);
         final resultat = find.byWidgetPredicate(
-          (w) => w is Text && w.style?.fontSize == 38,
+          (w) => w is Text && w.style?.fontSize == 50,
         );
         expect(
           tester.widget<Text>(resultat).data,
@@ -316,7 +316,7 @@ void main() {
         await ouvrir(tester);
         await taper(tester, [...t('(1−5)'), '√x', '=']);
         final resultat = find.byWidgetPredicate(
-          (w) => w is Text && w.style?.fontSize == 38,
+          (w) => w is Text && w.style?.fontSize == 50,
         );
         expect(tester.widget<Text>(resultat).data, '-4');
       },
@@ -328,7 +328,7 @@ void main() {
       await ouvrir(tester);
       await taper(tester, [...t('5+'), 'x²', '3', '=']);
       final resultat = find.byWidgetPredicate(
-        (w) => w is Text && w.style?.fontSize == 38,
+        (w) => w is Text && w.style?.fontSize == 50,
       );
       expect(tester.widget<Text>(resultat).data, '8');
     });
@@ -342,7 +342,7 @@ void main() {
       await taper(tester, [...t('8÷0'), '=']);
       expect(find.text('Division par zéro'), findsOneWidget);
       expect(
-        find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 38),
+        find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 50),
         findsNothing,
       );
       // Une nouvelle saisie efface l'erreur.
