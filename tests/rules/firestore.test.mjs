@@ -343,6 +343,92 @@ describe('Travaux / matériel (admin et contremaître seulement)', () => {
 });
 
 // =============================================================================
+describe('Extras (saisie : admin et contremaître ; suppression : admin)', () => {
+  const extra = (over = {}) => ({
+    companyId: 'A', chantierId: 'chA', description: 'Ajout d\'une cloison',
+    nombreHommes: 2, heures: 3.5, dateTravaux: '2026-10-01',
+    ajoutePar: 'plusA', ajouteParNom: 'Plus A', dateAjout: serverTimestamp(), ...over,
+  });
+  const PHOTO = {
+    photoUrl: 'https://firebasestorage.googleapis.com/v0/b/chantierplus-mtl/o/e.jpg',
+    cheminPhoto: 'chantiers/A/chA/chantier_extras/123_e.jpg',
+  };
+  const col = (uid) => collection(ctxDe(uid), 'chantier_extras');
+  const seme = async (id = 'ex1') => env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'chantier_extras', id), { ...extra(), dateAjout: new Date() }));
+
+  test('contremaître et admin créent un extra ; employé et autre compagnie refusés', async () => {
+    await assertSucceeds(addDoc(col('uid-plusA'), extra()));
+    await assertSucceeds(addDoc(col('uid-adminA'), extra({ ajoutePar: 'adminA', ajouteParNom: 'Admin A' })));
+    await assertFails(addDoc(col('uid-empA'), extra({ ajoutePar: 'empA', ajouteParNom: 'Emp A' })));
+    await assertFails(addDoc(col('uid-adminB'), extra()));
+  });
+
+  test('photo facultative : acceptée avec son chemin, refusée sinon', async () => {
+    await assertSucceeds(addDoc(col('uid-plusA'), extra(PHOTO)));
+    await assertFails(addDoc(col('uid-plusA'), extra({ photoUrl: PHOTO.photoUrl })));
+    await assertFails(addDoc(col('uid-plusA'), extra({ cheminPhoto: PHOTO.cheminPhoto })));
+    await assertFails(addDoc(col('uid-plusA'), extra({ ...PHOTO, photoUrl: 'https://exemple.com/x.jpg' })));
+    await assertFails(addDoc(col('uid-plusA'), extra({ ...PHOTO, cheminPhoto: 'chantiers/B/chB/chantier_extras/x.jpg' })));
+    await assertFails(addDoc(col('uid-plusA'), extra({ ...PHOTO, cheminPhoto: 'chantiers/A/chA/photos/x.jpg' })));
+    await assertFails(addDoc(col('uid-plusA'), extra({ ...PHOTO, cheminPhoto: 'chantiers/A/chA/chantier_extras/../x.jpg/y' })));
+  });
+
+  test('valeurs invalides refusées : hommes, temps, date, description, champs inconnus', async () => {
+    const c = col('uid-plusA');
+    for (const mauvais of [
+      { nombreHommes: 0 }, { nombreHommes: 1.5 }, { nombreHommes: 501 }, { nombreHommes: '2' },
+      { heures: 0 }, { heures: -1 }, { heures: 1001 }, { heures: '3' },
+      { dateTravaux: '2026-1-5' }, { dateTravaux: 20261001 },
+      { description: '' }, { description: 'x'.repeat(2001) },
+      { bonus: 1 }, { chantierId: 'chB' }, { companyId: 'B' },
+    ]) {
+      await assertFails(addDoc(c, extra(mauvais)));
+    }
+  });
+
+  test('l\'auteur est celui de la session : pas de faux nom ni de faux identifiant', async () => {
+    await assertFails(addDoc(col('uid-plusA'), extra({ ajoutePar: 'adminA' })));
+    await assertFails(addDoc(col('uid-plusA'), extra({ ajouteParNom: 'Quelqu\'un d\'autre' })));
+    await assertFails(addDoc(col('uid-plusA'), extra({ dateAjout: new Date('2020-01-01') })));
+  });
+
+  test('lecture : admin et contremaître de la compagnie seulement', async () => {
+    await seme();
+    await assertSucceeds(getDoc(doc(ctxDe('uid-plusA'), 'chantier_extras/ex1')));
+    await assertSucceeds(getDoc(doc(ctxDe('uid-adminA'), 'chantier_extras/ex1')));
+    await assertFails(getDoc(doc(ctxDe('uid-empA'), 'chantier_extras/ex1')));
+    await assertFails(getDoc(doc(ctxDe('uid-adminB'), 'chantier_extras/ex1')));
+    await assertFails(getDocs(query(collection(ctxDe('uid-empA'), 'chantier_extras'), where('companyId', '==', 'A'))));
+    await assertFails(getDocs(query(collection(ctxDe('uid-adminB'), 'chantier_extras'), where('companyId', '==', 'A'))));
+  });
+
+  test('modification : contenu seulement, jamais l\'auteur, le chantier ou la compagnie', async () => {
+    await seme();
+    const ref = (uid) => doc(ctxDe(uid), 'chantier_extras/ex1');
+    await assertSucceeds(updateDoc(ref('uid-plusA'), { description: 'Corrigé', nombreHommes: 3, heures: 4 }));
+    await assertSucceeds(updateDoc(ref('uid-adminA'), { ...PHOTO }));
+    await assertSucceeds(updateDoc(ref('uid-adminA'), { photoUrl: deleteField(), cheminPhoto: deleteField() }));
+    await assertFails(updateDoc(ref('uid-plusA'), { ajoutePar: 'adminA' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { chantierId: 'chB' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { companyId: 'B' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { heures: 0 }));
+    await assertFails(updateDoc(ref('uid-plusA'), { photoUrl: PHOTO.photoUrl }));
+    await assertFails(updateDoc(ref('uid-empA'), { description: 'Piraté' }));
+    await assertFails(updateDoc(ref('uid-adminB'), { description: 'Piraté' }));
+  });
+
+  test('suppression : admin seulement', async () => {
+    await seme();
+    const ref = (uid) => doc(ctxDe(uid), 'chantier_extras/ex1');
+    await assertFails(deleteDoc(ref('uid-plusA')));
+    await assertFails(deleteDoc(ref('uid-empA')));
+    await assertFails(deleteDoc(ref('uid-adminB')));
+    await assertSucceeds(deleteDoc(ref('uid-adminA')));
+  });
+});
+
+// =============================================================================
 describe('Documents de chantier (dépôt : admin ; consultation : admin et contremaître)', () => {
   const document = (over = {}) => ({
     companyId: 'A', chantierId: 'chA', nom: 'Devis toiture.xlsx',

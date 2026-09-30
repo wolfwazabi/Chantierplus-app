@@ -85,6 +85,24 @@
           "order": "DESCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "chantier_extras",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "companyId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "chantierId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "dateAjout",
+          "order": "DESCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

@@ -4,7 +4,8 @@ rules_version = '2';
 // Règles Cloud Storage — fichiers de chantier
 //
 // Chemin : chantiers/{companyId}/{chantierId}/{type}/{fichier}
-//   type ∈ photos | chantier_travaux | chantier_materiel : images, admin et
+//   type ∈ photos | chantier_travaux | chantier_materiel | chantier_extras :
+//          images, admin et
 //          contremaître ;
 //   type == documents : plans, devis, etc. Lecture admin et contremaître,
 //          dépôt et suppression par les admins (dont le super-admin).
@@ -53,14 +54,14 @@ service firebase.storage {
     // ------------------------------------------------ Photos (travaux, matériel)
 
     match /chantiers/{companyId}/{chantierId}/{type}/{fichier} {
-      allow read, delete: if type in ['photos', 'chantier_travaux', 'chantier_materiel']
+      allow read, delete: if type in ['photos', 'chantier_travaux', 'chantier_materiel', 'chantier_extras']
         && gestionnaireDe(companyId);
 
       // Création seulement. Dans Storage, réécrire un objet existant passe par
       // « create » (update ne couvre que les métadonnées) : resource == null
       // empêche l'écrasement.
       allow create: if resource == null
-        && type in ['photos', 'chantier_travaux', 'chantier_materiel']
+        && type in ['photos', 'chantier_travaux', 'chantier_materiel', 'chantier_extras']
         && gestionnaireDe(companyId)
         && chantierDe(chantierId, companyId)
         && request.resource.size > 0

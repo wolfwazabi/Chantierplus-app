@@ -339,6 +339,58 @@ service cloud.firestore {
       allow delete: if gestionnaireDe(resource.data.companyId);
     }
 
+    // ---------------------------------------------------------------- Extras
+    // Travaux supplémentaires d'un chantier : description, nombre d'hommes,
+    // temps, date et photo facultative. Admin et contremaître les saisissent et
+    // les modifient ; seul un admin les supprime (ils servent à facturer).
+
+    function datePropre(v) {
+      return v is string && v.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}');
+    }
+
+    // Photo facultative : l'URL et le chemin vont ensemble, dans le dossier
+    // « chantier_extras » du chantier.
+    function photoExtraValide(d, companyId, chantierId) {
+      return d.keys().hasAny(['photoUrl']) == d.keys().hasAny(['cheminPhoto'])
+        && (!d.keys().hasAny(['photoUrl'])
+            || (urlStorage(d.photoUrl)
+                && d.cheminPhoto is string
+                && d.cheminPhoto.matches('chantiers/' + companyId + '/' + chantierId
+                                         + '/chantier_extras/[^/]{1,250}')));
+    }
+
+    function contenuExtraValide(d, companyId, chantierId) {
+      return texte(d.description, 1, 2000)
+        && d.nombreHommes is int && d.nombreHommes >= 1 && d.nombreHommes <= 500
+        && d.heures is number && d.heures > 0 && d.heures <= 1000
+        && datePropre(d.dateTravaux)
+        && photoExtraValide(d, companyId, chantierId);
+    }
+
+    match /chantier_extras/{extraId} {
+      allow read: if gestionnaireDe(resource.data.companyId);
+
+      allow create: if gestionnaireDe(request.resource.data.companyId)
+        && champsPermis(request.resource.data,
+             ['companyId', 'chantierId', 'description', 'nombreHommes', 'heures',
+              'dateTravaux', 'photoUrl', 'cheminPhoto', 'ajoutePar', 'ajouteParNom',
+              'dateAjout'])
+        && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
+        && contenuExtraValide(request.resource.data, request.resource.data.companyId,
+                              request.resource.data.chantierId)
+        && request.resource.data.ajoutePar == session().employeeId
+        && request.resource.data.ajouteParNom == moi().nom
+        && request.resource.data.dateAjout == request.time;
+
+      allow update: if gestionnaireDe(resource.data.companyId)
+        && champsModifiesPermis(['description', 'nombreHommes', 'heures', 'dateTravaux',
+                                 'photoUrl', 'cheminPhoto'])
+        && contenuExtraValide(request.resource.data, resource.data.companyId,
+                              resource.data.chantierId);
+
+      allow delete: if adminDe(resource.data.companyId);
+    }
+
     // ------------------------------------------------ Documents de chantier
     // Plans, devis, photos, etc. Consultés par les admins et contremaîtres ;
     // déposés et supprimés par les admins (dont le super-admin) seulement.

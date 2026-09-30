@@ -75,6 +75,13 @@ describe('Storage — photos de chantier', () => {
     await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/photos/1.jpg'), IMAGE, JPEG));
     await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/chantier_travaux/2.jpg'), IMAGE, JPEG));
     await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/chantier_materiel/3.jpg'), IMAGE, JPEG));
+    await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/chantier_extras/4.jpg'), IMAGE, JPEG));
+  });
+
+  test('photos d\'extras : employé et autre compagnie refusés, pas de non-image', async () => {
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-empA')), 'chantiers/A/chA/chantier_extras/x.jpg'), IMAGE, JPEG));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/chantier_extras/x.jpg'), IMAGE, JPEG));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-plusA')), 'chantiers/A/chA/chantier_extras/x.html'), IMAGE, { contentType: 'text/html' }));
   });
 
   test('contremaître A : refusé dans la compagnie B ou sur un chantier de B', async () => {

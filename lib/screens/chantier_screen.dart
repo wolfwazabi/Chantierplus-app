@@ -11,7 +11,9 @@ import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
 import 'materiaux/calcul_materiaux.dart';
 import '../widgets/recherche_chantier.dart';
+import '../services/photos.dart';
 import '../services/stockage.dart';
+import 'extras/extras_tab.dart';
 import '../services/theme_compagnie.dart';
 
 class ChantierScreen extends StatefulWidget {
@@ -87,7 +89,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
             }
 
             return DefaultTabController(
-              length: 5,
+              length: 6,
               child: Column(
                 children: [
                   Padding(
@@ -138,7 +140,11 @@ class _ChantierScreenState extends State<ChantierScreen> {
                     tabAlignment: TabAlignment.center,
                     tabs: [
                       Tab(icon: Icon(Icons.photo_camera), text: 'Photos'),
-                      Tab(icon: Icon(Icons.assignment), text: 'Travaux'),
+                      Tab(
+                        icon: Icon(Icons.assignment),
+                        text: 'Travaux à compléter',
+                      ),
+                      Tab(icon: Icon(Icons.add_task), text: 'Extras'),
                       Tab(icon: Icon(Icons.shopping_cart), text: 'Matériel'),
                       Tab(icon: Icon(Icons.folder_open), text: 'Documents'),
                       Tab(icon: Icon(Icons.calculate), text: 'Calcul'),
@@ -162,6 +168,12 @@ class _ChantierScreenState extends State<ChantierScreen> {
                           libelleActif: 'Remettre en travaux',
                           icone: Icons.assignment,
                           avecQuantite: false,
+                        ),
+                        ExtrasTab(
+                          key: ValueKey('extras_${_chantierSelectionne!.id}'),
+                          chantierId: _chantierSelectionne!.id,
+                          companyId: companyId,
+                          connecte: connecte,
                         ),
                         _ListeTab(
                           chantierId: _chantierSelectionne!.id,
@@ -216,22 +228,53 @@ class _PhotosTabState extends State<_PhotosTab> {
   bool _enversEnCours = false;
   double _progression = 0;
 
-  Future<void> _ajouterPhotos() async {
-    final picker = ImagePicker();
-    final List<XFile> images = await picker.pickMultiImage(imageQuality: 80);
-    if (images.isEmpty) return;
+  /// Photo prise avec l'app : envoyée au serveur, jamais enregistrée dans la
+  /// pellicule du téléphone.
+  Future<void> _prendrePhoto() async {
+    final image = await Photos.prendre();
+    if (image == null) return;
+    await _envoyer([image]);
+  }
 
+  Future<void> _ajouterPhotos() async {
+    final images = await Photos.choisirPlusieurs();
+    if (images.isEmpty) return;
+    await _envoyer(images);
+  }
+
+  Future<void> _envoyer(List<XFile> images) async {
     setState(() {
       _enversEnCours = true;
       _progression = 0;
     });
 
+    var echecs = 0;
     for (int i = 0; i < images.length; i++) {
-      await _uploaderUnePhoto(images[i]);
-      setState(() => _progression = (i + 1) / images.length);
+      try {
+        await _uploaderUnePhoto(images[i]);
+      } catch (_) {
+        echecs++;
+      } finally {
+        // La copie temporaire ne reste pas dans le téléphone.
+        await Photos.supprimerTemporaire(images[i]);
+      }
+      if (mounted) setState(() => _progression = (i + 1) / images.length);
     }
 
+    if (!mounted) return;
     setState(() => _enversEnCours = false);
+    if (echecs > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            echecs == 1
+                ? 'Une photo n\'a pas pu être envoyée. Réessayez.'
+                : '$echecs photos n\'ont pas pu être envoyées. Réessayez.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _uploaderUnePhoto(XFile image) async {
@@ -269,22 +312,41 @@ class _PhotosTabState extends State<_PhotosTab> {
       children: [
         Padding(
           padding: const EdgeInsets.all(12),
-          child: SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: (!widget.connecte || _enversEnCours)
-                  ? null
-                  : _ajouterPhotos,
-              icon: const Icon(Icons.add_a_photo),
-              label: Text(
-                !widget.connecte
-                    ? 'Connectez-vous pour ajouter des photos'
-                    : (_enversEnCours
-                          ? 'Envoi en cours... ${(_progression * 100).toInt()}%'
-                          : 'Ajouter des photos'),
-              ),
-            ),
-          ),
+          child: !widget.connecte
+              ? const SizedBox(
+                  width: double.infinity,
+                  child: FilledButton(
+                    onPressed: null,
+                    child: Text('Connectez-vous pour ajouter des photos'),
+                  ),
+                )
+              : Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: FilledButton.icon(
+                        key: const ValueKey('photos_prendre'),
+                        onPressed: _enversEnCours ? null : _prendrePhoto,
+                        icon: const Icon(Icons.photo_camera),
+                        label: Text(
+                          _enversEnCours
+                              ? 'Envoi… ${(_progression * 100).toInt()}%'
+                              : 'Prendre une photo',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 2,
+                      child: OutlinedButton.icon(
+                        key: const ValueKey('photos_galerie'),
+                        onPressed: _enversEnCours ? null : _ajouterPhotos,
+                        icon: const Icon(Icons.photo_library_outlined),
+                        label: const Text('Galerie'),
+                      ),
+                    ),
+                  ],
+                ),
         ),
         if (_enversEnCours)
           Padding(
@@ -409,6 +471,7 @@ class _ListeTabState extends State<_ListeTab> {
     required void Function(XFile, Uint8List) onChoisie,
   }) async {
     final source = await showModalBottomSheet<ImageSource>(
+      // Photo prise avec l'app : jamais copiée dans la pellicule du téléphone.
       context: context,
       builder: (ctx) => SafeArea(
         child: Column(
@@ -429,17 +492,17 @@ class _ListeTabState extends State<_ListeTab> {
       ),
     );
     if (source == null) return;
-    final picker = ImagePicker();
-    final XFile? image = await picker.pickImage(
-      source: source,
-      imageQuality: 80,
-    );
+    final XFile? image = source == ImageSource.camera
+        ? await Photos.prendre()
+        : await Photos.choisir();
     if (image == null) return;
     final bytes = await image.readAsBytes();
     onChoisie(image, bytes);
   }
 
   void _retirerPhoto() {
+    final abandonnee = _photoChoisie;
+    if (abandonnee != null) Photos.supprimerTemporaire(abandonnee);
     setState(() {
       _photoChoisie = null;
       _photoApercu = null;
@@ -447,13 +510,19 @@ class _ListeTabState extends State<_ListeTab> {
   }
 
   Future<String?> _uploaderPhoto(XFile photo) async {
-    final bytes = await photo.readAsBytes();
-    final nomFichier = '${DateTime.now().millisecondsSinceEpoch}_${photo.name}';
-    final chemin =
-        'chantiers/${widget.companyId}/${widget.chantierId}/${widget.collection}/$nomFichier';
-    final ref = Stockage.instance.ref().child(chemin);
-    await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
-    return await ref.getDownloadURL();
+    try {
+      final bytes = await photo.readAsBytes();
+      final nomFichier =
+          '${DateTime.now().millisecondsSinceEpoch}_${photo.name}';
+      final chemin =
+          'chantiers/${widget.companyId}/${widget.chantierId}/${widget.collection}/$nomFichier';
+      final ref = Stockage.instance.ref().child(chemin);
+      await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
+      return await ref.getDownloadURL();
+    } finally {
+      // La copie temporaire ne reste pas dans le téléphone.
+      await Photos.supprimerTemporaire(photo);
+    }
   }
 
   Future<void> _ajouterEntree() async {
