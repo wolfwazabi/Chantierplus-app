@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/app_session.dart';
+import '../../services/stockage.dart';
 import '../../services/theme_compagnie.dart';
 
 /// Taille maximale d'un document (identique à storage.rules / firestore.rules).
@@ -173,7 +174,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
 
     final chemin =
         'chantiers/${widget.companyId}/${widget.chantierId}/documents/${_nomStockage(fichier.name)}';
-    final ref = FirebaseStorage.instance.ref(chemin);
+    final ref = Stockage.instance.ref(chemin);
 
     try {
       final octets = await fichier.readAsBytes();
@@ -249,7 +250,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
       final chemin = data['cheminStorage'] as String?;
       if (chemin != null) {
         try {
-          await FirebaseStorage.instance.ref(chemin).delete();
+          await Stockage.instance.ref(chemin).delete();
         } catch (_) {}
       }
       _message('Document supprimé.');

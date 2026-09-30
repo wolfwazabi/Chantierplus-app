@@ -40,9 +40,16 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "storage": {
-    "rules": "storage.rules"
-  },
+  "storage": [
+    {
+      "target": "montreal",
+      "rules": "storage.rules"
+    },
+    {
+      "target": "ancien",
+      "rules": "storage_ancien_ferme.rules"
+    }
+  ],
   "emulators": {
     "auth": {
       "port": 9099

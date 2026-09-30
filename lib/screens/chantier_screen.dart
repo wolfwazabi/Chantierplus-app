@@ -11,6 +11,7 @@ import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
 import 'materiaux/calcul_materiaux.dart';
 import '../widgets/recherche_chantier.dart';
+import '../services/stockage.dart';
 import '../services/theme_compagnie.dart';
 
 class ChantierScreen extends StatefulWidget {
@@ -239,7 +240,7 @@ class _PhotosTabState extends State<_PhotosTab> {
     final chemin =
         'chantiers/${widget.companyId}/${widget.chantierId}/photos/$nomFichier';
 
-    final ref = FirebaseStorage.instance.ref().child(chemin);
+    final ref = Stockage.instance.ref().child(chemin);
     await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
     final url = await ref.getDownloadURL();
 
@@ -258,7 +259,7 @@ class _PhotosTabState extends State<_PhotosTab> {
         .doc(docId)
         .delete();
     try {
-      await FirebaseStorage.instance.ref().child(cheminStorage).delete();
+      await Stockage.instance.ref().child(cheminStorage).delete();
     } catch (_) {}
   }
 
@@ -450,7 +451,7 @@ class _ListeTabState extends State<_ListeTab> {
     final nomFichier = '${DateTime.now().millisecondsSinceEpoch}_${photo.name}';
     final chemin =
         'chantiers/${widget.companyId}/${widget.chantierId}/${widget.collection}/$nomFichier';
-    final ref = FirebaseStorage.instance.ref().child(chemin);
+    final ref = Stockage.instance.ref().child(chemin);
     await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
     return await ref.getDownloadURL();
   }

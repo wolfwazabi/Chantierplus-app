@@ -1,0 +1,12 @@
+rules_version = '2';
+
+// Ancien bucket par défaut (boreal-8cd7c.firebasestorage.app, États-Unis) : vide et
+// fermé. Les fichiers de chantier sont dans chantierplus-mtl (Montréal), avec
+// storage.rules. Rien ne doit plus être lu ni écrit ici.
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /{tout=**} {
+      allow read, write: if false;
+    }
+  }
+}

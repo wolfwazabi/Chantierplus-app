@@ -27,7 +27,9 @@ void main() {
     expect(Preferences.estMetrique, isFalse);
   });
 
-  testWidgets('écran Préférences : choisir Métrique puis Impérial', (tester) async {
+  testWidgets('écran Préférences : choisir Métrique puis Impérial', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues({});
     await tester.pumpWidget(const MaterialApp(home: PreferencesScreen()));
     await tester.tap(find.byKey(const ValueKey('unites_metrique')));

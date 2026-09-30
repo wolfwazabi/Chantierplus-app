@@ -1,5 +1,17 @@
 {
   "projects": {
     "default": "boreal-8cd7c"
+  },
+  "targets": {
+    "boreal-8cd7c": {
+      "storage": {
+        "montreal": [
+          "chantierplus-mtl"
+        ],
+        "ancien": [
+          "boreal-8cd7c.firebasestorage.app"
+        ]
+      }
+    }
   }
 }
