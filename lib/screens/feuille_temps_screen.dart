@@ -254,7 +254,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
         (debut ? jour.heureDebut : jour.heureFin) ??
         (debut
             ? const TimeOfDay(hour: 7, minute: 0)
-            : const TimeOfDay(hour: 15, minute: 0));
+            : const TimeOfDay(hour: 15, minute: 15));
     var dateTemp = DateTime(2024, 1, 1, initial.hour, initial.minute);
 
     final resultat = await showModalBottomSheet<DateTime>(
