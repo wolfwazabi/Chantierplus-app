@@ -43,6 +43,7 @@ class _DocumentsAdminScreenState extends State<DocumentsAdminScreen> {
                 final chantiers =
                     snapshot.data!.docs
                         .map((d) => Chantier.fromFirestore(d.id, d.data()))
+                        .where((c) => !c.archive)
                         .toList()
                       ..sort((a, b) => a.nom.compareTo(b.nom));
 

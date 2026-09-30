@@ -202,6 +202,34 @@ describe('Une journée vide n\'efface jamais une journée enregistrée', () => {
   });
 });
 
+describe('Chantiers archivés', () => {
+  const archives = new Set(['ch2']);
+  const avecArchives = (jours, existante) => ft.calculerFeuille({
+    jours: ft.lireJours(jours), nomsChantiers: NOMS, archives, regles: defaut, existante,
+    maintenantIso: '2026-01-06T12:00:00.000Z',
+  });
+
+  test('un chantier archivé ne peut pas être choisi pour une journée', () => {
+    rejette(() => avecArchives([jour({ chantierId: 'ch2' })]));
+  });
+
+  test('une journée déjà enregistrée avec ce chantier peut être renvoyée telle quelle', () => {
+    const avant = calcul([jour({ chantierId: 'ch2' })]);
+    const r = avecArchives([jour({ chantierId: 'ch2' })], { jours: avant.jours });
+    assert.equal(r.jours[0].chantierNom, 'Chantier 2');
+    assert.equal(r.totalHeures, 7.75);
+  });
+
+  test('changer une journée vers un chantier archivé reste refusé', () => {
+    const avant = calcul([jour({ chantierId: 'ch1' })]);
+    rejette(() => avecArchives([jour({ chantierId: 'ch2' })], { jours: avant.jours }));
+  });
+
+  test('les chantiers actifs ne sont pas touchés', () => {
+    assert.equal(avecArchives([jour({ chantierId: 'ch1' })]).totalHeures, 7.75);
+  });
+});
+
 describe('Échéance (mardi suivant, 18 h à Montréal)', () => {
   const utc = (iso) => Date.parse(iso);
 

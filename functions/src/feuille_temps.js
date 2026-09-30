@@ -205,7 +205,7 @@ function lireJours(jours) {
  * (résolus côté serveur), des règles de la compagnie et de la feuille déjà
  * enregistrée (pour dater les modifications après verrouillage).
  */
-function calculerFeuille({jours, nomsChantiers, regles, existante, maintenantIso}) {
+function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, existante, maintenantIso}) {
   let minutesTravail = 0;
   let minutesVoyage = 0;
   // Journées conservées telles quelles (valeurs calculées à leur saisie).
@@ -221,6 +221,12 @@ function calculerFeuille({jours, nomsChantiers, regles, existante, maintenantIso
       heuresConservees += anciens[i].heuresTravaillees ?? 0;
       voyageConserve += anciens[i].voyagementPayeHeures ?? 0;
       return anciens[i];
+    }
+    // Un chantier archivé ne se choisit plus ; une journée déjà enregistrée
+    // avec ce chantier peut encore être renvoyée telle quelle.
+    if (!j.estAucun && !j.vide && archives.has(j.chantierId) &&
+        anciens[i]?.chantierId !== j.chantierId) {
+      throw new HttpsError("invalid-argument", `${j.nomJour} : ce chantier est archivé.`);
     }
     let heures = null;
     let voyPaye = 0;

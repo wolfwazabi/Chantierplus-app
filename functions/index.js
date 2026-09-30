@@ -456,6 +456,7 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
   // Chantiers : doivent appartenir à la compagnie ; le nom vient du serveur.
   const ids = [...new Set(jours.filter((j) => j.chantierId).map((j) => j.chantierId))];
   const nomsChantiers = new Map();
+  const archives = new Set();
   if (ids.length > 0) {
     const snaps = await db.getAll(...ids.map((id) => db.collection("chantiers").doc(id)));
     for (const s of snaps) {
@@ -463,6 +464,7 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
         throw new HttpsError("invalid-argument", "Chantier introuvable.");
       }
       nomsChantiers.set(s.id, s.data().nom);
+      if (s.data().archive === true) archives.add(s.id);
     }
   }
 
@@ -472,7 +474,7 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
   const resultat = await db.runTransaction(async (t) => {
     const existante = (await t.get(ref)).data();
     const calcul = calculerFeuille({
-      jours, nomsChantiers, regles, existante,
+      jours, nomsChantiers, archives, regles, existante,
       maintenantIso: new Date(maintenant).toISOString(),
     });
     t.set(ref, {

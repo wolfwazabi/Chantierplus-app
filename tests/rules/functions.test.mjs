@@ -643,6 +643,24 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     await assert.rejects(getDocs(query(collection(adm.db, 'feuilles_temps'), where('companyId', '==', autreCid))));
   });
 
+  test('chantier archivé : plus choisissable, mais les journées déjà saisies le gardent', async () => {
+    const SEM = lundi(0);
+    await adminDb.collection('feuilles_temps').doc(`ft-emp_${SEM}`).delete();
+    await adminDb.collection('chantiers').doc('ft-chArch').set({ companyId: cid, nom: 'Chantier Archivé', adresse: '', archive: true });
+    await rejette(envoyer(emp, [jour({ chantierId: 'ft-chArch' })], SEM), 'invalid-argument');
+
+    await envoyer(emp, [jour()], SEM);
+    await adminDb.collection('chantiers').doc('ft-chA').update({ archive: true });
+    try {
+      // Même journée renvoyée : acceptée. Une autre journée sur ce chantier : refusée.
+      const r = await envoyer(emp, [jour(), { estAucun: false }], SEM);
+      assert.equal(r.totalHeures, 7.75);
+      await rejette(envoyer(emp, [jour(), jour()], SEM), 'invalid-argument');
+    } finally {
+      await adminDb.collection('chantiers').doc('ft-chA').update({ archive: false });
+    }
+  });
+
   test('un appareil qui n\'a pas chargé la semaine ne peut pas effacer des heures déjà soumises', async () => {
     const SEM = lundi(0);
     await adminDb.collection('feuilles_temps').doc(`ft-emp_${SEM}`).delete();

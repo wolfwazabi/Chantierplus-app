@@ -64,6 +64,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
                         d.data() as Map<String, dynamic>,
                       ),
                     )
+                    .where((c) => !c.archive)
                     .toList()
                   ..sort((a, b) => a.nom.compareTo(b.nom));
 

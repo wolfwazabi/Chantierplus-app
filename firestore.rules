@@ -263,12 +263,16 @@ service cloud.firestore {
         && texte(request.resource.data.nom, 1, 200)
         && texteOptionnel(request.resource.data, 'adresse', 300);
 
+      // « archive » : un chantier retiré de la liste garde ses photos, documents
+      // et heures. Jamais supprimé : photos et documents resteraient orphelins.
       allow update: if adminDe(resource.data.companyId)
-        && champsModifiesPermis(['nom', 'adresse'])
+        && champsModifiesPermis(['nom', 'adresse', 'archive'])
         && texte(request.resource.data.nom, 1, 200)
-        && texteOptionnel(request.resource.data, 'adresse', 300);
+        && texteOptionnel(request.resource.data, 'adresse', 300)
+        && (!request.resource.data.keys().hasAny(['archive'])
+            || request.resource.data.archive is bool);
 
-      allow delete: if adminDe(resource.data.companyId);
+      allow delete: if false;
     }
 
     // ------------------------------------------ Photos (admin et contremaître)

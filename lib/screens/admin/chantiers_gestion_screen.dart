@@ -17,13 +17,17 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
   /// Filtre de la liste (nom ou adresse), même logique que la recherche « … ».
   String _requete = '';
 
-  void _confirmerSuppression(BuildContext context, String docId, String nom) {
+  /// Un chantier ne se supprime pas : il s'archive (ses photos, documents et
+  /// heures sont conservés) et peut être restauré.
+  void _confirmerArchivage(BuildContext context, String docId, String nom) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer ce chantier ?'),
+        title: const Text('Archiver ce chantier ?'),
         content: Text(
-          '$nom sera retiré de la liste. Les photos/travaux/matériel déjà associés resteront consultables via l\'historique existant.',
+          '$nom ne sera plus proposé dans les feuilles de temps, les photos et '
+          'les documents. Rien n\'est supprimé : vous pouvez le restaurer '
+          'à tout moment dans « Archivés ».',
         ),
         actions: [
           TextButton(
@@ -33,16 +37,35 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              FirebaseFirestore.instance
-                  .collection('chantiers')
-                  .doc(docId)
-                  .delete();
+              _definirArchive(docId, true);
             },
-            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
+            child: const Text('Archiver'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _definirArchive(String docId, bool archive) async {
+    final messager = ScaffoldMessenger.of(context);
+    try {
+      await FirebaseFirestore.instance
+          .collection('chantiers')
+          .doc(docId)
+          .update({'archive': archive});
+      messager.showSnackBar(
+        SnackBar(
+          content: Text(archive ? 'Chantier archivé.' : 'Chantier restauré.'),
+        ),
+      );
+    } catch (_) {
+      messager.showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de modifier le chantier. Réessayez.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   void _ouvrirFormulaire(
@@ -129,6 +152,31 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
     );
   }
 
+  /// Chantiers archivés : repliés, avec « Restaurer ».
+  Widget _sectionArchives(List<QueryDocumentSnapshot> archives) {
+    if (archives.isEmpty) return const SizedBox(height: 80);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 80),
+      child: ExpansionTile(
+        key: const ValueKey('chantiers_archives'),
+        leading: const Icon(Icons.inventory_2_outlined),
+        title: Text('Archivés (${archives.length})'),
+        children: [
+          for (final doc in archives)
+            ListTile(
+              key: ValueKey('archive_${doc.id}'),
+              title: Text((doc.data() as Map)['nom'] ?? ''),
+              subtitle: Text((doc.data() as Map)['adresse'] ?? ''),
+              trailing: TextButton(
+                onPressed: () => _definirArchive(doc.id, false),
+                child: const Text('Restaurer'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final companyId = AppSession.current?.companyId;
@@ -171,8 +219,20 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                     d.id,
                     d.data() as Map<String, dynamic>,
                   );
-                  return chantierCorrespond(chantier, _requete);
+                  return !chantier.archive &&
+                      chantierCorrespond(chantier, _requete);
                 }).toList();
+                final archives = docs.where((d) {
+                  final chantier = Chantier.fromFirestore(
+                    d.id,
+                    d.data() as Map<String, dynamic>,
+                  );
+                  return chantier.archive &&
+                      chantierCorrespond(chantier, _requete);
+                }).toList();
+                final nbActifs = docs
+                    .where((d) => (d.data() as Map)['archive'] != true)
+                    .length;
 
                 return Column(
                   children: [
@@ -187,13 +247,13 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                           isDense: true,
                           suffixText: _requete.isEmpty
                               ? null
-                              : '${visibles.length} / ${docs.length}',
+                              : '${visibles.length} / $nbActifs',
                         ),
                         onChanged: (v) => setState(() => _requete = v),
                       ),
                     ),
                     Expanded(
-                      child: visibles.isEmpty
+                      child: visibles.isEmpty && archives.isEmpty
                           ? const Center(
                               child: Padding(
                                 padding: EdgeInsets.all(24),
@@ -204,8 +264,11 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                               ),
                             )
                           : ListView.builder(
-                              itemCount: visibles.length,
+                              itemCount: visibles.length + 1,
                               itemBuilder: (context, index) {
+                                if (index == visibles.length) {
+                                  return _sectionArchives(archives);
+                                }
                                 final doc = visibles[index];
                                 final data = doc.data() as Map<String, dynamic>;
                                 return ListTile(
@@ -223,8 +286,8 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                                           docId: doc.id,
                                           donnees: data,
                                         );
-                                      } else if (v == 'supprimer') {
-                                        _confirmerSuppression(
+                                      } else if (v == 'archiver') {
+                                        _confirmerArchivage(
                                           context,
                                           doc.id,
                                           data['nom'] ?? '',
@@ -237,8 +300,8 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                                         child: Text('Modifier'),
                                       ),
                                       PopupMenuItem(
-                                        value: 'supprimer',
-                                        child: Text('Supprimer'),
+                                        value: 'archiver',
+                                        child: Text('Archiver'),
                                       ),
                                     ],
                                   ),

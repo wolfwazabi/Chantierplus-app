@@ -222,7 +222,35 @@ describe('Chantiers', () => {
     await assertFails(updateDoc(doc(d, 'chantiers/chA'), { companyId: 'B' }));
     await assertFails(updateDoc(doc(d, 'chantiers/chB'), { nom: 'Piraté' }));
     await assertFails(deleteDoc(doc(d, 'chantiers/chB')));
-    await assertSucceeds(deleteDoc(doc(d, 'chantiers/chA')));
+  });
+
+  test('un chantier ne se supprime jamais (tous rôles) : il s\'archive', async () => {
+    for (const uid of ['uid-adminA', 'uid-superA', 'uid-plusA', 'uid-empA', 'uid-adminB']) {
+      await assertFails(deleteDoc(doc(ctxDe(uid), 'chantiers/chA')));
+    }
+  });
+
+  test('archiver et restaurer : admin de la compagnie seulement, booléen seulement', async () => {
+    const ref = (uid) => doc(ctxDe(uid), 'chantiers/chA');
+    await assertSucceeds(updateDoc(ref('uid-adminA'), { archive: true }));
+    await assertSucceeds(updateDoc(ref('uid-superA'), { archive: false }));
+    await assertFails(updateDoc(ref('uid-plusA'), { archive: true }));
+    await assertFails(updateDoc(ref('uid-empA'), { archive: true }));
+    await assertFails(updateDoc(ref('uid-adminB'), { archive: true }));
+    await assertFails(updateDoc(ref('uid-adminA'), { archive: 'oui' }));
+    await assertFails(updateDoc(ref('uid-adminA'), { archive: true, companyId: 'B' }));
+    await assertFails(updateDoc(ref('uid-adminA'), { archive: true, autre: 1 }));
+  });
+
+  test('un chantier archivé reste lisible (ses photos et documents restent accessibles)', async () => {
+    await assertSucceeds(updateDoc(doc(ctxDe('uid-adminA'), 'chantiers/chA'), { archive: true }));
+    await assertSucceeds(getDoc(doc(ctxDe('uid-empA'), 'chantiers/chA')));
+    await assertSucceeds(getDoc(doc(ctxDe('uid-adminA'), 'chantiers/chA')));
+  });
+
+  test('un chantier ne se crée pas déjà archivé ni avec un champ inconnu', async () => {
+    await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'chantiers'),
+      { companyId: 'A', nom: 'X', adresse: '', archive: true }));
   });
 });
 

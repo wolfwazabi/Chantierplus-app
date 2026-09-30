@@ -88,7 +88,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
 
   /// Journées à compléter, affichées en rouge après une soumission.
   Set<String> _joursEnErreur = {};
+
+  /// Chantiers actifs : les seuls proposés à la saisie.
   List<Chantier> _chantiers = [];
+
+  /// Tous les chantiers, archivés compris : les journées déjà enregistrées
+  /// y retrouvent leur chantier.
+  List<Chantier> _tousChantiers = [];
 
   static DateTime _trouverLundi(DateTime date) {
     final diff = date.weekday - DateTime.monday;
@@ -156,12 +162,18 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
 
   Future<void> _chargerChantiers() async {
     if (_estIndividuel) {
-      setState(() => _chantiers = []);
+      setState(() {
+        _chantiers = [];
+        _tousChantiers = [];
+      });
       return;
     }
     final companyId = AppSession.current?.companyId;
     if (companyId == null) {
-      setState(() => _chantiers = []);
+      setState(() {
+        _chantiers = [];
+        _tousChantiers = [];
+      });
       return;
     }
     try {
@@ -174,7 +186,8 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
             ..sort((a, b) => a.nom.compareTo(b.nom));
       if (mounted) {
         setState(() {
-          _chantiers = liste;
+          _tousChantiers = liste;
+          _chantiers = liste.where((c) => !c.archive).toList();
           _erreurChantiers = false;
         });
       }
@@ -185,10 +198,22 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
 
   Chantier? _trouverChantierParId(String? id) {
     if (id == null) return null;
-    for (final c in _chantiers) {
+    for (final c in _tousChantiers) {
       if (c.id == id) return c;
     }
     return null;
+  }
+
+  /// Chantiers proposés pour une journée : les actifs, plus le chantier déjà
+  /// choisi s'il a été archivé depuis (le menu exige qu'il y figure).
+  List<Chantier> _chantiersPour(JourTravail jour) {
+    final choisi = jour.chantier;
+    if (choisi == null ||
+        choisi.id == chantierAucun.id ||
+        _chantiers.any((c) => c.id == choisi.id)) {
+      return _chantiers;
+    }
+    return [..._chantiers, choisi];
   }
 
   Future<void> _chargerDonnees() async {
@@ -1001,7 +1026,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                           value: chantierAucun,
                           child: Text('Aucun (jour non travaillé)'),
                         ),
-                        ..._chantiers.map((c) {
+                        ..._chantiersPour(jour).map((c) {
                           return DropdownMenuItem(
                             value: c,
                             child: Text(
@@ -1018,7 +1043,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   ),
                   const SizedBox(width: 6),
                   BoutonRechercheChantier(
-                    chantiers: _chantiers,
+                    chantiers: _chantiersPour(jour),
                     onChoisi: verrouillee
                         ? null
                         : (c) => setState(() => jour.chantier = c),

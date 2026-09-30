@@ -4,11 +4,16 @@ class Chantier {
   final String nom;
   final String adresse;
 
+  /// Chantier retiré de la liste : il garde ses photos, documents et heures,
+  /// mais ne se choisit plus. Jamais supprimé.
+  final bool archive;
+
   const Chantier({
     required this.id,
     required this.companyId,
     required this.nom,
     required this.adresse,
+    this.archive = false,
   });
 
   factory Chantier.fromFirestore(String id, Map<String, dynamic> data) {
@@ -17,6 +22,7 @@ class Chantier {
       companyId: data['companyId'] ?? '',
       nom: data['nom'] ?? '',
       adresse: data['adresse'] ?? '',
+      archive: data['archive'] == true,
     );
   }
 
