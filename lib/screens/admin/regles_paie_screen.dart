@@ -46,25 +46,38 @@ class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
     final companyId = AppSession.current?.companyId;
     if (companyId == null || !AppSession.estAdmin) return;
     setState(() => _enCours = true);
+    final messager = ScaffoldMessenger.of(context);
+    final navigateur = Navigator.of(context);
+    final regles = _r;
+
+    // Effet immédiat sur cet appareil (les feuilles de temps se recalculent
+    // sans attendre le serveur). Firestore renvoie l'état réel si l'écriture
+    // est refusée : l'écoute de la compagnie rétablit alors les anciennes règles.
+    AppSession.reglesPaie.value = regles;
+    final ecriture = FirebaseFirestore.instance
+        .collection('companies')
+        .doc(companyId)
+        .update({'reglesPaie': regles.versMap()});
+    navigateur.pop();
+    messager.showSnackBar(
+      const SnackBar(content: Text('Enregistrement des règles de paie…')),
+    );
     try {
-      await FirebaseFirestore.instance
-          .collection('companies')
-          .doc(companyId)
-          .update({'reglesPaie': _r.versMap()});
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Règles de paie enregistrées.')),
-      );
-      Navigator.of(context).pop();
+      await ecriture;
+      messager
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(content: Text('Règles de paie enregistrées.')),
+        );
     } catch (_) {
-      if (!mounted) return;
-      setState(() => _enCours = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible d\'enregistrer. Réessayez.'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      messager
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Impossible d\'enregistrer les règles. Réessayez.'),
+            backgroundColor: Colors.red,
+          ),
+        );
     }
   }
 
