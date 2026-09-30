@@ -13,12 +13,11 @@ workflows:
       flutter: stable
       xcode: latest
       cocoapods: default
-      ios_signing:
-        distribution_type: app_store
-        bundle_identifier: app.chantierplus
       vars:
         # Identifiant numérique de l'app dans App Store Connect (Informations sur l'app > ID Apple).
         APP_STORE_APPLE_ID: "6817907454"
+        BUNDLE_ID: "app.chantierplus"
+        # CERTIFICATE_PRIVATE_KEY : variable SECURE saisie dans Codemagic (jamais ici).
     scripts:
       - name: Dépendances
         script: flutter pub get
@@ -28,6 +27,12 @@ workflows:
           flutter test
       - name: Signature du code
         script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create \
+            --certificate-key=@env:CERTIFICATE_PRIVATE_KEY
+          keychain add-certificates
           xcode-project use-profiles
       - name: Compilation de l'IPA
         script: |
