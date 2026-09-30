@@ -10,8 +10,6 @@ workflows:
       # Nom donné à la clé API dans Codemagic : Teams > Integrations > App Store Connect.
       app_store_connect: Chantier+
     environment:
-      groups:
-        - signature   # contient CERTIFICATE_PRIVATE_KEY (variable secure)
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -19,7 +17,7 @@ workflows:
         # Identifiant numérique de l'app dans App Store Connect (Informations sur l'app > ID Apple).
         APP_STORE_APPLE_ID: "6817907454"
         BUNDLE_ID: "app.chantierplus"
-        # CERTIFICATE_PRIVATE_KEY : variable SECURE saisie dans Codemagic (jamais ici).
+        # CERTIFICATE_PRIVATE_KEY : variable SECURE saisie dans les réglages de l'app Codemagic (jamais ici).
     scripts:
       - name: Dépendances
         script: flutter pub get
