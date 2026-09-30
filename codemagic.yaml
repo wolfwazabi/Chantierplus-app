@@ -1,0 +1,42 @@
+# Construction iOS dans le nuage (Codemagic) et envoi à TestFlight.
+# Aucun secret dans ce fichier : la clé API App Store Connect et l'identifiant de
+# l'app sont configurés dans l'interface de Codemagic (voir docs/ios_testflight.md).
+workflows:
+  ios-testflight:
+    name: Chantier+ iOS (TestFlight)
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      # Nom donné à la clé API dans Codemagic : Teams > Integrations > App Store Connect.
+      app_store_connect: Chantier+
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: app.chantierplus
+      vars:
+        # Identifiant numérique de l'app dans App Store Connect (Informations sur l'app > ID Apple).
+        APP_STORE_APPLE_ID: "REMPLACER_PAR_L_ID_APPLE"
+    scripts:
+      - name: Dépendances
+        script: flutter pub get
+      - name: Analyse et tests
+        script: |
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Signature du code
+        script: |
+          xcode-project use-profiles
+      - name: Compilation de l'IPA
+        script: |
+          BUILD=$(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") + 1))
+          flutter build ipa --release --build-number="$BUILD" \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
