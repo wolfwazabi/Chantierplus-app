@@ -18,7 +18,7 @@ workflows:
         bundle_identifier: app.chantierplus
       vars:
         # Identifiant numérique de l'app dans App Store Connect (Informations sur l'app > ID Apple).
-        APP_STORE_APPLE_ID: "REMPLACER_PAR_L_ID_APPLE"
+        APP_STORE_APPLE_ID: "6817907454"
     scripts:
       - name: Dépendances
         script: flutter pub get
