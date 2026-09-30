@@ -208,9 +208,20 @@ function lireJours(jours) {
 function calculerFeuille({jours, nomsChantiers, regles, existante, maintenantIso}) {
   let minutesTravail = 0;
   let minutesVoyage = 0;
+  // Journées conservées telles quelles (valeurs calculées à leur saisie).
+  let heuresConservees = 0;
+  let voyageConserve = 0;
   const anciens = Array.isArray(existante?.jours) ? existante.jours : [];
 
   const sortie = jours.map((j, i) => {
+    // Une journée envoyée vide n'efface JAMAIS une journée déjà enregistrée :
+    // un appareil qui n'a pas pu charger la semaine (réseau, ancienne version)
+    // ne doit pas faire disparaître des heures soumises.
+    if (j.vide && !j.estAucun && jourEnregistre(anciens[i])) {
+      heuresConservees += anciens[i].heuresTravaillees ?? 0;
+      voyageConserve += anciens[i].voyagementPayeHeures ?? 0;
+      return anciens[i];
+    }
     let heures = null;
     let voyPaye = 0;
     let voyagement = null;
@@ -248,12 +259,28 @@ function calculerFeuille({jours, nomsChantiers, regles, existante, maintenantIso
     return contenu;
   });
 
+  // Journées de la feuille enregistrée au-delà de celles reçues : conservées.
+  for (let i = jours.length; i < anciens.length; i++) {
+    sortie.push(anciens[i]);
+    heuresConservees += anciens[i]?.heuresTravaillees ?? 0;
+    voyageConserve += anciens[i]?.voyagementPayeHeures ?? 0;
+  }
+
+  const travail = minutesTravail / 60 + heuresConservees;
+  const voyage = minutesVoyage / 60 + voyageConserve;
   return {
     jours: sortie,
-    totalHeuresTravaillees: arrondir(minutesTravail / 60),
-    totalVoyagementPaye: arrondir(minutesVoyage / 60),
-    totalHeures: arrondir((minutesTravail + minutesVoyage) / 60),
+    totalHeuresTravaillees: arrondir(travail),
+    totalVoyagementPaye: arrondir(voyage),
+    totalHeures: arrondir(travail + voyage),
   };
+}
+
+/** Journée déjà soumise : non travaillée, ou avec chantier et heures. */
+function jourEnregistre(jour) {
+  return !!jour && (jour.estAucun === true ||
+    (typeof jour.chantierId === "string" && jour.heureDebutMinutes !== null &&
+      jour.heureDebutMinutes !== undefined));
 }
 
 const CHAMPS_SAISIE = ["chantierId", "estAucun", "heureDebutMinutes", "heureFinMinutes",

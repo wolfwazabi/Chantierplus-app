@@ -115,8 +115,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     _initialiserSemaineVide();
     AppSession.notifier.addListener(_onSessionChange);
     AppSession.reglesPaie.addListener(_onReglesPaie);
-    _chargerChantiers();
-    _chargerDonnees();
+    _chargerTout();
   }
 
   @override
@@ -132,9 +131,20 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   }
 
   void _onSessionChange() {
-    _chargerChantiers();
-    _chargerDonnees();
+    _chargerTout();
   }
+
+  /// Chantiers d'abord : les journées enregistrées y retrouvent leur chantier.
+  Future<void> _chargerTout() async {
+    await _chargerChantiers();
+    if (mounted) await _chargerDonnees();
+  }
+
+  /// Un chargement a échoué : on ne laisse pas soumettre (une semaine affichée
+  /// vide à tort ne doit jamais être renvoyée au serveur).
+  bool _erreurChantiers = false;
+  bool _erreurFeuille = false;
+  bool get _erreurChargement => _erreurChantiers || _erreurFeuille;
 
   void _initialiserSemaineVide() {
     const noms = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
@@ -162,8 +172,15 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       final liste =
           snap.docs.map((d) => Chantier.fromFirestore(d.id, d.data())).toList()
             ..sort((a, b) => a.nom.compareTo(b.nom));
-      if (mounted) setState(() => _chantiers = liste);
-    } catch (_) {}
+      if (mounted) {
+        setState(() {
+          _chantiers = liste;
+          _erreurChantiers = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _erreurChantiers = true);
+    }
   }
 
   Chantier? _trouverChantierParId(String? id) {
@@ -219,7 +236,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           }
         }
       }
-    } catch (_) {}
+      _erreurFeuille = false;
+    } catch (_) {
+      _erreurFeuille = true;
+    }
 
     if (mounted) setState(() => _chargement = false);
   }
@@ -539,6 +559,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   }
 
   Future<void> _soumettreSemaine() async {
+    if (_erreurChargement) return;
     final joursSaisis = _jours.where((j) => j.estRempli);
     if (joursSaisis.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -659,6 +680,34 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                       ),
                     ),
                   ),
+                  if (_erreurChargement && !pasConnecte) ...[
+                    const SizedBox(height: 12),
+                    Card(
+                      key: const ValueKey('erreur_chargement'),
+                      color: Colors.red.shade50,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Row(
+                          children: [
+                            Icon(Icons.cloud_off, color: Colors.red.shade800),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Text(
+                                'Impossible de charger vos données. Vérifiez '
+                                'votre réseau : la soumission est bloquée pour '
+                                'ne rien écraser.',
+                                style: TextStyle(fontSize: 13),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: _chargerTout,
+                              child: const Text('Réessayer'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                   if (pasConnecte) ...[
                     const SizedBox(height: 12),
                     Card(
@@ -765,12 +814,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                             ),
                             const SizedBox(height: 4),
                             _ligneTotal(
-                              'Voyagement payé (${_regles.voyagementPourcentage} %, '
-                                  'dès ${_regles.voyagementSeuilMinutes} min/jour)',
+                              'Voyagement payé',
                               '${_totalVoyagementPaye.toStringAsFixed(2)} h',
                             ),
                           ],
-                          if (_afficherVoyagement) ...[
+                          // Le voyagement saisi n'est montré qu'au particulier
+                          // (en compagnie, seul le voyagement payé compte).
+                          if (_afficherVoyagement && !_voyagementPaye) ...[
                             const Divider(height: 20),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -802,7 +852,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   SizedBox(
                     width: double.infinity,
                     child: FilledButton.icon(
-                      onPressed: (verrouillee || _envoiSemaineEnCours)
+                      onPressed:
+                          (verrouillee ||
+                              _envoiSemaineEnCours ||
+                              _erreurChargement)
                           ? null
                           : _soumettreSemaine,
                       icon: _envoiSemaineEnCours

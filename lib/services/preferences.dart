@@ -19,10 +19,26 @@ class Preferences {
 
   static bool get estMetrique => unites.value == SystemeUnites.metrique;
 
+  static const _cleResterConnecte = 'preferences.resterConnecte';
+
+  /// « Rester connecté » : si décoché à la connexion, l'app déconnecte
+  /// l'utilisateur à son prochain lancement (téléphone partagé, par exemple).
+  /// Coché par défaut.
+  static bool resterConnecte = true;
+
+  static Future<void> choisirResterConnecte(bool valeur) async {
+    resterConnecte = valeur;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_cleResterConnecte, valeur);
+    } catch (_) {}
+  }
+
   /// Lit les préférences enregistrées (au démarrage de l'app).
   static Future<void> charger() async {
     try {
       final prefs = await SharedPreferences.getInstance();
+      resterConnecte = prefs.getBool(_cleResterConnecte) ?? true;
       unites.value = prefs.getString(_cleUnites) == SystemeUnites.metrique.name
           ? SystemeUnites.metrique
           : SystemeUnites.imperial;

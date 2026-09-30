@@ -546,7 +546,12 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     assert.ok(f.dateModification);
   });
 
+  // Repart d'une feuille vide : les jours déjà enregistrés sont conservés, donc
+  // un test qui compare des totaux exacts ne doit pas hériter du précédent.
+  const vider = (lundiDate = SEMAINE) => adminDb.collection('feuilles_temps').doc(`ft-emp_${lundiDate}`).delete();
+
   test('valeurs calculées, nom et identité envoyés par le client : ignorés', async () => {
+    await vider();
     await envoyer(emp, [jour({ heuresTravaillees: 99, voyagementPayeHeures: 40, chantierNom: 'Faux' })], SEMAINE, {
       totalHeures: 500, employeeId: 'ft-adm', employeeNom: 'Alex Admin', companyId: autreCid,
       reglesPaie: { voyagementPourcentage: 100, voyagementActif: true, voyagementSeuilMinutes: 0 },
@@ -560,6 +565,8 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
   });
 
   test('écriture directe dans Firestore : refusée à tous, lecture de sa feuille permise', async () => {
+    await vider();
+    await envoyer(emp, [jour()]);
     const ref = doc(emp.db, 'feuilles_temps', `ft-emp_${SEMAINE}`);
     await assert.rejects(updateDoc(ref, { totalHeures: 160 }));
     await assert.rejects(setDoc(ref, { totalHeures: 160 }, { merge: true }));
@@ -621,6 +628,8 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
   });
 
   test('correction d\'une journée déjà soumise : date de la modification consignée par le serveur', async () => {
+    await vider();
+    await envoyer(emp, [jour()]);
     await envoyer(emp, [jour({ heureFinMinutes: 16 * 60 })]);
     const f = await feuilleDe('ft-emp');
     assert.equal(f.jours[0].verrouille, true);
@@ -632,6 +641,21 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     const snap = await getDocs(query(collection(adm.db, 'feuilles_temps'), where('companyId', '==', cid)));
     assert.ok(snap.size >= 2);
     await assert.rejects(getDocs(query(collection(adm.db, 'feuilles_temps'), where('companyId', '==', autreCid))));
+  });
+
+  test('un appareil qui n\'a pas chargé la semaine ne peut pas effacer des heures déjà soumises', async () => {
+    const SEM = lundi(0);
+    await adminDb.collection('feuilles_temps').doc(`ft-emp_${SEM}`).delete();
+    await envoyer(emp, [jour(), jour({ heureFinMinutes: 16 * 60 })], SEM);
+    // Semaine affichée vide à tort : seul le mercredi est rempli, lundi et mardi sont envoyés vides.
+    const r = await envoyer(emp, [{ estAucun: false }, { estAucun: false }, jour()], SEM);
+    const f = await feuilleDe('ft-emp', SEM);
+    assert.equal(f.jours.length, 3);
+    assert.equal(f.jours[0].heuresTravaillees, 7.75);
+    assert.equal(f.jours[1].heuresTravaillees, 8.75);
+    assert.equal(f.jours[2].heuresTravaillees, 7.75);
+    assert.equal(r.totalHeures, 24.25);
+    assert.equal(f.totalHeures, 24.25);
   });
 });
 

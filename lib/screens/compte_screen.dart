@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 import '../services/fonctions.dart';
+import '../services/preferences.dart';
 import 'preferences_screen.dart';
 import '../services/theme_compagnie.dart';
 
@@ -72,6 +73,7 @@ class _CompteScreenState extends State<CompteScreen> {
   final _motDePasseIndividuelCtrl = TextEditingController();
   final _nomIndividuelCtrl = TextEditingController();
   bool _modeInscriptionIndividuel = false;
+  bool _resterConnecte = Preferences.resterConnecte;
   bool _individuelEnCours = false;
   String? _individuelErreur;
 
@@ -107,10 +109,11 @@ class _CompteScreenState extends State<CompteScreen> {
       return;
     }
 
+    await Preferences.choisirResterConnecte(_resterConnecte);
     _numeroCtrl.clear();
     _courrielCtrl.clear();
     _pinCtrl.clear();
-    setState(() => _enCours = false);
+    if (mounted) setState(() => _enCours = false);
   }
 
   @override
@@ -329,6 +332,10 @@ class _CompteScreenState extends State<CompteScreen> {
       );
     }
 
+    if (erreur == null) {
+      await Preferences.choisirResterConnecte(_resterConnecte);
+    }
+    if (!mounted) return;
     setState(() {
       _individuelErreur = erreur;
       _individuelEnCours = false;
@@ -518,6 +525,23 @@ class _CompteScreenState extends State<CompteScreen> {
     );
   }
 
+  Widget _caseResterConnecte() {
+    return CheckboxListTile(
+      key: const ValueKey('rester_connecte'),
+      value: _resterConnecte,
+      onChanged: (v) => setState(() => _resterConnecte = v ?? true),
+      title: const Text('Rester connecté'),
+      subtitle: const Text(
+        'Décochez sur un appareil partagé : vous serez déconnecté à la '
+        'prochaine ouverture de l\'app.',
+        style: TextStyle(fontSize: 12),
+      ),
+      controlAffinity: ListTileControlAffinity.leading,
+      contentPadding: EdgeInsets.zero,
+      dense: true,
+    );
+  }
+
   Widget _formulaireConnexion() {
     return Column(
       children: [
@@ -553,6 +577,7 @@ class _CompteScreenState extends State<CompteScreen> {
           ),
           onSubmitted: (_) => _seConnecter(),
         ),
+        _caseResterConnecte(),
         if (_erreur != null) ...[
           const SizedBox(height: 12),
           Text(_erreur!, style: const TextStyle(color: Colors.red)),
@@ -938,6 +963,7 @@ class _CompteScreenState extends State<CompteScreen> {
             border: OutlineInputBorder(),
           ),
         ),
+        _caseResterConnecte(),
         if (_individuelErreur != null) ...[
           const SizedBox(height: 12),
           Text(_individuelErreur!, style: const TextStyle(color: Colors.red)),

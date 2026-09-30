@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import '../models/employee.dart';
 import '../models/regles_paie.dart';
 import 'fonctions.dart';
+import 'preferences.dart';
 import 'theme_compagnie.dart';
 
 /// État de connexion de l'application.
@@ -33,6 +34,16 @@ class AppSession {
   static FirebaseFirestore get _db => FirebaseFirestore.instance;
 
   // ==================== RECONNEXION AUTOMATIQUE ====================
+
+  /// Au lancement : reconnecte l'utilisateur, sauf s'il avait décoché
+  /// « Rester connecté » (alors la session précédente est fermée).
+  static Future<void> restaurerAuDemarrage() async {
+    if (Preferences.resterConnecte) {
+      await tenterReconnexionAutomatique();
+    } else {
+      await deconnecter();
+    }
+  }
 
   static Future<void> tenterReconnexionAutomatique() async {
     final user = FirebaseAuth.instance.currentUser;

@@ -1,5 +1,6 @@
 import 'package:construction_app/main.dart';
 import 'package:construction_app/screens/calculatrice_screen.dart';
+import 'package:construction_app/widgets/barre_onglets.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -38,7 +39,7 @@ void main() {
 
     await tester.tap(
       find.descendant(
-        of: find.byType(NavigationBar),
+        of: find.byType(BarreOnglets),
         matching: find.text('Calculatrice'),
       ),
     );

@@ -15,6 +15,7 @@ import 'screens/feuille_temps_screen.dart';
 import 'screens/chantier_screen.dart';
 import 'screens/admin/admin_home_screen.dart';
 import 'screens/admin/compagnies_attente_screen.dart';
+import 'widgets/barre_onglets.dart';
 
 // Clé de site reCAPTCHA Enterprise (web), fournie à la compilation :
 // flutter build web --dart-define=RECAPTCHA_ENTERPRISE_SITE_KEY=...
@@ -64,7 +65,7 @@ void main() async {
     await FirebaseAuth.instance.signInAnonymously();
   }
   await Preferences.charger();
-  await AppSession.tenterReconnexionAutomatique();
+  await AppSession.restaurerAuDemarrage();
   runApp(const ConstructionApp());
 }
 
@@ -227,17 +228,11 @@ class _HomePageState extends State<HomePage> {
 
         return Scaffold(
           body: SafeArea(child: onglets[indexSecurise].ecran),
-          bottomNavigationBar: NavigationBar(
-            selectedIndex: indexSecurise,
-            onDestinationSelected: _onItemTapped,
-            destinations: onglets
-                .map(
-                  (o) => NavigationDestination(
-                    icon: Icon(o.icone),
-                    selectedIcon: Icon(o.iconeSelectionne),
-                    label: o.label,
-                  ),
-                )
+          bottomNavigationBar: BarreOnglets(
+            indexSelectionne: indexSecurise,
+            onSelection: _onItemTapped,
+            onglets: onglets
+                .map((o) => OngletBarre(o.label, o.icone, o.iconeSelectionne))
                 .toList(),
           ),
         );

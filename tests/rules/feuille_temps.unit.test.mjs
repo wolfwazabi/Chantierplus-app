@@ -158,6 +158,50 @@ describe('Trace des corrections après soumission', () => {
   });
 });
 
+describe('Une journée vide n\'efface jamais une journée enregistrée', () => {
+  const enregistree = () => calcul([jour(), jour({ heureFinMinutes: H(16) })]);
+
+  test('lundi et mardi déjà soumis, envoi avec seulement le mercredi : tout est conservé', () => {
+    const avant = enregistree();
+    const r = calcul([{ estAucun: false }, { estAucun: false }, jour()], defaut, { jours: avant.jours });
+    assert.equal(r.jours.length, 3);
+    assert.deepEqual(r.jours[0], avant.jours[0]);
+    assert.deepEqual(r.jours[1], avant.jours[1]);
+    assert.equal(r.jours[2].heuresTravaillees, 7.75);
+    assert.equal(r.totalHeures, 7.75 + 8.75 + 7.75);
+    assert.equal(r.totalHeuresTravaillees, 7.75 + 8.75 + 7.75);
+  });
+
+  test('journée « non travaillée » conservée aussi', () => {
+    const avant = calcul([jour({ estAucun: true })]);
+    const r = calcul([{ estAucun: false }], defaut, { jours: avant.jours });
+    assert.equal(r.jours[0].estAucun, true);
+    assert.equal(r.jours[0].chantierNom, 'Jour non travaillé');
+  });
+
+  test('le voyagement payé d\'une journée conservée reste dans les totaux', () => {
+    const regles = ft.reglesPaieDepuis({ voyagementActif: true });
+    const avant = calcul([jour({ tempsVoyagementMinutes: 90 })], regles);
+    const r = calcul([{ estAucun: false }, jour()], regles, { jours: avant.jours });
+    assert.equal(r.totalVoyagementPaye, 0.75);
+    assert.equal(r.totalHeures, 7.75 + 0.75 + 7.75);
+  });
+
+  test('journées enregistrées au-delà de celles reçues : conservées', () => {
+    const avant = calcul(Array(5).fill(jour()));
+    const r = calcul([jour()], defaut, { jours: avant.jours });
+    assert.equal(r.jours.length, 5);
+    assert.equal(r.totalHeures, 7.75 * 5);
+  });
+
+  test('une journée modifiée (pas vide) remplace bien l\'ancienne', () => {
+    const avant = enregistree();
+    const r = calcul([jour({ heureFinMinutes: H(14) })], defaut, { jours: avant.jours });
+    assert.equal(r.jours[0].heuresTravaillees, 6.75);
+    assert.equal(r.totalHeures, 6.75 + 8.75);
+  });
+});
+
 describe('Échéance (mardi suivant, 18 h à Montréal)', () => {
   const utc = (iso) => Date.parse(iso);
 
