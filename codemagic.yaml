@@ -10,6 +10,8 @@ workflows:
       # Nom donné à la clé API dans Codemagic : Teams > Integrations > App Store Connect.
       app_store_connect: Chantier+
     environment:
+      groups:
+        - signature   # contient CERTIFICATE_PRIVATE_KEY (variable secure)
       flutter: stable
       xcode: latest
       cocoapods: default
