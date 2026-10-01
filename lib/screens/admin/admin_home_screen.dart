@@ -7,6 +7,7 @@ import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
 import 'chantiers_gestion_screen.dart';
 import 'documents_admin_screen.dart';
+import 'dossiers_chantiers_screen.dart';
 
 class AdminHomeScreen extends StatelessWidget {
   const AdminHomeScreen({super.key});
@@ -59,6 +60,24 @@ class AdminHomeScreen extends StatelessWidget {
             onTap: () {
               Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => ChantiersGestionScreen()),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.receipt_long_outlined, color: accent),
+            title: const Text('Dossiers de chantier'),
+            subtitle: const Text(
+              'Résumé, facturation et export (archivés compris)',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const DossiersChantiersScreen(),
+                ),
               );
             },
           ),

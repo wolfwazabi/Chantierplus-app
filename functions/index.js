@@ -16,6 +16,11 @@ const {hacherJeton, creerInvitation} = require("./src/invitation");
 const {
   reglesPaieDepuis, analyserLundi, echeanceSemaine, lundiCourant, lireJours, calculerFeuille,
 } = require("./src/feuille_temps");
+const {getStorage} = require("firebase-admin/storage");
+const {logger} = require("firebase-functions");
+const crypto = require("node:crypto");
+const yazl = require("yazl");
+const dossier = require("./src/dossier_chantier");
 const PAGE_CREER_NIP = require("./src/page_creer_nip");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
@@ -502,6 +507,218 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
       heuresTravaillees: j.heuresTravaillees,
       voyagementPayeHeures: j.voyagementPayeHeures,
     })),
+  };
+});
+
+// =============================================================================
+// Dossier de chantier : résumé et export (admin seulement)
+// =============================================================================
+
+// Bucket des photos et documents (Montréal).
+const BUCKET_STOCKAGE = "chantierplus-mtl";
+
+// Garde-fous de l'export : un dossier énorme n'épuise ni la mémoire ni le temps.
+const EXPORT_MAX_FICHIERS = 3000;
+const EXPORT_MAX_OCTETS = 1.5 * 1024 * 1024 * 1024;
+const EXPORT_CONSERVATION_MS = 6 * HEURE;
+
+const dateDe = (ts) => (ts && typeof ts.toDate === "function" ? ts.toDate().toISOString().slice(0, 10) : "");
+
+/** Lit tout ce qui appartient au chantier ; refuse un chantier d'une autre compagnie. */
+async function chargerDossier(ctx, chantierId) {
+  const chSnap = await db.collection("chantiers").doc(chantierId).get();
+  if (!chSnap.exists || chSnap.data().companyId !== ctx.companyId) {
+    throw new HttpsError("not-found", "Chantier introuvable.");
+  }
+  const duChantier = (col) => db.collection(col)
+      .where("companyId", "==", ctx.companyId).where("chantierId", "==", chantierId).get();
+  const [feuilles, extras, materiel, photos] = await Promise.all([
+    db.collection("feuilles_temps").where("companyId", "==", ctx.companyId).get(),
+    duChantier("chantier_extras"), duChantier("chantier_materiel"), duChantier("chantier_photos"),
+  ]);
+  const trier = (docs, champ) => docs.map((d) => ({id: d.id, ...d.data()}))
+      .sort((a, b) => String(a[champ] ?? "").localeCompare(String(b[champ] ?? "")) ||
+        (a.dateAjout?.toMillis?.() ?? 0) - (b.dateAjout?.toMillis?.() ?? 0));
+  const detail = dossier.detailHeures(feuilles.docs.map((d) => d.data()), chantierId);
+  const c = chSnap.data();
+  return {
+    chantier: {id: chantierId, nom: c.nom ?? "", adresse: c.adresse ?? "", archive: c.archive === true},
+    detail,
+    heures: dossier.resumerHeures(detail),
+    extras: trier(extras.docs, "dateTravaux"),
+    materiel: trier(materiel.docs, "dateAjout"),
+    photos: photos.docs.map((d) => ({id: d.id, ...d.data()}))
+        .sort((a, b) => (a.dateAjout?.toMillis?.() ?? 0) - (b.dateAjout?.toMillis?.() ?? 0)),
+  };
+}
+
+exports.resumeChantier = onCall(async (request) => {
+  verifierAppCheck(request, "resumeChantier");
+  const ctx = await contexteAdmin(request);
+  const chantierId = texte(request.data?.chantierId, "chantierId", {max: 128});
+  const d = await chargerDossier(ctx, chantierId);
+  return {
+    chantier: d.chantier,
+    heures: d.heures,
+    nombres: {extras: d.extras.length, materiel: d.materiel.length, photos: d.photos.length},
+  };
+});
+
+exports.exporterChantier = onCall({memory: "1GiB", timeoutSeconds: 540}, async (request) => {
+  verifierAppCheck(request, "exporterChantier");
+  const ctx = await contexteAdmin(request);
+  const chantierId = texte(request.data?.chantierId, "chantierId", {max: 128});
+
+  const limite = limiteur(`export_${ctx.employeeId}`, 10, HEURE);
+  await limite.verifier();
+  await limite.compter();
+
+  const d = await chargerDossier(ctx, chantierId);
+  const bucket = getStorage().bucket(BUCKET_STOCKAGE);
+
+  // Les exports plus vieux que 6 h sont supprimés (copies de données clients).
+  try {
+    const [anciens] = await bucket.getFiles({prefix: `exports/${ctx.companyId}/`});
+    await Promise.all(anciens.filter((f) =>
+      Date.now() - Date.parse(f.metadata?.timeCreated ?? 0) > EXPORT_CONSERVATION_MS)
+        .map((f) => f.delete().catch(() => null)));
+  } catch (_) { /* le nettoyage ne bloque pas l'export */ }
+
+  const maintenant = new Date();
+  const racine = dossier.nomSur(`Chantier - ${d.chantier.nom}`, "Chantier");
+  const horodatage = maintenant.toISOString().replace(/[:.]/g, "-");
+  const cheminZip = `exports/${ctx.companyId}/${horodatage}_${chantierId}.zip`;
+  const jeton = crypto.randomUUID();
+  const nomTelechargement = `${racine}.zip`;
+
+  const zip = new yazl.ZipFile();
+  const fichierZip = bucket.file(cheminZip);
+  const sortie = fichierZip.createWriteStream({
+    resumable: false,
+    metadata: {
+      contentType: "application/zip",
+      cacheControl: "no-store",
+      contentDisposition: `attachment; filename="${dossier.nomSur(racine, "dossier")}.zip"`,
+      metadata: {firebaseStorageDownloadTokens: jeton},
+    },
+  });
+  const termine = new Promise((resolve, reject) => {
+    sortie.on("finish", resolve);
+    sortie.on("error", reject);
+    zip.outputStream.on("error", reject);
+  });
+  zip.outputStream.pipe(sortie);
+
+  const ignores = [];
+  let octets = 0;
+  let nbFichiers = 0;
+
+  /** Copie un fichier Storage dans le ZIP ; retourne son nom dans le ZIP, ou null. */
+  const ajouter = async (cheminStorage, dansZip) => {
+    if (!dossier.cheminDuChantier(cheminStorage, ctx.companyId, chantierId)) {
+      ignores.push(`${dansZip} (chemin refusé)`);
+      return null;
+    }
+    const fichier = bucket.file(cheminStorage);
+    let taille;
+    try {
+      const [meta] = await fichier.getMetadata();
+      taille = Number(meta.size);
+    } catch (_) {
+      ignores.push(`${dansZip} (introuvable)`);
+      return null;
+    }
+    if (nbFichiers >= EXPORT_MAX_FICHIERS || octets + taille > EXPORT_MAX_OCTETS) {
+      ignores.push(`${dansZip} (limite de taille de l'export)`);
+      return null;
+    }
+    nbFichiers += 1;
+    octets += taille;
+    await new Promise((resolve, reject) => {
+      const flux = fichier.createReadStream();
+      flux.on("end", resolve);
+      flux.on("error", reject);
+      // Images déjà compressées : stockées telles quelles.
+      zip.addReadStream(flux, `${racine}/${dansZip}`, {compress: false, mtime: maintenant});
+    });
+    return dansZip;
+  };
+  const numero = (i) => String(i + 1).padStart(3, "0");
+
+  try {
+    // Photos du chantier.
+    let nbPhotos = 0;
+    for (let i = 0; i < d.photos.length; i++) {
+      const chemin = d.photos[i].cheminStorage;
+      const nom = `photos/photo_${numero(i)}.${dossier.extension(chemin)}`;
+      if (await ajouter(chemin, nom)) nbPhotos += 1;
+    }
+    // Photos des extras et du matériel.
+    const extras = [];
+    for (let i = 0; i < d.extras.length; i++) {
+      const e = d.extras[i];
+      const nom = e.cheminPhoto ? `extras/extra_${numero(i)}.${dossier.extension(e.cheminPhoto)}` : null;
+      extras.push({...e, fichierPhoto: nom ? await ajouter(e.cheminPhoto, nom) : null});
+    }
+    const materiel = [];
+    for (let i = 0; i < d.materiel.length; i++) {
+      const m = d.materiel[i];
+      const chemin = dossier.cheminDepuisUrl(m.photoUrl);
+      const nom = chemin ? `materiel/materiel_${numero(i)}.${dossier.extension(chemin)}` : null;
+      materiel.push({...m, fichierPhoto: nom ? await ajouter(chemin, nom) : null});
+    }
+
+    // Résumé et tableaux.
+    const html = dossier.htmlResume({
+      compagnie: ctx.compagnie.nomEntreprise ?? "",
+      chantier: d.chantier,
+      dateExport: maintenant.toISOString(),
+      heures: d.heures,
+      extras: extras.map((e) => ({
+        dateTravaux: e.dateTravaux ?? "", description: e.description ?? "", mainOeuvre: e.mainOeuvre ?? "",
+        ajouteParNom: e.ajouteParNom ?? "", fichierPhoto: e.fichierPhoto,
+      })),
+      materiel: materiel.map((m) => ({
+        texte: m.texte ?? "", quantite: m.quantite ?? "", complete: m.complete === true,
+        dateAjout: dateDe(m.dateAjout), fichierPhoto: m.fichierPhoto,
+      })),
+      photos: nbPhotos,
+      ignores,
+    });
+    const texteBrut = (nom, contenu) => zip.addBuffer(Buffer.from(contenu, "utf8"), `${racine}/${nom}`, {mtime: maintenant});
+    texteBrut("Resume.html", html);
+    texteBrut("heures.csv", dossier.csv([
+      {titre: "Date", cle: "date"}, {titre: "Employé", cle: "employeNom"},
+      {titre: "Heures travaillées", cle: "heures"}, {titre: "Voyagement payé (h)", cle: "voyagementPaye"},
+    ], d.detail));
+    texteBrut("extras.csv", dossier.csv([
+      {titre: "Date des travaux", cle: "dateTravaux"}, {titre: "Description", cle: "description"},
+      {titre: "Main-d'œuvre et temps", cle: "mainOeuvre"}, {titre: "Saisi par", cle: "ajouteParNom"},
+      {titre: "Photo", cle: "fichierPhoto"},
+    ], extras));
+    texteBrut("materiel.csv", dossier.csv([
+      {titre: "Matériel", cle: "texte"}, {titre: "Quantité", cle: "quantite"}, {titre: "État", cle: "etat"},
+      {titre: "Ajouté le", cle: "ajoute"}, {titre: "Obtenu le", cle: "obtenu"}, {titre: "Photo", cle: "fichierPhoto"},
+    ], materiel.map((m) => ({
+      ...m, etat: m.complete === true ? "Obtenu" : "À obtenir",
+      ajoute: dateDe(m.dateAjout), obtenu: dateDe(m.dateComplete),
+    }))));
+    if (ignores.length > 0) texteBrut("fichiers_non_inclus.txt", `${ignores.join("\r\n")}\r\n`);
+    zip.end();
+    await termine;
+  } catch (e) {
+    await fichierZip.delete().catch(() => null);
+    logger.error("Export du dossier échoué", {chantierId, erreur: String(e?.message ?? e)});
+    throw new HttpsError("internal", "L'export a échoué. Réessayez.");
+  }
+
+  const [meta] = await fichierZip.getMetadata();
+  return {
+    url: `https://firebasestorage.googleapis.com/v0/b/${BUCKET_STOCKAGE}/o/${encodeURIComponent(cheminZip)}?alt=media&token=${jeton}`,
+    nom: nomTelechargement,
+    taille: Number(meta.size),
+    fichiers: nbFichiers,
+    ignores,
   };
 });
 

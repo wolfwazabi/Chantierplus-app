@@ -69,6 +69,22 @@ describe('Storage — documents de chantier', () => {
   });
 });
 
+describe('Storage — exports de dossiers de chantier', () => {
+  // Les ZIP d'export sont créés par la fonction exporterChantier (compte de service) et
+  // téléchargés par lien à jeton : aucun client ne peut les lire, les écrire ni les supprimer.
+  test('exports/ : refusé à tous les rôles, de toutes les compagnies', async () => {
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await uploadBytes(ref(ctx.storage(), 'exports/A/2026-10-30_chA.zip'), IMAGE, { contentType: 'application/zip' });
+    });
+    for (const uid of ['uid-adminA', 'uid-superA', 'uid-plusA', 'uid-empA', 'uid-adminB']) {
+      const s = st(employe(env, uid));
+      await assertFails(getBytes(ref(s, 'exports/A/2026-10-30_chA.zip')));
+      await assertFails(uploadBytes(ref(s, 'exports/A/autre.zip'), IMAGE, { contentType: 'application/zip' }));
+      await assertFails(deleteObject(ref(s, 'exports/A/2026-10-30_chA.zip')));
+    }
+  });
+});
+
 describe('Storage — photos de chantier', () => {
   test('contremaître A : téléverse dans son chantier (photos, travaux, matériel)', async () => {
     const s = st(employe(env, 'uid-plusA'));

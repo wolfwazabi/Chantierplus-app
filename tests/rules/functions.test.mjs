@@ -14,13 +14,17 @@ import {
 import { lundi } from './helpers.mjs';
 import { initializeApp as initAdmin } from 'firebase-admin/app';
 import { getFirestore as getAdminDb } from 'firebase-admin/firestore';
+import { getStorage as getAdminStorage } from 'firebase-admin/storage';
+import yauzl from 'yauzl';
 
 const PROJET = 'demo-construction-rules';
 const REGION = 'northamerica-northeast1';
 const PEPPER_EMULATEUR = 'cle-de-test-emulateur-seulement'; // functions/.secret.local
 process.env.FIRESTORE_EMULATOR_HOST ??= '127.0.0.1:8080';
+process.env.STORAGE_EMULATOR_HOST ??= '127.0.0.1:9199';
 
-const adminDb = getAdminDb(initAdmin({ projectId: PROJET }, 'admin-tests'));
+const adminApp = initAdmin({ projectId: PROJET }, 'admin-tests');
+const adminDb = getAdminDb(adminApp);
 const hacher = (companyId, pin) => createHmac('sha256', PEPPER_EMULATEUR).update(`${companyId}:${pin}`).digest('hex');
 
 const apps = [];
@@ -674,6 +678,205 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     assert.equal(f.jours[2].heuresTravaillees, 7.75);
     assert.equal(r.totalHeures, 24.25);
     assert.equal(f.totalHeures, 24.25);
+  });
+});
+
+// =============================================================================
+describe('Dossier de chantier : résumé et export (admin seulement)', () => {
+  const NUM = '880011';
+  const cid = 'dc-compagnie'; const autreCid = 'dc-autre';
+  const PIN = '582914'; const BUCKET = 'chantierplus-mtl';
+  const bucket = () => getAdminStorage(adminApp).bucket(BUCKET);
+  let adm; let plus; let emp; let admB;
+
+  /** Contenu du ZIP : { entrées (noms), lire(nom) → texte }. */
+  const ouvrirZip = (octets) => new Promise((resolve, reject) => {
+    yauzl.fromBuffer(octets, { lazyEntries: true }, (err, z) => {
+      if (err) return reject(err);
+      const noms = []; const contenus = new Map();
+      z.on('entry', (e) => {
+        noms.push(e.fileName);
+        z.openReadStream(e, (e2, flux) => {
+          if (e2) return reject(e2);
+          const morceaux = [];
+          flux.on('data', (c) => morceaux.push(c));
+          flux.on('end', () => { contenus.set(e.fileName, Buffer.concat(morceaux)); z.readEntry(); });
+        });
+      });
+      z.on('end', () => resolve({ noms, lire: (n) => contenus.get(n)?.toString('utf8'), octets: (n) => contenus.get(n) }));
+      z.readEntry();
+    });
+  });
+
+  const telecharger = async (url) => {
+    const chemin = decodeURIComponent(new URL(url).pathname.split('/o/')[1]);
+    const [octets] = await bucket().file(chemin).download();
+    return { chemin, octets };
+  };
+
+  before(async () => {
+    const fiche = (nom, role, courriel, companyId = cid) => ({
+      companyId, nom, role, estProprietaire: false, courriel, pinHash: hacher(companyId, PIN),
+    });
+    await adminDb.collection('companies').doc(cid).set({ numero: NUM, nomEntreprise: 'Dossiers inc.', statut: 'approuvee' });
+    await adminDb.collection('companies').doc(autreCid).set({ numero: '880012', nomEntreprise: 'Autre inc.', statut: 'approuvee' });
+    await adminDb.collection('employees').doc('dc-adm').set(fiche('Alex Admin', 'admin', 'dc-adm@exemple.ca'));
+    await adminDb.collection('employees').doc('dc-plus').set(fiche('Paul Contremaître', 'plus', 'dc-plus@exemple.ca'));
+    await adminDb.collection('employees').doc('dc-emp').set(fiche('Marie Employée', 'employe', 'dc-emp@exemple.ca'));
+    await adminDb.collection('employees').doc('dc-admB').set(fiche('Admin B', 'admin', 'dc-admb@exemple.ca', autreCid));
+    await adminDb.collection('chantiers').doc('dc-ch').set({ companyId: cid, nom: 'Chalet Nord', adresse: '1 rue des Pins', archive: true });
+    await adminDb.collection('chantiers').doc('dc-chB').set({ companyId: autreCid, nom: 'Chantier B', adresse: '' });
+
+    // Heures : 2 employés sur ce chantier + une journée sur un autre chantier (ne compte pas).
+    const jour = (chantierId, h, v = 0) => ({ chantierId, estAucun: false, heuresTravaillees: h, voyagementPayeHeures: v });
+    await adminDb.collection('feuilles_temps').doc('dc-emp_2026-10-05').set({
+      companyId: cid, estIndividuel: false, employeeId: 'dc-emp', employeeNom: 'Marie Employée', lundiDate: '2026-10-05',
+      jours: [jour('dc-ch', 7.75, 0.75), jour('dc-ch', 8), jour('autre', 7.75)],
+    });
+    await adminDb.collection('feuilles_temps').doc('dc-plus_2026-10-05').set({
+      companyId: cid, estIndividuel: false, employeeId: 'dc-plus', employeeNom: 'Paul Contremaître', lundiDate: '2026-10-05',
+      jours: [jour('dc-ch', 7.75)],
+    });
+    await adminDb.collection('feuilles_temps').doc('dc-admB_2026-10-05').set({
+      companyId: autreCid, estIndividuel: false, employeeId: 'dc-admB', employeeNom: 'Admin B', lundiDate: '2026-10-05',
+      jours: [jour('dc-ch', 99)],
+    });
+
+    // Fichiers dans le Storage de l'émulateur.
+    const deposer = (chemin, contenu, type = 'image/jpeg') => bucket().file(chemin).save(Buffer.from(contenu), { contentType: type });
+    await deposer('chantiers/dc-compagnie/dc-ch/photos/1_a.jpg', 'PHOTO-UN');
+    await deposer('chantiers/dc-compagnie/dc-ch/photos/2_b.jpg', 'PHOTO-DEUX');
+    await deposer('chantiers/dc-compagnie/dc-ch/chantier_extras/3_e.jpg', 'PHOTO-EXTRA');
+    await deposer('chantiers/dc-compagnie/dc-ch/chantier_materiel/4_m.jpg', 'PHOTO-MATERIEL');
+    await deposer('chantiers/dc-autre/dc-chB/photos/secret.jpg', 'SECRET-AUTRE-COMPAGNIE');
+
+    const lien = (chemin) => `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(chemin)}?alt=media&token=t`;
+    const horodatage = (n) => new Date(Date.UTC(2026, 9, n, 12));
+    const c = adminDb.collection.bind(adminDb);
+    await c('chantier_photos').add({ companyId: cid, chantierId: 'dc-ch', url: 'https://x', cheminStorage: 'chantiers/dc-compagnie/dc-ch/photos/1_a.jpg', dateAjout: horodatage(1) });
+    await c('chantier_photos').add({ companyId: cid, chantierId: 'dc-ch', url: 'https://x', cheminStorage: 'chantiers/dc-compagnie/dc-ch/photos/2_b.jpg', dateAjout: horodatage(2) });
+    // Photo dont le fichier n'existe plus, et fiche forgée visant une autre compagnie.
+    await c('chantier_photos').add({ companyId: cid, chantierId: 'dc-ch', url: 'https://x', cheminStorage: 'chantiers/dc-compagnie/dc-ch/photos/disparue.jpg', dateAjout: horodatage(3) });
+    await c('chantier_photos').add({ companyId: cid, chantierId: 'dc-ch', url: 'https://x', cheminStorage: 'chantiers/dc-autre/dc-chB/photos/secret.jpg', dateAjout: horodatage(4) });
+    await c('chantier_extras').add({
+      companyId: cid, chantierId: 'dc-ch', description: 'Cloison <b>ajoutée</b>', mainOeuvre: '=3 gars, 1 compagnon, 1 apprenti — 4 h',
+      dateTravaux: '2026-10-08', ajouteParNom: 'Paul Contremaître', cheminPhoto: 'chantiers/dc-compagnie/dc-ch/chantier_extras/3_e.jpg',
+      photoUrl: lien('chantiers/dc-compagnie/dc-ch/chantier_extras/3_e.jpg'), dateAjout: horodatage(8),
+    });
+    await c('chantier_extras').add({
+      companyId: cid, chantierId: 'dc-ch', description: 'Porte', mainOeuvre: '2 gars', dateTravaux: '2026-10-09', ajouteParNom: 'Alex Admin', dateAjout: horodatage(9),
+    });
+    await c('chantier_materiel').add({
+      companyId: cid, chantierId: 'dc-ch', texte: 'Vis 3"', quantite: '2 boîtes', complete: true, dateAjout: horodatage(7), dateComplete: horodatage(9),
+      photoUrl: lien('chantiers/dc-compagnie/dc-ch/chantier_materiel/4_m.jpg'),
+    });
+    await c('chantier_materiel').add({
+      companyId: cid, chantierId: 'dc-ch', texte: 'Gypse', quantite: '20 feuilles', complete: false, dateAjout: horodatage(8),
+      // URL forgée vers le fichier d'une autre compagnie : ne doit jamais être exportée.
+      photoUrl: lien('chantiers/dc-autre/dc-chB/photos/secret.jpg'),
+    });
+    await c('chantier_extras').add({ companyId: autreCid, chantierId: 'dc-chB', description: 'AUTRE-COMPAGNIE', mainOeuvre: 'x', dateTravaux: '2026-10-01', dateAjout: horodatage(1) });
+
+    adm = await connecter(NUM, 'dc-adm@exemple.ca', PIN);
+    plus = await connecter(NUM, 'dc-plus@exemple.ca', PIN);
+    emp = await connecter(NUM, 'dc-emp@exemple.ca', PIN);
+    admB = await connecter('880012', 'dc-admb@exemple.ca', PIN);
+  });
+
+  test('résumé : heures du chantier seulement (archivé compris), nombres de fiches', async () => {
+    const r = await adm.appeler('resumeChantier', { chantierId: 'dc-ch' });
+    assert.equal(r.chantier.nom, 'Chalet Nord');
+    assert.equal(r.chantier.archive, true);
+    assert.equal(r.heures.totalHeures, 23.5);
+    assert.equal(r.heures.totalVoyagementPaye, 0.75);
+    assert.equal(r.heures.joursTravailles, 2);
+    assert.equal(r.heures.premierJour, '2026-10-05');
+    assert.equal(r.heures.dernierJour, '2026-10-06');
+    assert.deepEqual(r.heures.parEmploye.map((e) => [e.nom, e.heures]), [['Marie Employée', 15.75], ['Paul Contremaître', 7.75]]);
+    assert.deepEqual(r.nombres, { extras: 2, materiel: 2, photos: 4 });
+  });
+
+  test('résumé et export : réservés aux admins de la compagnie', async () => {
+    for (const nom of ['resumeChantier', 'exporterChantier']) {
+      await rejette(plus.appeler(nom, { chantierId: 'dc-ch' }), 'permission-denied');
+      await rejette(emp.appeler(nom, { chantierId: 'dc-ch' }), 'permission-denied');
+      await rejette(admB.appeler(nom, { chantierId: 'dc-ch' }), 'not-found');
+      await rejette(adm.appeler(nom, { chantierId: 'dc-chB' }), 'not-found');
+      await rejette(adm.appeler(nom, { chantierId: 'fantome' }), 'not-found');
+      await rejette(adm.appeler(nom, {}), 'invalid-argument');
+      await rejette((await appareil()).appeler(nom, { chantierId: 'dc-ch' }), 'permission-denied');
+    }
+  });
+
+  test('export : ZIP avec résumé, CSV, photos, extras et matériel', async () => {
+    const r = await adm.appeler('exporterChantier', { chantierId: 'dc-ch' });
+    assert.equal(r.nom, 'Chantier - Chalet Nord.zip');
+    assert.match(r.url, /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/chantierplus-mtl\/o\/exports%2Fdc-compagnie%2F.+\.zip\?alt=media&token=[0-9a-f-]{36}$/);
+    const { chemin, octets } = await telecharger(r.url);
+    assert.ok(chemin.startsWith('exports/dc-compagnie/'));
+    const zip = await ouvrirZip(octets);
+    const base = 'Chantier - Chalet Nord/';
+    for (const attendu of ['Resume.html', 'heures.csv', 'extras.csv', 'materiel.csv', 'photos/photo_001.jpg', 'photos/photo_002.jpg',
+      'extras/extra_001.jpg', 'materiel/materiel_001.jpg', 'fichiers_non_inclus.txt']) {
+      assert.ok(zip.noms.includes(base + attendu), `${attendu} manquant : ${zip.noms.join(', ')}`);
+    }
+    assert.equal(zip.lire(base + 'photos/photo_001.jpg'), 'PHOTO-UN');
+    assert.equal(zip.lire(base + 'photos/photo_002.jpg'), 'PHOTO-DEUX');
+    assert.equal(zip.lire(base + 'extras/extra_001.jpg'), 'PHOTO-EXTRA');
+    assert.equal(zip.lire(base + 'materiel/materiel_001.jpg'), 'PHOTO-MATERIEL');
+    assert.equal(zip.noms.filter((n) => n.includes('/photos/')).length, 2, 'photo disparue et photo forgée exclues');
+
+    const html = zip.lire(base + 'Resume.html');
+    for (const attendu of ['Chalet Nord', '(archivé)', 'Dossiers inc.', '23,5', '0,75', 'Marie Employée', 'Paul Contremaître',
+      '08/10/2026', '1 compagnon, 1 apprenti — 4 h', 'Vis 3&quot;', 'Obtenu', 'À obtenir', 'Photos du chantier (2)', 'Fichiers non inclus']) {
+      assert.ok(html.includes(attendu), attendu);
+    }
+    assert.ok(!html.includes('<b>ajoutée</b>'), 'HTML saisi échappé');
+    assert.ok(html.includes('&lt;b&gt;ajoutée&lt;/b&gt;'));
+
+    const heures = zip.lire(base + 'heures.csv');
+    assert.ok(heures.startsWith('﻿Date;Employé;Heures travaillées;Voyagement payé (h)'));
+    assert.ok(heures.includes('2026-10-05;Marie Employée;7,75;0,75'));
+    assert.ok(heures.includes('2026-10-06;Marie Employée;8;0'));
+    assert.ok(!heures.includes('99'), 'heures d\'une autre compagnie absentes');
+    const extras = zip.lire(base + 'extras.csv');
+    assert.ok(extras.includes('\'=3 gars'), 'injection de formule neutralisée');
+    assert.ok(extras.includes('extras/extra_001.jpg'));
+    const materiel = zip.lire(base + 'materiel.csv');
+    assert.ok(materiel.includes('"Vis 3"""'));
+    assert.ok(materiel.includes('Gypse;20 feuilles;À obtenir'));
+  });
+
+  test('fichiers d\'une autre compagnie ou disparus : jamais exportés, signalés', async () => {
+    const r = await adm.appeler('exporterChantier', { chantierId: 'dc-ch' });
+    const zip = await ouvrirZip((await telecharger(r.url)).octets);
+    const tout = zip.noms.map((n) => zip.lire(n) ?? '').join('\n');
+    assert.ok(!tout.includes('SECRET-AUTRE-COMPAGNIE'));
+    assert.ok(!tout.includes('AUTRE-COMPAGNIE'));
+    assert.equal(r.ignores.length, 3, r.ignores.join(' | '));
+    assert.ok(r.ignores.some((i) => i.includes('introuvable')));
+    assert.equal(r.ignores.filter((i) => i.includes('chemin refusé')).length, 2);
+    assert.equal(r.fichiers, 4);
+  });
+
+  test('chantier sans rien : export valide (ZIP avec résumé vide)', async () => {
+    await adminDb.collection('chantiers').doc('dc-vide').set({ companyId: cid, nom: 'Vide / test: #1', adresse: '' });
+    const r = await adm.appeler('exporterChantier', { chantierId: 'dc-vide' });
+    assert.equal(r.nom, 'Chantier - Vide _ test_ _1.zip');
+    const zip = await ouvrirZip((await telecharger(r.url)).octets);
+    const html = zip.lire('Chantier - Vide _ test_ _1/Resume.html');
+    assert.ok(html.includes('aucune heure saisie') && html.includes('Aucun extra.') && html.includes('Aucun matériel.'));
+    assert.equal(r.fichiers, 0);
+  });
+
+
+  test('limite : 10 exports par heure et par admin', async () => {
+    const a = await connecter(NUM, 'dc-adm@exemple.ca', PIN);
+    await viderLimites();
+    let derniere;
+    for (let i = 0; i < 10; i++) derniere = await a.appeler('exporterChantier', { chantierId: 'dc-vide' });
+    assert.ok(derniere.url);
+    await rejette(a.appeler('exporterChantier', { chantierId: 'dc-vide' }), 'resource-exhausted');
   });
 });
 
