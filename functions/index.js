@@ -21,6 +21,7 @@ const {logger} = require("firebase-functions");
 const crypto = require("node:crypto");
 const yazl = require("yazl");
 const dossier = require("./src/dossier_chantier");
+const xlsx = require("./src/xlsx");
 const PAGE_CREER_NIP = require("./src/page_creer_nip");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
@@ -532,9 +533,10 @@ async function chargerDossier(ctx, chantierId) {
   }
   const duChantier = (col) => db.collection(col)
       .where("companyId", "==", ctx.companyId).where("chantierId", "==", chantierId).get();
-  const [feuilles, extras, materiel, photos] = await Promise.all([
+  const [feuilles, extras, materiel, photos, travaux, documents] = await Promise.all([
     db.collection("feuilles_temps").where("companyId", "==", ctx.companyId).get(),
     duChantier("chantier_extras"), duChantier("chantier_materiel"), duChantier("chantier_photos"),
+    duChantier("chantier_travaux"), duChantier("chantier_documents"),
   ]);
   const trier = (docs, champ) => docs.map((d) => ({id: d.id, ...d.data()}))
       .sort((a, b) => String(a[champ] ?? "").localeCompare(String(b[champ] ?? "")) ||
@@ -547,6 +549,9 @@ async function chargerDossier(ctx, chantierId) {
     heures: dossier.resumerHeures(detail),
     extras: trier(extras.docs, "dateTravaux"),
     materiel: trier(materiel.docs, "dateAjout"),
+    travaux: trier(travaux.docs, "dateAjout"),
+    documents: documents.docs.map((x) => ({id: x.id, ...x.data()}))
+        .sort((a, b) => (a.dateAjout?.toMillis?.() ?? 0) - (b.dateAjout?.toMillis?.() ?? 0)),
     photos: photos.docs.map((d) => ({id: d.id, ...d.data()}))
         .sort((a, b) => (a.dateAjout?.toMillis?.() ?? 0) - (b.dateAjout?.toMillis?.() ?? 0)),
   };
@@ -560,7 +565,10 @@ exports.resumeChantier = onCall(async (request) => {
   return {
     chantier: d.chantier,
     heures: d.heures,
-    nombres: {extras: d.extras.length, materiel: d.materiel.length, photos: d.photos.length},
+    nombres: {
+      extras: d.extras.length, materiel: d.materiel.length, photos: d.photos.length,
+      travaux: d.travaux.length, documents: d.documents.length,
+    },
   };
 });
 
@@ -646,6 +654,13 @@ exports.exporterChantier = onCall({memory: "1GiB", timeoutSeconds: 540}, async (
   const numero = (i) => String(i + 1).padStart(3, "0");
 
   try {
+    // Documents du chantier (plans, devis…) : en premier, ce sont les plus utiles.
+    const nomsPris = new Set();
+    const documents = [];
+    for (const doc of d.documents) {
+      const nomZip = `documents/${dossier.nomFichierDocument(doc.nom, nomsPris)}`;
+      documents.push({...doc, fichier: await ajouter(doc.cheminStorage, nomZip)});
+    }
     // Photos du chantier.
     let nbPhotos = 0;
     for (let i = 0; i < d.photos.length; i++) {
@@ -653,22 +668,26 @@ exports.exporterChantier = onCall({memory: "1GiB", timeoutSeconds: 540}, async (
       const nom = `photos/photo_${numero(i)}.${dossier.extension(chemin)}`;
       if (await ajouter(chemin, nom)) nbPhotos += 1;
     }
-    // Photos des extras et du matériel.
+    // Photos des extras, du matériel et des travaux à compléter.
     const extras = [];
     for (let i = 0; i < d.extras.length; i++) {
       const e = d.extras[i];
       const nom = e.cheminPhoto ? `extras/extra_${numero(i)}.${dossier.extension(e.cheminPhoto)}` : null;
       extras.push({...e, fichierPhoto: nom ? await ajouter(e.cheminPhoto, nom) : null});
     }
-    const materiel = [];
-    for (let i = 0; i < d.materiel.length; i++) {
-      const m = d.materiel[i];
-      const chemin = dossier.cheminDepuisUrl(m.photoUrl);
-      const nom = chemin ? `materiel/materiel_${numero(i)}.${dossier.extension(chemin)}` : null;
-      materiel.push({...m, fichierPhoto: nom ? await ajouter(chemin, nom) : null});
-    }
+    const avecPhotoUrl = async (liste, dossierZip, prefixe) => {
+      const sortie = [];
+      for (let i = 0; i < liste.length; i++) {
+        const chemin = dossier.cheminDepuisUrl(liste[i].photoUrl);
+        const nom = chemin ? `${dossierZip}/${prefixe}_${numero(i)}.${dossier.extension(chemin)}` : null;
+        sortie.push({...liste[i], fichierPhoto: nom ? await ajouter(chemin, nom) : null});
+      }
+      return sortie;
+    };
+    const materiel = await avecPhotoUrl(d.materiel, "materiel", "materiel");
+    const travaux = await avecPhotoUrl(d.travaux, "travaux", "travail");
 
-    // Résumé et tableaux.
+    // Résumé imprimable et classeur Excel (s'ouvre pareil en français et en anglais).
     const html = dossier.htmlResume({
       compagnie: ctx.compagnie.nomEntreprise ?? "",
       chantier: d.chantier,
@@ -682,27 +701,86 @@ exports.exporterChantier = onCall({memory: "1GiB", timeoutSeconds: 540}, async (
         texte: m.texte ?? "", quantite: m.quantite ?? "", complete: m.complete === true,
         dateAjout: dateDe(m.dateAjout), fichierPhoto: m.fichierPhoto,
       })),
+      travaux: travaux.map((t) => ({
+        texte: t.texte ?? "", complete: t.complete === true, dateAjout: dateDe(t.dateAjout),
+        dateComplete: dateDe(t.dateComplete), fichierPhoto: t.fichierPhoto,
+      })),
+      documents: documents.map((x) => ({
+        nom: x.nom ?? "", taille: x.taille, dateAjout: dateDe(x.dateAjout), fichier: x.fichier,
+      })),
       photos: nbPhotos,
       ignores,
     });
+    const classeur = await xlsx.classeur([
+      {
+        nom: "Heures",
+        colonnes: [
+          {titre: "Date", cle: "date", type: "date", largeur: 14}, {titre: "Employé", cle: "employeNom", largeur: 28},
+          {titre: "Heures travaillées", cle: "heures", type: "nombre", largeur: 20},
+          {titre: "Voyagement payé (h)", cle: "voyagementPaye", type: "nombre", largeur: 22},
+        ],
+        lignes: d.detail,
+        total: {libelle: "Total", valeurs: {heures: d.heures.totalHeures, voyagementPaye: d.heures.totalVoyagementPaye}},
+      },
+      {
+        nom: "Par employé",
+        colonnes: [
+          {titre: "Employé", cle: "nom", largeur: 28}, {titre: "Jours", cle: "jours", type: "nombre", largeur: 10},
+          {titre: "Heures travaillées", cle: "heures", type: "nombre", largeur: 20},
+          {titre: "Voyagement payé (h)", cle: "voyagementPaye", type: "nombre", largeur: 22},
+        ],
+        lignes: d.heures.parEmploye,
+        total: {
+          libelle: "Total",
+          valeurs: {jours: d.heures.journeesHomme, heures: d.heures.totalHeures, voyagementPaye: d.heures.totalVoyagementPaye},
+        },
+      },
+      {
+        nom: "Extras",
+        colonnes: [
+          {titre: "Date des travaux", cle: "dateTravaux", type: "date", largeur: 16},
+          {titre: "Description", cle: "description", largeur: 50}, {titre: "Main-d'œuvre et temps", cle: "mainOeuvre", largeur: 36},
+          {titre: "Saisi par", cle: "ajouteParNom", largeur: 24}, {titre: "Photo", cle: "fichierPhoto", largeur: 28},
+        ],
+        lignes: extras,
+      },
+      {
+        nom: "Matériel",
+        colonnes: [
+          {titre: "Matériel", cle: "texte", largeur: 40}, {titre: "Quantité", cle: "quantite", largeur: 20},
+          {titre: "État", cle: "etat", largeur: 12}, {titre: "Ajouté le", cle: "ajoute", type: "date", largeur: 14},
+          {titre: "Obtenu le", cle: "obtenu", type: "date", largeur: 14}, {titre: "Photo", cle: "fichierPhoto", largeur: 28},
+        ],
+        lignes: materiel.map((m) => ({
+          ...m, etat: m.complete === true ? "Obtenu" : "À obtenir", ajoute: dateDe(m.dateAjout), obtenu: dateDe(m.dateComplete),
+        })),
+      },
+      {
+        nom: "Travaux à compléter",
+        colonnes: [
+          {titre: "Travail", cle: "texte", largeur: 50}, {titre: "État", cle: "etat", largeur: 14},
+          {titre: "Ajouté le", cle: "ajoute", type: "date", largeur: 14}, {titre: "Complété le", cle: "complete", type: "date", largeur: 14},
+          {titre: "Photo", cle: "fichierPhoto", largeur: 28},
+        ],
+        lignes: travaux.map((t) => ({
+          ...t, etat: t.complete === true ? "Complété" : "À compléter", ajoute: dateDe(t.dateAjout), complete: dateDe(t.dateComplete),
+        })),
+      },
+      {
+        nom: "Documents",
+        colonnes: [
+          {titre: "Document", cle: "nom", largeur: 44}, {titre: "Taille", cle: "tailleTexte", largeur: 12},
+          {titre: "Type", cle: "typeMime", largeur: 28}, {titre: "Ajouté le", cle: "ajoute", type: "date", largeur: 14},
+          {titre: "Dans l'export", cle: "inclus", largeur: 14}, {titre: "Fichier dans le ZIP", cle: "fichier", largeur: 40},
+        ],
+        lignes: documents.map((x) => ({
+          ...x, tailleTexte: dossier.tailleLisible(x.taille), ajoute: dateDe(x.dateAjout), inclus: x.fichier ? "Inclus" : "Non inclus",
+        })),
+      },
+    ]);
     const texteBrut = (nom, contenu) => zip.addBuffer(Buffer.from(contenu, "utf8"), `${racine}/${nom}`, {mtime: maintenant});
     texteBrut("Resume.html", html);
-    texteBrut("heures.csv", dossier.csv([
-      {titre: "Date", cle: "date"}, {titre: "Employé", cle: "employeNom"},
-      {titre: "Heures travaillées", cle: "heures"}, {titre: "Voyagement payé (h)", cle: "voyagementPaye"},
-    ], d.detail));
-    texteBrut("extras.csv", dossier.csv([
-      {titre: "Date des travaux", cle: "dateTravaux"}, {titre: "Description", cle: "description"},
-      {titre: "Main-d'œuvre et temps", cle: "mainOeuvre"}, {titre: "Saisi par", cle: "ajouteParNom"},
-      {titre: "Photo", cle: "fichierPhoto"},
-    ], extras));
-    texteBrut("materiel.csv", dossier.csv([
-      {titre: "Matériel", cle: "texte"}, {titre: "Quantité", cle: "quantite"}, {titre: "État", cle: "etat"},
-      {titre: "Ajouté le", cle: "ajoute"}, {titre: "Obtenu le", cle: "obtenu"}, {titre: "Photo", cle: "fichierPhoto"},
-    ], materiel.map((m) => ({
-      ...m, etat: m.complete === true ? "Obtenu" : "À obtenir",
-      ajoute: dateDe(m.dateAjout), obtenu: dateDe(m.dateComplete),
-    }))));
+    zip.addBuffer(classeur, `${racine}/Dossier.xlsx`, {mtime: maintenant});
     if (ignores.length > 0) texteBrut("fichiers_non_inclus.txt", `${ignores.join("\r\n")}\r\n`);
     zip.end();
     await termine;

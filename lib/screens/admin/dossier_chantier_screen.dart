@@ -84,8 +84,9 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
               const SizedBox(height: 10),
               const Text(
                 'Le téléchargement s\'ouvre dans le navigateur. Enregistrez le '
-                'fichier ZIP, puis ouvrez Resume.html pour le résumé. Le lien '
-                'expire dans quelques heures.',
+                'fichier ZIP, puis ouvrez Resume.html (résumé imprimable) et '
+                'Dossier.xlsx (Excel, heures et tableaux). Le lien expire dans '
+                'quelques heures.',
                 style: TextStyle(fontSize: 13),
               ),
               if (export.ignores.isNotEmpty) ...[
@@ -223,6 +224,8 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                 const SizedBox(height: 8),
                 _SectionExtras(companyId: companyId, chantierId: c.id),
                 _SectionMateriel(companyId: companyId, chantierId: c.id),
+                _SectionTravaux(companyId: companyId, chantierId: c.id),
+                _SectionDocuments(companyId: companyId, chantierId: c.id),
                 _SectionPhotos(companyId: companyId, chantierId: c.id),
               ],
             ),
@@ -366,6 +369,90 @@ class _SectionMateriel extends StatelessWidget {
                         'Quantité : ${d.data()['quantite']}',
                       d.data()['complete'] == true ? 'Obtenu' : 'À obtenir',
                     ].join(' • '),
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SectionTravaux extends StatelessWidget {
+  final String companyId;
+  final String chantierId;
+  const _SectionTravaux({required this.companyId, required this.chantierId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _requete('chantier_travaux', companyId, chantierId).snapshots(),
+      builder: (context, snap) {
+        if (snap.hasError) return _vide('Impossible de charger les travaux.');
+        final docs = snap.data?.docs ?? [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _titreSection(
+              'Travaux à compléter',
+              snap.hasData ? docs.length : null,
+            ),
+            if (snap.hasData && docs.isEmpty)
+              _vide('Aucun travail à compléter.'),
+            for (final d in docs)
+              Card(
+                child: ListTile(
+                  leading: Icon(
+                    d.data()['complete'] == true
+                        ? Icons.check_circle
+                        : Icons.assignment_outlined,
+                    color: d.data()['complete'] == true
+                        ? Colors.green
+                        : Colors.orange,
+                  ),
+                  title: Text((d.data()['texte'] ?? '').toString()),
+                  subtitle: Text(
+                    d.data()['complete'] == true ? 'Complété' : 'À compléter',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _SectionDocuments extends StatelessWidget {
+  final String companyId;
+  final String chantierId;
+  const _SectionDocuments({required this.companyId, required this.chantierId});
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _requete('chantier_documents', companyId, chantierId).snapshots(),
+      builder: (context, snap) {
+        if (snap.hasError) return _vide('Impossible de charger les documents.');
+        final docs = snap.data?.docs ?? [];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _titreSection('Documents', snap.hasData ? docs.length : null),
+            if (snap.hasData && docs.isEmpty) _vide('Aucun document.'),
+            for (final d in docs)
+              Card(
+                child: ListTile(
+                  leading: Icon(
+                    Icons.description_outlined,
+                    color: ThemeCompagnie.accentDe(context),
+                  ),
+                  title: Text((d.data()['nom'] ?? '').toString()),
+                  subtitle: Text(
+                    formatTaille(((d.data()['taille'] ?? 0) as num).toInt()),
                     style: const TextStyle(fontSize: 12),
                   ),
                 ),

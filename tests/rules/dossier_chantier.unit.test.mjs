@@ -99,23 +99,43 @@ describe('Chemins de fichiers', () => {
   });
 });
 
-describe('CSV pour Excel', () => {
-  test('séparateur « ; », virgule décimale, BOM, guillemets doublés', () => {
-    const out = d.csv([{ titre: 'Nom', cle: 'nom' }, { titre: 'Heures', cle: 'h' }],
-      [{ nom: 'Marie "M." Tremblay; chef', h: 7.75 }, { nom: 'Luc', h: 8 }]);
-    assert.ok(out.startsWith('﻿Nom;Heures\r\n'));
-    assert.ok(out.includes('"Marie ""M."" Tremblay; chef";7,75'));
-    assert.ok(out.includes('Luc;8'));
+describe('Noms des documents dans le ZIP', () => {
+  const noms = (liste) => { const deja = new Set(); return liste.map((n) => d.nomFichierDocument(n, deja)); };
+
+  test('le nom d\'origine est conservé, accents compris', () => {
+    assert.deepEqual(noms(['Devis rénovation.pdf', 'Plan_étage 2.dwg']), ['Devis rénovation.pdf', 'Plan_étage 2.dwg']);
   });
 
-  test('protection contre l\'injection de formules', () => {
-    for (const piege of ['=SOMME(A1:A9)', '+1+1', '-2+3', '@HYPERLINK("http://x")', '\t=1']) {
-      assert.ok(d.cellule(piege).replace(/^"/, '').startsWith('\''), piege);
+  test('doublons : « (2) », « (3) », sans écraser (insensible à la casse)', () => {
+    assert.deepEqual(noms(['plan.pdf', 'Plan.PDF', 'plan.pdf', 'sans_extension', 'sans_extension']),
+      ['plan.pdf', 'Plan (2).PDF', 'plan (3).pdf', 'sans_extension', 'sans_extension (2)']);
+  });
+
+  test('aucun séparateur de dossier ni caractère interdit : pas de sortie du dossier du ZIP', () => {
+    for (const piege of ['../../etc/passwd', '..\\..\\Windows\\x.dll', '/absolu.pdf', 'C:\\x.pdf', 'a/b/c.pdf', 'x:y*z?.pdf', '<script>.pdf', '..', '...', '.cache']) {
+      const n = noms([piege])[0];
+      assert.ok(!/[\\/:*?"<>|]/.test(n), piege + ' → ' + n);
+      assert.ok(!n.startsWith('.'), piege + ' → ' + n);
+      assert.ok(n.length > 0);
     }
-    assert.equal(d.cellule('Mur est'), 'Mur est');
-    assert.equal(d.cellule(-3.5), '-3,5');
-    assert.equal(d.cellule(null), '');
-    assert.equal(d.cellule(NaN), '');
+    assert.equal(noms(['..'])[0], 'document');
+  });
+
+  test('noms réservés de Windows, vides, très longs, contrôles', () => {
+    assert.equal(noms(['CON.txt'])[0], '_CON.txt');
+    assert.equal(noms(['nul'])[0], '_nul');
+    assert.equal(noms([''])[0], 'document');
+    assert.equal(noms([null])[0], 'document');
+    assert.ok(noms(['x'.repeat(400) + '.pdf'])[0].length <= 150);
+    assert.equal(noms(['a\u0000b\u001Fc.pdf'])[0], 'a_b_c.pdf');
+  });
+
+  test('taille lisible', () => {
+    assert.equal(d.tailleLisible(500), '500 o');
+    assert.equal(d.tailleLisible(850 * 1024), '850 Ko');
+    assert.equal(d.tailleLisible(12.4 * 1024 * 1024), '12,4 Mo');
+    assert.equal(d.tailleLisible(undefined), '');
+    assert.equal(d.tailleLisible(-1), '');
   });
 });
 
@@ -126,13 +146,19 @@ describe('Résumé HTML', () => {
     heures: d.resumerHeures(d.detailHeures(FEUILLES, 'chA')),
     extras: [{ dateTravaux: '2026-10-08', description: 'Cloison <script>alert(1)</script>', mainOeuvre: '3 gars, 4 h', ajouteParNom: 'Plus A', fichierPhoto: 'extras/001.jpg' }],
     materiel: [{ texte: 'Vis 3"', quantite: '2 boîtes', complete: false, dateAjout: '2026-10-07', fichierPhoto: null }],
+    travaux: [{ texte: 'Peinture <i>plafond</i>', complete: true, dateAjout: '2026-10-02', dateComplete: '2026-10-09', fichierPhoto: 'travaux/travail_001.jpg' },
+      { texte: 'Calfeutrage', complete: false, dateAjout: '2026-10-03', dateComplete: '', fichierPhoto: null }],
+    documents: [{ nom: 'Devis rénovation.pdf', taille: 850 * 1024, dateAjout: '2026-10-01', fichier: 'documents/Devis rénovation.pdf' },
+      { nom: 'Gros plan.dwg', taille: 60 * 1024 * 1024, dateAjout: '2026-10-02', fichier: null }],
     photos: 12, ignores: [],
   });
 
   test('contenu : totaux, extras, matériel, photos, archivé', () => {
     const h = d.htmlResume(base());
     for (const attendu of ['35,25', '0,75', '(archivé)', 'Marie', 'Luc', '08/10/2026', '3 gars, 4 h',
-      'À obtenir', 'Photos du chantier (12)', 'href="extras/001.jpg"', 'lang="fr"']) {
+      'À obtenir', 'Photos du chantier (12)', 'href="extras/001.jpg"', 'lang="fr"',
+      'Travaux à compléter (2)', 'Complété le 09/10/2026', 'À compléter', 'href="travaux/travail_001.jpg"',
+      'Documents (2)', 'Devis rénovation.pdf', '850 Ko', 'Inclus', 'Non inclus', 'Dossier.xlsx']) {
       assert.ok(h.includes(attendu), attendu);
     }
   });
@@ -157,5 +183,31 @@ describe('Résumé HTML', () => {
     assert.ok(h.includes('Aucun extra.'));
     assert.ok(h.includes('Aucun matériel.'));
     assert.ok(!h.includes('(archivé)'));
+  });
+
+  test('liens vers les fichiers : chemin encodé, relatif, jamais d\'autre schéma', () => {
+    const h = d.htmlResume(base());
+    assert.ok(h.includes('href="documents/Devis%20r%C3%A9novation.pdf"'));
+    const b = base();
+    b.documents = [{ nom: 'x', taille: 1, dateAjout: '', fichier: 'javascript:alert(1)' }];
+    const h2 = d.htmlResume(b);
+    assert.ok(!/href="javascript:/.test(h2), 'le schéma javascript: ne doit pas rester dans un href');
+    b.documents = [{ nom: '"><script>x</script>', taille: 1, dateAjout: '', fichier: 'documents/a"b.pdf' }];
+    const h3 = d.htmlResume(b);
+    assert.ok(!h3.includes('<script>x</script>'));
+    assert.ok(h3.includes('documents/a%22b.pdf'));
+  });
+
+  test('travaux et documents échappés ; sections vides', () => {
+    const h = d.htmlResume(base());
+    assert.ok(h.includes('Peinture &lt;i&gt;plafond&lt;/i&gt;'));
+    const vide = { ...base(), ignores: [], extras: [], materiel: [], travaux: [], documents: [], photos: 0,
+      chantier: { nom: 'X', adresse: '', archive: false }, heures: d.resumerHeures([]) };
+    const hv = d.htmlResume(vide);
+    assert.ok(hv.includes('Aucun travail à compléter.'));
+    assert.ok(hv.includes('Aucun document.'));
+    // Anciens appels sans travaux ni documents : toujours valides.
+    const { travaux, documents, ...ancien } = vide;
+    assert.ok(d.htmlResume(ancien).includes('Documents (0)'));
   });
 });

@@ -68,7 +68,7 @@ function resumerHeures(lignes) {
 }
 
 // -----------------------------------------------------------------------------
-// Chemins de fichiers
+// Chemins et noms de fichiers
 // -----------------------------------------------------------------------------
 
 /**
@@ -97,7 +97,7 @@ function cheminDuChantier(chemin, companyId, chantierId) {
   return chemin.startsWith(`chantiers/${companyId}/${chantierId}/`);
 }
 
-/** Nom de fichier sûr pour le ZIP. */
+/** Nom de fichier sûr pour le ZIP (ASCII). */
 function nomSur(texte, defaut = "fichier") {
   const s = String(texte ?? "")
       .normalize("NFD").replace(/[̀-ͯ]/g, "")
@@ -108,35 +108,45 @@ function nomSur(texte, defaut = "fichier") {
   return s.length > 0 && s !== "." && s !== ".." ? s : defaut;
 }
 
+const NOMS_RESERVES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])([.].*)?$/i;
+
+/**
+ * Nom d'un document dans le ZIP : le nom d'origine avec ses accents (« Devis
+ * rénovation.pdf »), sans séparateur de dossier ni caractère interdit sous
+ * Windows, et unique (« plan (2).pdf » si le nom existe déjà). `deja` : Set des
+ * noms déjà pris (en minuscules).
+ */
+function nomFichierDocument(nom, deja) {
+  let base = String(nom ?? "").normalize("NFC")
+      // eslint-disable-next-line no-control-regex
+      .replace(/[\\/:*?"<>|\u0000-\u001F]+/g, "_")
+      .replace(/^[. ]+/, "")
+      .replace(/[. ]+$/, "")
+      .slice(0, 150);
+  if (base.length === 0) base = "document";
+  if (NOMS_RESERVES.test(base)) base = `_${base}`;
+  const point = base.lastIndexOf(".");
+  const racine = point > 0 ? base.slice(0, point) : base;
+  const ext = point > 0 ? base.slice(point) : "";
+  let candidat = base;
+  let k = 2;
+  while (deja.has(candidat.toLowerCase())) candidat = `${racine} (${k++})${ext}`;
+  deja.add(candidat.toLowerCase());
+  return candidat;
+}
+
 function extension(chemin) {
   const m = String(chemin).toLowerCase().match(/[.]([a-z0-9]{1,5})$/);
   return m ? m[1] : "jpg";
 }
 
-// -----------------------------------------------------------------------------
-// CSV (pour Excel en français : séparateur « ; », virgule décimale)
-// -----------------------------------------------------------------------------
-
-/**
- * Une cellule. Un texte qui commence par = + - @ (ou tabulation) serait lu
- * comme une formule par Excel : on le préfixe d'une apostrophe.
- */
-function cellule(valeur) {
-  if (valeur === null || valeur === undefined) return "";
-  if (typeof valeur === "number") {
-    return Number.isFinite(valeur) ? String(valeur).replace(".", ",") : "";
-  }
-  let s = String(valeur);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  if (/[";\r\n]/.test(s)) s = `"${s.replace(/"/g, "\"\"")}"`;
-  return s;
-}
-
-/** CSV avec BOM UTF-8 (accents corrects dans Excel). */
-function csv(colonnes, lignes) {
-  const rangees = [colonnes.map((c) => cellule(c.titre)).join(";")];
-  for (const l of lignes) rangees.push(colonnes.map((c) => cellule(l[c.cle])).join(";"));
-  return `﻿${rangees.join("\r\n")}\r\n`;
+/** « 850 Ko », « 12,4 Mo ». */
+function tailleLisible(octets) {
+  const n = Number(octets);
+  if (!Number.isFinite(n) || n < 0) return "";
+  if (n < 1024) return `${n} o`;
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} Ko`;
+  return `${(n / (1024 * 1024)).toFixed(1).replace(".", ",")} Mo`;
 }
 
 // -----------------------------------------------------------------------------
@@ -156,11 +166,19 @@ function dateFr(iso) {
   return m ? `${m[3]}/${m[2]}/${m[1]}` : String(iso ?? "");
 }
 
+/** Lien relatif vers un fichier du ZIP : chemin encodé, jamais d'autre schéma. */
+function lienFichier(chemin, texte) {
+  if (!chemin) return "";
+  const href = String(chemin).split("/").map(encodeURIComponent).join("/");
+  return `<a href="${esc(href)}">${esc(texte)}</a>`;
+}
+
 /**
  * Résumé du dossier, lisible et imprimable dans n'importe quel navigateur.
  * `d` : {compagnie, chantier:{nom, adresse, archive}, dateExport (ISO),
- *        heures (résumé), detail (lignes), extras, materiel, photos (nombres
- *        de fichiers), ignores}
+ *        heures (résumé), extras, materiel, travaux, documents, photos (nombre
+ *        de fichiers), ignores}. Les fichiers inclus portent `fichierPhoto` /
+ *        `fichier` (chemin dans le ZIP) ; absent = non inclus.
  */
 function htmlResume(d) {
   const h = d.heures;
@@ -169,11 +187,16 @@ function htmlResume(d) {
     `<td class="n">${fr(e.voyagementPaye)}</td></tr>`).join("");
   const lignesExtras = d.extras.map((e) => `<tr><td>${esc(dateFr(e.dateTravaux))}</td>` +
     `<td>${esc(e.description)}</td><td>${esc(e.mainOeuvre)}</td><td>${esc(e.ajouteParNom)}</td>` +
-    `<td>${e.fichierPhoto ? `<a href="${esc(e.fichierPhoto)}">photo</a>` : ""}</td></tr>`).join("");
+    `<td>${lienFichier(e.fichierPhoto, "photo")}</td></tr>`).join("");
   const lignesMateriel = d.materiel.map((m) => `<tr><td>${esc(m.texte)}</td>` +
     `<td>${esc(m.quantite)}</td><td>${m.complete ? "Obtenu" : "À obtenir"}</td>` +
-    `<td>${esc(dateFr(m.dateAjout))}</td>` +
-    `<td>${m.fichierPhoto ? `<a href="${esc(m.fichierPhoto)}">photo</a>` : ""}</td></tr>`).join("");
+    `<td>${esc(dateFr(m.dateAjout))}</td><td>${lienFichier(m.fichierPhoto, "photo")}</td></tr>`).join("");
+  const lignesTravaux = (d.travaux ?? []).map((t) => `<tr><td>${esc(t.texte)}</td>` +
+    `<td>${t.complete ? `Complété${t.dateComplete ? ` le ${esc(dateFr(t.dateComplete))}` : ""}` : "À compléter"}</td>` +
+    `<td>${esc(dateFr(t.dateAjout))}</td><td>${lienFichier(t.fichierPhoto, "photo")}</td></tr>`).join("");
+  const lignesDocuments = (d.documents ?? []).map((x) => `<tr><td>${x.fichier ? lienFichier(x.fichier, x.nom) : esc(x.nom)}</td>` +
+    `<td>${esc(tailleLisible(x.taille))}</td><td>${esc(dateFr(x.dateAjout))}</td>` +
+    `<td>${x.fichier ? "Inclus" : "Non inclus"}</td></tr>`).join("");
   const avertissement = d.ignores.length === 0 ? "" :
     `<p class="avert">Fichiers non inclus dans l'export (${d.ignores.length}) : ` +
     `${esc(d.ignores.slice(0, 20).join(", "))}${d.ignores.length > 20 ? "…" : ""}</p>`;
@@ -199,17 +222,21 @@ ${avertissement}
 <table><tr><th>Employé</th><th class="n">Jours</th><th class="n">Heures travaillées</th><th class="n">Voyagement payé (h)</th></tr>
 ${lignesEmployes}
 <tr class="tot"><td>Total</td><td class="n">${fr(h.journeesHomme)}</td><td class="n">${fr(h.totalHeures)}</td><td class="n">${fr(h.totalVoyagementPaye)}</td></tr></table>
-<p class="meta">Le détail jour par jour est dans heures.csv.</p>
+<p class="meta">Le détail jour par jour est dans Dossier.xlsx (onglet Heures).</p>
 <h2>Extras (${d.extras.length})</h2>
 ${d.extras.length ? `<table><tr><th>Date</th><th>Description</th><th>Main-d'œuvre et temps</th><th>Saisi par</th><th>Photo</th></tr>${lignesExtras}</table>` : "<p>Aucun extra.</p>"}
 <h2>Matériel (${d.materiel.length})</h2>
 ${d.materiel.length ? `<table><tr><th>Matériel</th><th>Quantité</th><th>État</th><th>Ajouté le</th><th>Photo</th></tr>${lignesMateriel}</table>` : "<p>Aucun matériel.</p>"}
+<h2>Travaux à compléter (${(d.travaux ?? []).length})</h2>
+${(d.travaux ?? []).length ? `<table><tr><th>Travail</th><th>État</th><th>Ajouté le</th><th>Photo</th></tr>${lignesTravaux}</table>` : "<p>Aucun travail à compléter.</p>"}
+<h2>Documents (${(d.documents ?? []).length})</h2>
+${(d.documents ?? []).length ? `<table><tr><th>Document</th><th>Taille</th><th>Ajouté le</th><th>Dans l'export</th></tr>${lignesDocuments}</table>` : "<p>Aucun document.</p>"}
 <h2>Photos du chantier (${d.photos})</h2>
 <p>${d.photos ? "Les photos sont dans le dossier « photos »." : "Aucune photo."}</p>
 </body></html>`;
 }
 
 module.exports = {
-  detailHeures, resumerHeures, cheminDepuisUrl, cheminDuChantier, nomSur, extension,
-  cellule, csv, esc, htmlResume, dateFr, ajouterJours,
+  detailHeures, resumerHeures, cheminDepuisUrl, cheminDuChantier, nomSur, nomFichierDocument,
+  extension, tailleLisible, esc, htmlResume, dateFr, ajouterJours,
 };

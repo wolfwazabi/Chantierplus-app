@@ -16,6 +16,7 @@ import { initializeApp as initAdmin } from 'firebase-admin/app';
 import { getFirestore as getAdminDb } from 'firebase-admin/firestore';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import yauzl from 'yauzl';
+import ExcelJS from 'exceljs';
 
 const PROJET = 'demo-construction-rules';
 const REGION = 'northamerica-northeast1';
@@ -749,6 +750,9 @@ describe('Dossier de chantier : résumé et export (admin seulement)', () => {
     await deposer('chantiers/dc-compagnie/dc-ch/chantier_extras/3_e.jpg', 'PHOTO-EXTRA');
     await deposer('chantiers/dc-compagnie/dc-ch/chantier_materiel/4_m.jpg', 'PHOTO-MATERIEL');
     await deposer('chantiers/dc-autre/dc-chB/photos/secret.jpg', 'SECRET-AUTRE-COMPAGNIE');
+    await deposer('chantiers/dc-compagnie/dc-ch/documents/10_Devis.pdf', 'DEVIS-PDF', 'application/pdf');
+    await deposer('chantiers/dc-compagnie/dc-ch/documents/11_Devis.pdf', 'DEVIS-PDF-BIS', 'application/pdf');
+    await deposer('chantiers/dc-compagnie/dc-ch/chantier_travaux/12_t.jpg', 'PHOTO-TRAVAIL');
 
     const lien = (chemin) => `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(chemin)}?alt=media&token=t`;
     const horodatage = (n) => new Date(Date.UTC(2026, 9, n, 12));
@@ -775,6 +779,12 @@ describe('Dossier de chantier : résumé et export (admin seulement)', () => {
       // URL forgée vers le fichier d'une autre compagnie : ne doit jamais être exportée.
       photoUrl: lien('chantiers/dc-autre/dc-chB/photos/secret.jpg'),
     });
+    await c('chantier_documents').add({ companyId: cid, chantierId: 'dc-ch', nom: 'Devis rénovation.pdf', cheminStorage: 'chantiers/dc-compagnie/dc-ch/documents/10_Devis.pdf', taille: 9, typeMime: 'application/pdf', dateAjout: horodatage(2) });
+    await c('chantier_documents').add({ companyId: cid, chantierId: 'dc-ch', nom: 'Devis rénovation.pdf', cheminStorage: 'chantiers/dc-compagnie/dc-ch/documents/11_Devis.pdf', taille: 13, typeMime: 'application/pdf', dateAjout: horodatage(3) });
+    await c('chantier_documents').add({ companyId: cid, chantierId: 'dc-ch', nom: '../../Volé.pdf', cheminStorage: 'chantiers/dc-autre/dc-chB/photos/secret.jpg', taille: 22, typeMime: 'application/pdf', dateAjout: horodatage(4) });
+    await c('chantier_travaux').add({ companyId: cid, chantierId: 'dc-ch', texte: 'Peinture plafond', complete: true, dateAjout: horodatage(2), dateComplete: horodatage(9), photoUrl: lien('chantiers/dc-compagnie/dc-ch/chantier_travaux/12_t.jpg') });
+    await c('chantier_travaux').add({ companyId: cid, chantierId: 'dc-ch', texte: 'Calfeutrage', complete: false, dateAjout: horodatage(3) });
+    await c('chantier_documents').add({ companyId: autreCid, chantierId: 'dc-chB', nom: 'DOC-AUTRE-COMPAGNIE.pdf', cheminStorage: 'chantiers/dc-autre/dc-chB/documents/x.pdf', taille: 1, dateAjout: horodatage(1) });
     await c('chantier_extras').add({ companyId: autreCid, chantierId: 'dc-chB', description: 'AUTRE-COMPAGNIE', mainOeuvre: 'x', dateTravaux: '2026-10-01', dateAjout: horodatage(1) });
 
     adm = await connecter(NUM, 'dc-adm@exemple.ca', PIN);
@@ -793,7 +803,7 @@ describe('Dossier de chantier : résumé et export (admin seulement)', () => {
     assert.equal(r.heures.premierJour, '2026-10-05');
     assert.equal(r.heures.dernierJour, '2026-10-06');
     assert.deepEqual(r.heures.parEmploye.map((e) => [e.nom, e.heures]), [['Marie Employée', 15.75], ['Paul Contremaître', 7.75]]);
-    assert.deepEqual(r.nombres, { extras: 2, materiel: 2, photos: 4 });
+    assert.deepEqual(r.nombres, { extras: 2, materiel: 2, photos: 4, travaux: 2, documents: 3 });
   });
 
   test('résumé et export : réservés aux admins de la compagnie', async () => {
@@ -808,7 +818,7 @@ describe('Dossier de chantier : résumé et export (admin seulement)', () => {
     }
   });
 
-  test('export : ZIP avec résumé, CSV, photos, extras et matériel', async () => {
+  test('export : ZIP avec résumé, classeur Excel, documents, photos, extras, matériel et travaux', async () => {
     const r = await adm.appeler('exporterChantier', { chantierId: 'dc-ch' });
     assert.equal(r.nom, 'Chantier - Chalet Nord.zip');
     assert.match(r.url, /^https:\/\/firebasestorage\.googleapis\.com\/v0\/b\/chantierplus-mtl\/o\/exports%2Fdc-compagnie%2F.+\.zip\?alt=media&token=[0-9a-f-]{36}$/);
@@ -816,35 +826,82 @@ describe('Dossier de chantier : résumé et export (admin seulement)', () => {
     assert.ok(chemin.startsWith('exports/dc-compagnie/'));
     const zip = await ouvrirZip(octets);
     const base = 'Chantier - Chalet Nord/';
-    for (const attendu of ['Resume.html', 'heures.csv', 'extras.csv', 'materiel.csv', 'photos/photo_001.jpg', 'photos/photo_002.jpg',
-      'extras/extra_001.jpg', 'materiel/materiel_001.jpg', 'fichiers_non_inclus.txt']) {
-      assert.ok(zip.noms.includes(base + attendu), `${attendu} manquant : ${zip.noms.join(', ')}`);
+    for (const attendu of ['Resume.html', 'Dossier.xlsx', 'documents/Devis rénovation.pdf', 'documents/Devis rénovation (2).pdf',
+      'photos/photo_001.jpg', 'photos/photo_002.jpg', 'extras/extra_001.jpg', 'materiel/materiel_001.jpg',
+      'travaux/travail_001.jpg', 'fichiers_non_inclus.txt']) {
+      assert.ok(zip.noms.includes(base + attendu), attendu + ' manquant : ' + zip.noms.join(', '));
     }
+    assert.ok(!zip.noms.some((n) => n.endsWith('.csv')), 'plus de CSV (dépendent de la langue d\'Excel)');
+    assert.equal(zip.lire(base + 'documents/Devis rénovation.pdf'), 'DEVIS-PDF');
+    assert.equal(zip.lire(base + 'documents/Devis rénovation (2).pdf'), 'DEVIS-PDF-BIS');
     assert.equal(zip.lire(base + 'photos/photo_001.jpg'), 'PHOTO-UN');
     assert.equal(zip.lire(base + 'photos/photo_002.jpg'), 'PHOTO-DEUX');
     assert.equal(zip.lire(base + 'extras/extra_001.jpg'), 'PHOTO-EXTRA');
     assert.equal(zip.lire(base + 'materiel/materiel_001.jpg'), 'PHOTO-MATERIEL');
+    assert.equal(zip.lire(base + 'travaux/travail_001.jpg'), 'PHOTO-TRAVAIL');
     assert.equal(zip.noms.filter((n) => n.includes('/photos/')).length, 2, 'photo disparue et photo forgée exclues');
+    assert.equal(zip.noms.filter((n) => n.includes('/documents/')).length, 2, 'document forgé exclu');
+    assert.ok(!zip.noms.some((n) => n.includes('Volé')));
 
     const html = zip.lire(base + 'Resume.html');
     for (const attendu of ['Chalet Nord', '(archivé)', 'Dossiers inc.', '23,5', '0,75', 'Marie Employée', 'Paul Contremaître',
-      '08/10/2026', '1 compagnon, 1 apprenti — 4 h', 'Vis 3&quot;', 'Obtenu', 'À obtenir', 'Photos du chantier (2)', 'Fichiers non inclus']) {
+      '08/10/2026', '1 compagnon, 1 apprenti — 4 h', 'Vis 3&quot;', 'Obtenu', 'À obtenir', 'Photos du chantier (2)',
+      'Documents (3)', 'Devis rénovation.pdf', 'Inclus', 'Non inclus', 'Travaux à compléter (2)', 'Peinture plafond', 'Fichiers non inclus']) {
       assert.ok(html.includes(attendu), attendu);
     }
     assert.ok(!html.includes('<b>ajoutée</b>'), 'HTML saisi échappé');
     assert.ok(html.includes('&lt;b&gt;ajoutée&lt;/b&gt;'));
 
-    const heures = zip.lire(base + 'heures.csv');
-    assert.ok(heures.startsWith('﻿Date;Employé;Heures travaillées;Voyagement payé (h)'));
-    assert.ok(heures.includes('2026-10-05;Marie Employée;7,75;0,75'));
-    assert.ok(heures.includes('2026-10-06;Marie Employée;8;0'));
-    assert.ok(!heures.includes('99'), 'heures d\'une autre compagnie absentes');
-    const extras = zip.lire(base + 'extras.csv');
-    assert.ok(extras.includes('\'=3 gars'), 'injection de formule neutralisée');
-    assert.ok(extras.includes('extras/extra_001.jpg'));
-    const materiel = zip.lire(base + 'materiel.csv');
-    assert.ok(materiel.includes('"Vis 3"""'));
-    assert.ok(materiel.includes('Gypse;20 feuilles;À obtenir'));
+    // Classeur Excel : relu avec une bibliothèque indépendante.
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(zip.octets(base + 'Dossier.xlsx'));
+    assert.deepEqual(wb.worksheets.map((w) => w.name), ['Heures', 'Par employé', 'Extras', 'Matériel', 'Travaux à compléter', 'Documents']);
+
+    const heures = wb.getWorksheet('Heures');
+    assert.deepEqual(heures.getRow(1).values.slice(1), ['Date', 'Employé', 'Heures travaillées', 'Voyagement payé (h)']);
+    assert.equal(heures.getCell('A2').value.toISOString().slice(0, 10), '2026-10-05', 'vraie date');
+    assert.equal(typeof heures.getCell('C2').value, 'number', 'vrai nombre (même résultat en français et en anglais)');
+    assert.equal(heures.getCell('B2').value, 'Marie Employée');
+    assert.equal(heures.getCell('C2').value, 7.75);
+    assert.equal(heures.getCell('D2').value, 0.75);
+    assert.equal(heures.getCell('B3').value, 'Paul Contremaître');
+    assert.equal(heures.getCell('B4').value, 'Marie Employée');
+    assert.equal(heures.getCell('C4').value, 8);
+    assert.equal(heures.getCell('A5').value, 'Total');
+    assert.equal(heures.getCell('C5').value, 23.5);
+    assert.equal(heures.getCell('D5').value, 0.75);
+    assert.equal(heures.rowCount, 5, 'heures d\'une autre compagnie ou d\'un autre chantier absentes');
+
+    const parEmploye = wb.getWorksheet('Par employé');
+    assert.equal(parEmploye.getCell('A2').value, 'Marie Employée');
+    assert.equal(parEmploye.getCell('C2').value, 15.75);
+    assert.equal(parEmploye.getCell('A3').value, 'Paul Contremaître');
+    assert.equal(parEmploye.getCell('C4').value, 23.5);
+
+    const extras = wb.getWorksheet('Extras');
+    assert.equal(extras.getCell('C2').value, '=3 gars, 1 compagnon, 1 apprenti — 4 h');
+    assert.equal(typeof extras.getCell('C2').value, 'string', 'texte, jamais une formule');
+    assert.notEqual(extras.getCell('C2').type, ExcelJS.ValueType.Formula);
+    assert.equal(extras.getCell('B2').value, 'Cloison <b>ajoutée</b>');
+    assert.equal(extras.getCell('E2').value, 'extras/extra_001.jpg');
+
+    const materiel = wb.getWorksheet('Matériel');
+    assert.equal(materiel.getCell('A2').value, 'Vis 3"');
+    assert.equal(materiel.getCell('C2').value, 'Obtenu');
+    assert.equal(materiel.getCell('A3').value, 'Gypse');
+    assert.equal(materiel.getCell('C3').value, 'À obtenir');
+
+    const travaux = wb.getWorksheet('Travaux à compléter');
+    assert.equal(travaux.getCell('A2').value, 'Peinture plafond');
+    assert.equal(travaux.getCell('B2').value, 'Complété');
+    assert.equal(travaux.getCell('B3').value, 'À compléter');
+
+    const docs = wb.getWorksheet('Documents');
+    assert.equal(docs.getCell('A2').value, 'Devis rénovation.pdf');
+    assert.equal(docs.getCell('E2').value, 'Inclus');
+    assert.equal(docs.getCell('F3').value, 'documents/Devis rénovation (2).pdf');
+    assert.equal(docs.getCell('A4').value, '../../Volé.pdf');
+    assert.equal(docs.getCell('E4').value, 'Non inclus');
   });
 
   test('fichiers d\'une autre compagnie ou disparus : jamais exportés, signalés', async () => {
@@ -853,10 +910,11 @@ describe('Dossier de chantier : résumé et export (admin seulement)', () => {
     const tout = zip.noms.map((n) => zip.lire(n) ?? '').join('\n');
     assert.ok(!tout.includes('SECRET-AUTRE-COMPAGNIE'));
     assert.ok(!tout.includes('AUTRE-COMPAGNIE'));
-    assert.equal(r.ignores.length, 3, r.ignores.join(' | '));
+    assert.equal(r.ignores.length, 4, r.ignores.join(' | '));
     assert.ok(r.ignores.some((i) => i.includes('introuvable')));
-    assert.equal(r.ignores.filter((i) => i.includes('chemin refusé')).length, 2);
-    assert.equal(r.fichiers, 4);
+    assert.equal(r.ignores.filter((i) => i.includes('chemin refusé')).length, 3);
+    assert.ok(!tout.includes('DOC-AUTRE-COMPAGNIE'));
+    assert.equal(r.fichiers, 7);
   });
 
   test('chantier sans rien : export valide (ZIP avec résumé vide)', async () => {

@@ -36,7 +36,13 @@ Map<String, dynamic> _reponse() => {
       },
     ],
   },
-  'nombres': {'extras': 2, 'materiel': 3, 'photos': 40},
+  'nombres': {
+    'extras': 2,
+    'materiel': 3,
+    'photos': 40,
+    'travaux': 5,
+    'documents': 7,
+  },
 };
 
 void main() {
@@ -55,6 +61,8 @@ void main() {
       expect(r.nbExtras, 2);
       expect(r.nbMateriel, 3);
       expect(r.nbPhotos, 40);
+      expect(r.nbTravaux, 5);
+      expect(r.nbDocuments, 7);
     });
 
     test('réponse vide ou abîmée : valeurs sûres, sans planter', () {

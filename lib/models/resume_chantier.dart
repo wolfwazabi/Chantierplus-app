@@ -36,6 +36,8 @@ class ResumeChantier {
   final int nbExtras;
   final int nbMateriel;
   final int nbPhotos;
+  final int nbTravaux;
+  final int nbDocuments;
 
   const ResumeChantier({
     required this.nom,
@@ -51,6 +53,8 @@ class ResumeChantier {
     required this.nbExtras,
     required this.nbMateriel,
     required this.nbPhotos,
+    this.nbTravaux = 0,
+    this.nbDocuments = 0,
   });
 
   factory ResumeChantier.fromMap(Map<String, dynamic> m) {
@@ -74,6 +78,8 @@ class ResumeChantier {
       nbExtras: _nombre(nombres['extras']).toInt(),
       nbMateriel: _nombre(nombres['materiel']).toInt(),
       nbPhotos: _nombre(nombres['photos']).toInt(),
+      nbTravaux: _nombre(nombres['travaux']).toInt(),
+      nbDocuments: _nombre(nombres['documents']).toInt(),
     );
   }
 }

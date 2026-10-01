@@ -11,6 +11,7 @@
   "type": "commonjs",
   "devDependencies": {
     "@firebase/rules-unit-testing": "^4.0.1",
+    "exceljs": "^4.4.0",
     "firebase": "^11.10.0",
     "firebase-admin": "^13.10.0",
     "yauzl": "^3.4.0"
