@@ -346,7 +346,7 @@ describe('Travaux / matériel (admin et contremaître seulement)', () => {
 describe('Extras (saisie : admin et contremaître ; suppression : admin)', () => {
   const extra = (over = {}) => ({
     companyId: 'A', chantierId: 'chA', description: 'Ajout d\'une cloison',
-    nombreHommes: 2, heures: 3.5, dateTravaux: '2026-10-01',
+    mainOeuvre: '3 gars, 1 compagnon, 1 apprenti — 4 h', dateTravaux: '2026-10-01',
     ajoutePar: 'plusA', ajouteParNom: 'Plus A', dateAjout: serverTimestamp(), ...over,
   });
   const PHOTO = {
@@ -374,11 +374,13 @@ describe('Extras (saisie : admin et contremaître ; suppression : admin)', () =>
     await assertFails(addDoc(col('uid-plusA'), extra({ ...PHOTO, cheminPhoto: 'chantiers/A/chA/chantier_extras/../x.jpg/y' })));
   });
 
-  test('valeurs invalides refusées : hommes, temps, date, description, champs inconnus', async () => {
+  test('main-d\'œuvre en texte libre ; valeurs invalides refusées (vide, trop long, date, description, champs inconnus)', async () => {
     const c = col('uid-plusA');
+    await assertSucceeds(addDoc(c, extra({ mainOeuvre: '1 gars' })));
+    await assertSucceeds(addDoc(c, extra({ mainOeuvre: 'x'.repeat(300) })));
     for (const mauvais of [
-      { nombreHommes: 0 }, { nombreHommes: 1.5 }, { nombreHommes: 501 }, { nombreHommes: '2' },
-      { heures: 0 }, { heures: -1 }, { heures: 1001 }, { heures: '3' },
+      { mainOeuvre: '' }, { mainOeuvre: 'x'.repeat(301) }, { mainOeuvre: 3 }, { mainOeuvre: null },
+      { nombreHommes: 2 }, { heures: 3.5 },
       { dateTravaux: '2026-1-5' }, { dateTravaux: 20261001 },
       { description: '' }, { description: 'x'.repeat(2001) },
       { bonus: 1 }, { chantierId: 'chB' }, { companyId: 'B' },
@@ -406,13 +408,14 @@ describe('Extras (saisie : admin et contremaître ; suppression : admin)', () =>
   test('modification : contenu seulement, jamais l\'auteur, le chantier ou la compagnie', async () => {
     await seme();
     const ref = (uid) => doc(ctxDe(uid), 'chantier_extras/ex1');
-    await assertSucceeds(updateDoc(ref('uid-plusA'), { description: 'Corrigé', nombreHommes: 3, heures: 4 }));
+    await assertSucceeds(updateDoc(ref('uid-plusA'), { description: 'Corrigé', mainOeuvre: '4 gars, 5 h' }));
     await assertSucceeds(updateDoc(ref('uid-adminA'), { ...PHOTO }));
     await assertSucceeds(updateDoc(ref('uid-adminA'), { photoUrl: deleteField(), cheminPhoto: deleteField() }));
     await assertFails(updateDoc(ref('uid-plusA'), { ajoutePar: 'adminA' }));
     await assertFails(updateDoc(ref('uid-plusA'), { chantierId: 'chB' }));
     await assertFails(updateDoc(ref('uid-plusA'), { companyId: 'B' }));
-    await assertFails(updateDoc(ref('uid-plusA'), { heures: 0 }));
+    await assertFails(updateDoc(ref('uid-plusA'), { mainOeuvre: '' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { nombreHommes: 3 }));
     await assertFails(updateDoc(ref('uid-plusA'), { photoUrl: PHOTO.photoUrl }));
     await assertFails(updateDoc(ref('uid-empA'), { description: 'Piraté' }));
     await assertFails(updateDoc(ref('uid-adminB'), { description: 'Piraté' }));

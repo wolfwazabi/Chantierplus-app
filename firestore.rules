@@ -340,9 +340,10 @@ service cloud.firestore {
     }
 
     // ---------------------------------------------------------------- Extras
-    // Travaux supplémentaires d'un chantier : description, nombre d'hommes,
-    // temps, date et photo facultative. Admin et contremaître les saisissent et
-    // les modifient ; seul un admin les supprime (ils servent à facturer).
+    // Travaux supplémentaires d'un chantier : description, main-d'œuvre et temps
+    // (texte libre : « 3 gars, 1 compagnon, 1 apprenti — 4 h »), date et photo
+    // facultative. Admin et contremaître les saisissent et les modifient ; seul
+    // un admin les supprime (ils servent à facturer).
 
     function datePropre(v) {
       return v is string && v.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}');
@@ -361,8 +362,7 @@ service cloud.firestore {
 
     function contenuExtraValide(d, companyId, chantierId) {
       return texte(d.description, 1, 2000)
-        && d.nombreHommes is int && d.nombreHommes >= 1 && d.nombreHommes <= 500
-        && d.heures is number && d.heures > 0 && d.heures <= 1000
+        && texte(d.mainOeuvre, 1, 300)
         && datePropre(d.dateTravaux)
         && photoExtraValide(d, companyId, chantierId);
     }
@@ -372,7 +372,7 @@ service cloud.firestore {
 
       allow create: if gestionnaireDe(request.resource.data.companyId)
         && champsPermis(request.resource.data,
-             ['companyId', 'chantierId', 'description', 'nombreHommes', 'heures',
+             ['companyId', 'chantierId', 'description', 'mainOeuvre',
               'dateTravaux', 'photoUrl', 'cheminPhoto', 'ajoutePar', 'ajouteParNom',
               'dateAjout'])
         && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
@@ -383,7 +383,7 @@ service cloud.firestore {
         && request.resource.data.dateAjout == request.time;
 
       allow update: if gestionnaireDe(resource.data.companyId)
-        && champsModifiesPermis(['description', 'nombreHommes', 'heures', 'dateTravaux',
+        && champsModifiesPermis(['description', 'mainOeuvre', 'dateTravaux',
                                  'photoUrl', 'cheminPhoto'])
         && contenuExtraValide(request.resource.data, resource.data.companyId,
                               resource.data.chantierId);

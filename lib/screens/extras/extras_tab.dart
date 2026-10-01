@@ -81,8 +81,7 @@ class _ExtrasTabState extends State<ExtrasTab> {
         'companyId': widget.companyId,
         'chantierId': widget.chantierId,
         'description': saisie.description,
-        'nombreHommes': saisie.nombreHommes,
-        'heures': saisie.heures,
+        'mainOeuvre': saisie.mainOeuvre,
         'dateTravaux': dateIso(saisie.date),
         if (url != null) 'photoUrl': url,
         if (chemin != null) 'cheminPhoto': chemin,
@@ -105,8 +104,7 @@ class _ExtrasTabState extends State<ExtrasTab> {
     try {
       final maj = <String, dynamic>{
         'description': saisie.description,
-        'nombreHommes': saisie.nombreHommes,
-        'heures': saisie.heures,
+        'mainOeuvre': saisie.mainOeuvre,
         'dateTravaux': dateIso(saisie.date),
       };
       if (saisie.nouvellePhoto != null) {
@@ -262,30 +260,20 @@ class _ExtrasTabState extends State<ExtrasTab> {
                   ),
                 );
               }
-              final total = extras.fold<double>(
-                0,
-                (s, e) => s + e.heuresHommes,
-              );
               return Column(
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-                    child: Row(
-                      key: const ValueKey('extras_total'),
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          '${extras.length} extra${extras.length > 1 ? 's' : ''}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey,
-                          ),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '${extras.length} extra${extras.length > 1 ? 's' : ''}',
+                        key: const ValueKey('extras_nombre'),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Colors.grey,
                         ),
-                        Text(
-                          'Total : ${formatNombre(total)} h-homme',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                   Expanded(
@@ -321,7 +309,7 @@ class _ExtrasTabState extends State<ExtrasTab> {
                                 ),
                           title: Text(e.description),
                           subtitle: Text(
-                            '${resumeTemps(e.nombreHommes, e.heures)}\n'
+                            '${e.mainOeuvre}\n'
                             '${dateAffichee(e.dateTravaux)}'
                             '${e.ajouteParNom.isEmpty ? '' : ' • ${e.ajouteParNom}'}',
                             style: const TextStyle(fontSize: 12),

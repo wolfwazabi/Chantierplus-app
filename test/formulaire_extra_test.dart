@@ -8,8 +8,7 @@ const _extra = ExtraChantier(
   companyId: 'A',
   chantierId: 'chA',
   description: 'Cloison',
-  nombreHommes: 2,
-  heures: 3.5,
+  mainOeuvre: '3 gars, 1 compagnon, 1 apprenti — 4 h',
   dateTravaux: '2026-10-01',
   photoUrl: 'https://firebasestorage.googleapis.com/v0/b/b/o/p.jpg',
   cheminPhoto: 'chantiers/A/chA/chantier_extras/p.jpg',
@@ -49,8 +48,7 @@ void main() {
   Future<void> remplir(
     WidgetTester tester, {
     String? desc,
-    String? hommes,
-    String? heures,
+    String? mainOeuvre,
   }) async {
     if (desc != null) {
       await tester.enterText(
@@ -58,16 +56,10 @@ void main() {
         desc,
       );
     }
-    if (hommes != null) {
+    if (mainOeuvre != null) {
       await tester.enterText(
-        find.byKey(const ValueKey('extra_hommes')),
-        hommes,
-      );
-    }
-    if (heures != null) {
-      await tester.enterText(
-        find.byKey(const ValueKey('extra_heures')),
-        heures,
+        find.byKey(const ValueKey('extra_main_oeuvre')),
+        mainOeuvre,
       );
     }
     await tester.pump();
@@ -84,8 +76,19 @@ void main() {
   String texteDe(WidgetTester tester, String cle) =>
       tester.widget<TextField>(find.byKey(ValueKey(cle))).controller!.text;
 
+  testWidgets('plus de champs « hommes » ni « temps » : un seul champ libre', (
+    tester,
+  ) async {
+    await ouvrir(tester);
+    expect(find.byKey(const ValueKey('extra_hommes')), findsNothing);
+    expect(find.byKey(const ValueKey('extra_heures')), findsNothing);
+    expect(find.byKey(const ValueKey('extra_resume')), findsNothing);
+    expect(find.byKey(const ValueKey('extra_main_oeuvre')), findsOneWidget);
+    expect(find.text('Main-d\'œuvre et temps'), findsOneWidget);
+  });
+
   testWidgets(
-    'description, hommes et temps sont obligatoires ; la photo est facultative',
+    'description et main-d\'œuvre sont obligatoires ; la photo est facultative',
     (tester) async {
       final recues = await ouvrir(tester);
       await valider(tester);
@@ -93,58 +96,59 @@ void main() {
 
       await remplir(tester, desc: 'Cloison');
       await valider(tester);
-      expect(erreur(tester), contains('hommes'));
+      expect(erreur(tester), contains('main-d\'œuvre'));
 
-      await remplir(tester, hommes: '0');
+      await remplir(tester, mainOeuvre: '   ');
       await valider(tester);
-      expect(erreur(tester), contains('hommes'));
-
-      await remplir(tester, hommes: '2');
-      await valider(tester);
-      expect(erreur(tester), contains('Temps'));
-
-      await remplir(tester, heures: '0');
-      await valider(tester);
-      expect(erreur(tester), contains('Temps'));
+      expect(erreur(tester), contains('main-d\'œuvre'));
       expect(recues, isEmpty);
 
-      await remplir(tester, heures: '3,5');
+      await remplir(tester, mainOeuvre: '3 gars, 1 compagnon, 1 apprenti');
       await valider(tester);
       expect(recues, hasLength(1));
       expect(recues.single.description, 'Cloison');
-      expect(recues.single.nombreHommes, 2);
-      expect(recues.single.heures, 3.5);
+      expect(recues.single.mainOeuvre, '3 gars, 1 compagnon, 1 apprenti');
       expect(recues.single.nouvellePhoto, isNull);
       expect(recues.single.retirerPhoto, isFalse);
       expect(dateIso(recues.single.date), dateIso(DateTime.now()));
     },
   );
 
-  testWidgets('le total d\'heures-homme s\'affiche en direct', (tester) async {
-    await ouvrir(tester);
-    expect(find.byKey(const ValueKey('extra_resume')), findsNothing);
-    await remplir(tester, hommes: '3', heures: '2.5');
-    expect(
-      tester.widget<Text>(find.byKey(const ValueKey('extra_resume'))).data,
-      '3 hommes × 2.5 h = 7.5 h-homme',
-    );
-    await remplir(tester, hommes: 'x');
-    expect(find.byKey(const ValueKey('extra_resume')), findsNothing);
+  testWidgets('texte libre : n\'importe quelle formulation est acceptée', (
+    tester,
+  ) async {
+    final recues = await ouvrir(tester);
+    for (final texte in [
+      '2 gars',
+      '1 compagnon + 1 apprenti, 3 heures chacun',
+      'Marc et Luc — demi-journée',
+      '4',
+    ]) {
+      await remplir(tester, desc: 'Porte', mainOeuvre: texte);
+      await valider(tester);
+    }
+    expect(recues.map((r) => r.mainOeuvre), [
+      '2 gars',
+      '1 compagnon + 1 apprenti, 3 heures chacun',
+      'Marc et Luc — demi-journée',
+      '4',
+    ]);
   });
 
   testWidgets(
     'ajout réussi : formulaire vidé ; échec : la saisie est conservée',
     (tester) async {
       await ouvrir(tester);
-      await remplir(tester, desc: 'Porte', hommes: '1', heures: '2');
+      await remplir(tester, desc: 'Porte', mainOeuvre: '2 gars, 3 h');
       await valider(tester);
       expect(texteDe(tester, 'extra_description'), isEmpty);
-      expect(texteDe(tester, 'extra_hommes'), isEmpty);
+      expect(texteDe(tester, 'extra_main_oeuvre'), isEmpty);
 
       await ouvrir(tester, reussite: false);
-      await remplir(tester, desc: 'Porte', hommes: '1', heures: '2');
+      await remplir(tester, desc: 'Porte', mainOeuvre: '2 gars, 3 h');
       await valider(tester);
       expect(texteDe(tester, 'extra_description'), 'Porte');
+      expect(texteDe(tester, 'extra_main_oeuvre'), '2 gars, 3 h');
     },
   );
 
@@ -152,7 +156,7 @@ void main() {
     await ouvrir(tester, connecte: false);
     expect(
       tester
-          .widget<TextField>(find.byKey(const ValueKey('extra_description')))
+          .widget<TextField>(find.byKey(const ValueKey('extra_main_oeuvre')))
           .enabled,
       isFalse,
     );
@@ -177,9 +181,11 @@ void main() {
     (tester) async {
       final recues = await ouvrir(tester, initial: _extra);
       expect(texteDe(tester, 'extra_description'), 'Cloison');
-      expect(texteDe(tester, 'extra_hommes'), '2');
-      expect(texteDe(tester, 'extra_heures'), '3.5');
-      expect(find.text('01/10/2026'), findsOneWidget);
+      expect(
+        texteDe(tester, 'extra_main_oeuvre'),
+        '3 gars, 1 compagnon, 1 apprenti — 4 h',
+      );
+      expect(find.text('Date : 01/10/2026'), findsOneWidget);
 
       await tester.tap(find.byKey(const ValueKey('extra_retirer_photo')));
       await tester.pump();
@@ -193,9 +199,9 @@ void main() {
     tester,
   ) async {
     final recues = await ouvrir(tester, initial: _extra);
-    await remplir(tester, desc: 'Cloison corrigée');
+    await remplir(tester, mainOeuvre: '4 gars, 5 h');
     await valider(tester);
     expect(recues.single.retirerPhoto, isFalse);
-    expect(recues.single.description, 'Cloison corrigée');
+    expect(recues.single.mainOeuvre, '4 gars, 5 h');
   });
 }

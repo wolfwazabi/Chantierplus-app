@@ -9,8 +9,9 @@ import '../../services/photos.dart';
 /// Ce que l'utilisateur a saisi dans le formulaire d'un extra.
 class ExtraSaisie {
   final String description;
-  final int nombreHommes;
-  final double heures;
+
+  /// Main-d'œuvre et temps, en texte libre (« 3 gars, 1 compagnon, 1 apprenti »).
+  final String mainOeuvre;
   final DateTime date;
 
   /// Nouvelle photo choisie (prise avec l'app ou de la galerie), sinon null.
@@ -21,16 +22,15 @@ class ExtraSaisie {
 
   const ExtraSaisie({
     required this.description,
-    required this.nombreHommes,
-    required this.heures,
+    required this.mainOeuvre,
     required this.date,
     this.nouvellePhoto,
     this.retirerPhoto = false,
   });
 }
 
-/// Formulaire d'un extra : description, nombre d'hommes, temps, date, photo
-/// facultative. Sert à ajouter et à modifier.
+/// Formulaire d'un extra : description, main-d'œuvre et temps (texte libre),
+/// date, photo facultative. Sert à ajouter et à modifier.
 class FormulaireExtra extends StatefulWidget {
   final ExtraChantier? initial;
   final bool connecte;
@@ -54,8 +54,7 @@ class FormulaireExtra extends StatefulWidget {
 
 class _FormulaireExtraState extends State<FormulaireExtra> {
   late final TextEditingController _description;
-  late final TextEditingController _hommes;
-  late final TextEditingController _heures;
+  late final TextEditingController _mainOeuvre;
   late DateTime _date;
   XFile? _photo;
   Uint8List? _apercu;
@@ -68,22 +67,15 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
     super.initState();
     final e = widget.initial;
     _description = TextEditingController(text: e?.description ?? '');
-    _hommes = TextEditingController(text: e == null ? '' : '${e.nombreHommes}');
-    _heures = TextEditingController(
-      text: e == null ? '' : formatNombre(e.heures),
-    );
+    _mainOeuvre = TextEditingController(text: e?.mainOeuvre ?? '');
     _date = (e == null ? null : lireDateIso(e.dateTravaux)) ?? DateTime.now();
     _photoExistante = e?.photoUrl != null;
-    for (final c in [_hommes, _heures]) {
-      c.addListener(() => setState(() {}));
-    }
   }
 
   @override
   void dispose() {
     _description.dispose();
-    _hommes.dispose();
-    _heures.dispose();
+    _mainOeuvre.dispose();
     _abandonnerPhoto();
     super.dispose();
   }
@@ -129,15 +121,12 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
 
   Future<void> _valider() async {
     final description = _description.text.trim();
-    final hommes = lireNombreHommes(_hommes.text);
-    final heures = lireHeures(_heures.text);
+    final mainOeuvre = _mainOeuvre.text.trim();
     String? erreur;
     if (description.isEmpty) {
       erreur = 'Décrivez les travaux effectués.';
-    } else if (hommes == null) {
-      erreur = 'Nombre d\'hommes : un entier de 1 à $maxHommes.';
-    } else if (heures == null) {
-      erreur = 'Temps : un nombre d\'heures supérieur à 0 (ex. 3.5).';
+    } else if (mainOeuvre.isEmpty) {
+      erreur = 'Indiquez la main-d\'œuvre et le temps (ex. 3 gars, 4 h).';
     }
     if (erreur != null) {
       setState(() => _erreur = erreur);
@@ -149,8 +138,7 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
     });
     final saisie = ExtraSaisie(
       description: description,
-      nombreHommes: hommes!,
-      heures: heures!,
+      mainOeuvre: mainOeuvre,
       date: _date,
       nouvellePhoto: _photo,
       retirerPhoto:
@@ -166,8 +154,7 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
     }
     if (ok && mounted && widget.initial == null) {
       _description.clear();
-      _hommes.clear();
-      _heures.clear();
+      _mainOeuvre.clear();
       // La copie temporaire a été supprimée par l'envoi.
       setState(() {
         _photo = null;
@@ -180,8 +167,6 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
   @override
   Widget build(BuildContext context) {
     final connecte = widget.connecte;
-    final hommes = lireNombreHommes(_hommes.text);
-    final heures = lireHeures(_heures.text);
     final aPhoto = _apercu != null || _photoExistante;
 
     return Column(
@@ -194,7 +179,7 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
           enabled: connecte,
           minLines: 2,
           maxLines: 4,
-          maxLength: 2000,
+          maxLength: maxDescription,
           textCapitalization: TextCapitalization.sentences,
           decoration: const InputDecoration(
             labelText: 'Description des travaux effectués',
@@ -204,66 +189,29 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
           ),
         ),
         const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                key: const ValueKey('extra_hommes'),
-                controller: _hommes,
-                enabled: connecte,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Hommes',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextField(
-                key: const ValueKey('extra_heures'),
-                controller: _heures,
-                enabled: connecte,
-                keyboardType: const TextInputType.numberWithOptions(
-                  decimal: true,
-                ),
-                decoration: const InputDecoration(
-                  labelText: 'Temps (h)',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: OutlinedButton.icon(
-                key: const ValueKey('extra_date'),
-                onPressed: connecte ? _choisirDate : null,
-                icon: const Icon(Icons.event, size: 18),
-                label: Text(
-                  dateAffichee(dateIso(_date)),
-                  style: const TextStyle(fontSize: 12),
-                ),
-                style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 14,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        if (hommes != null && heures != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              resumeTemps(hommes, heures),
-              key: const ValueKey('extra_resume'),
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
+        TextField(
+          key: const ValueKey('extra_main_oeuvre'),
+          controller: _mainOeuvre,
+          enabled: connecte,
+          minLines: 1,
+          maxLines: 3,
+          maxLength: maxMainOeuvre,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Main-d\'œuvre et temps',
+            hintText: 'ex. : 3 gars, 1 compagnon, 1 apprenti — 4 h',
+            border: OutlineInputBorder(),
+            isDense: true,
+            counterText: '',
           ),
+        ),
+        const SizedBox(height: 8),
+        OutlinedButton.icon(
+          key: const ValueKey('extra_date'),
+          onPressed: connecte ? _choisirDate : null,
+          icon: const Icon(Icons.event, size: 18),
+          label: Text('Date : ${dateAffichee(dateIso(_date))}'),
+        ),
         const SizedBox(height: 8),
         Row(
           children: [

@@ -1,14 +1,15 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Extra d'un chantier : travaux supplémentaires effectués (description,
-/// nombre d'hommes, temps, date, photo facultative).
+/// main-d'œuvre et temps en texte libre, date, photo facultative).
 class ExtraChantier {
   final String id;
   final String companyId;
   final String chantierId;
   final String description;
-  final int nombreHommes;
-  final double heures;
+
+  /// Texte libre : « 3 gars, 1 compagnon, 1 apprenti — 4 h ».
+  final String mainOeuvre;
 
   /// Date des travaux, « AAAA-MM-JJ ».
   final String dateTravaux;
@@ -22,8 +23,7 @@ class ExtraChantier {
     required this.companyId,
     required this.chantierId,
     required this.description,
-    required this.nombreHommes,
-    required this.heures,
+    required this.mainOeuvre,
     required this.dateTravaux,
     this.photoUrl,
     this.cheminPhoto,
@@ -38,8 +38,7 @@ class ExtraChantier {
       companyId: data['companyId'] ?? '',
       chantierId: data['chantierId'] ?? '',
       description: data['description'] ?? '',
-      nombreHommes: (data['nombreHommes'] as num?)?.toInt() ?? 0,
-      heures: (data['heures'] as num?)?.toDouble() ?? 0,
+      mainOeuvre: data['mainOeuvre'] ?? '',
       dateTravaux: data['dateTravaux'] ?? '',
       photoUrl: data['photoUrl'] as String?,
       cheminPhoto: data['cheminPhoto'] as String?,
@@ -47,46 +46,11 @@ class ExtraChantier {
       dateAjout: ajout is Timestamp ? ajout.toDate() : null,
     );
   }
-
-  /// Heures-homme : nombre d'hommes × temps de chacun.
-  double get heuresHommes => nombreHommes * heures;
 }
 
-// ---------------------------------------------------------------------------
-// Saisie (mêmes bornes que firestore.rules)
-// ---------------------------------------------------------------------------
-
-const int maxHommes = 500;
-const double maxHeures = 1000;
-
-/// Nombre d'hommes : entier de 1 à 500, sinon null.
-int? lireNombreHommes(String texte) {
-  final v = int.tryParse(texte.trim());
-  return v != null && v >= 1 && v <= maxHommes ? v : null;
-}
-
-/// Temps en heures (virgule ou point) : plus de 0 et au plus 1000, arrondi au
-/// centième ; sinon null.
-double? lireHeures(String texte) {
-  final v = double.tryParse(texte.trim().replaceAll(',', '.'));
-  if (v == null || !v.isFinite || v > maxHeures) return null;
-  final arrondi = (v * 100).round() / 100;
-  // Après arrondi : 0.001 donnerait 0, que le serveur refuse.
-  return arrondi > 0 ? arrondi : null;
-}
-
-/// « 3.5 », « 7 », « 3.25 » : sans zéros inutiles.
-String formatNombre(double v) {
-  final s = v.toStringAsFixed(2);
-  return s.replaceFirst(RegExp(r'\.?0+$'), '');
-}
-
-String formatHommes(int n) => n > 1 ? '$n hommes' : '$n homme';
-
-/// « 2 hommes × 3.5 h = 7 h-homme ».
-String resumeTemps(int hommes, double heures) =>
-    '${formatHommes(hommes)} × ${formatNombre(heures)} h = '
-    '${formatNombre(hommes * heures)} h-homme';
+/// Longueurs maximales (mêmes bornes que firestore.rules).
+const int maxDescription = 2000;
+const int maxMainOeuvre = 300;
 
 String dateIso(DateTime d) {
   final a = d.year.toString().padLeft(4, '0');
