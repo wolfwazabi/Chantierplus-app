@@ -1,0 +1,98 @@
+{
+  "v": 1,
+  "nom": "Garage Tremblay",
+  "plancherActif": true,
+  "plancher": {
+    "forme": {
+      "type": "rectangle",
+      "longueur": 156,
+      "largeur": 126
+    },
+    "espacement": 16,
+    "angle": null,
+    "section": "2×10",
+    "bordureDouble": false,
+    "riveDouble": true,
+    "etriers": "deuxBouts",
+    "entremises": 1,
+    "panneau": "4x8",
+    "decalageMin": 24,
+    "marge": 0,
+    "longueursPlanches": [
+      96,
+      120,
+      144,
+      168,
+      192,
+      216,
+      240
+    ]
+  },
+  "mursActifs": true,
+  "murs": {
+    "mode": "contour",
+    "hauteur": 97.125,
+    "ouverturesContour": {
+      "0": [
+        {
+          "type": "fenetre",
+          "nom": "Salon",
+          "largeur": 36,
+          "hauteur": 48,
+          "allege": 36,
+          "position": 60,
+          "jeuLargeur": 1,
+          "jeuHauteur": 1.5
+        }
+      ],
+      "1": [
+        {
+          "type": "porte",
+          "nom": "",
+          "largeur": 36,
+          "hauteur": 80,
+          "allege": 0,
+          "position": 63,
+          "jeuLargeur": 1,
+          "jeuHauteur": 1.5
+        }
+      ]
+    },
+    "libres": [],
+    "params": {
+      "espacement": 16,
+      "section": "2×6",
+      "lissesHautes": 2,
+      "jacksParCote": 1,
+      "linteau": "2×10",
+      "plisLinteau": 2,
+      "plisAppui": 1,
+      "longueursPlanches": [
+        96,
+        120,
+        144,
+        168,
+        192,
+        216,
+        240
+      ],
+      "precoupes": true,
+      "panneau": "isobrace_r4",
+      "debordPlancher": 0,
+      "fourrureEntraxe": 16,
+      "fourrureEpaisseur": 0.75,
+      "fourrureLargeur": 2.5,
+      "longueursFourrures": [
+        96,
+        120,
+        144,
+        192
+      ],
+      "revetementEpaisseur": 0.75,
+      "margeMembrane": 10,
+      "margeRevetement": 10,
+      "aireRouleau": 900,
+      "margeFeuilles": 0
+    }
+  }
+}

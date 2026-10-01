@@ -9,7 +9,7 @@ import '../models/chantier.dart';
 import '../models/employee.dart';
 import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
-import 'materiaux/calcul_materiaux.dart';
+import 'materiaux/calcul_chantier.dart';
 import '../widgets/recherche_chantier.dart';
 import '../services/photos.dart';
 import '../services/stockage.dart';
@@ -193,8 +193,13 @@ class _ChantierScreenState extends State<ChantierScreen> {
                           chantierId: _chantierSelectionne!.id,
                           peutGerer: false,
                         ),
-                        // Calcul de matériaux (feuilles), ex-onglet de la calculatrice.
-                        const CalculMateriaux(),
+                        // Calcul de feuilles et de charpente (plancher, murs, 3D, commande).
+                        CalculChantier(
+                          key: ValueKey('calcul_${_chantierSelectionne!.id}'),
+                          companyId: companyId,
+                          chantierId: _chantierSelectionne!.id,
+                          connecte: connecte,
+                        ),
                       ],
                     ),
                   ),
