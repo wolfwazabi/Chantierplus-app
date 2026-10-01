@@ -1,0 +1,73 @@
+{
+  "v": 1,
+  "nom": "",
+  "plancherActif": true,
+  "plancher": {
+    "forme": {
+      "type": "rectangle",
+      "longueur": 156.0,
+      "largeur": 126.0
+    },
+    "espacement": 16.0,
+    "angle": null,
+    "section": "2×10",
+    "bordureDouble": false,
+    "riveDouble": false,
+    "etriers": "deuxBouts",
+    "entremises": 0,
+    "panneau": "4x8",
+    "decalageMin": 24.0,
+    "marge": 0.0,
+    "longueursPlanches": [
+      96.0,
+      120.0,
+      144.0,
+      168.0,
+      192.0,
+      216.0,
+      240.0
+    ]
+  },
+  "mursActifs": false,
+  "murs": {
+    "mode": "contour",
+    "hauteur": 97.125,
+    "ouverturesContour": {},
+    "libres": [],
+    "params": {
+      "espacement": 16.0,
+      "section": "2×4",
+      "lissesHautes": 2,
+      "jacksParCote": 1,
+      "linteau": "2×8",
+      "plisLinteau": 2,
+      "plisAppui": 1,
+      "longueursPlanches": [
+        96.0,
+        120.0,
+        144.0,
+        168.0,
+        192.0,
+        216.0,
+        240.0
+      ],
+      "precoupes": true,
+      "panneau": "4x9",
+      "debordPlancher": 0.0,
+      "fourrureEntraxe": 16.0,
+      "fourrureEpaisseur": 0.75,
+      "fourrureLargeur": 2.5,
+      "longueursFourrures": [
+        96.0,
+        120.0,
+        144.0,
+        192.0
+      ],
+      "revetementEpaisseur": 0.75,
+      "margeMembrane": 10.0,
+      "margeRevetement": 10.0,
+      "aireRouleau": 900.0,
+      "margeFeuilles": 0.0
+    }
+  }
+}

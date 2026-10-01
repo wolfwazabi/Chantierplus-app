@@ -432,6 +432,93 @@ describe('Extras (saisie : admin et contremaître ; suppression : admin)', () =>
 });
 
 // =============================================================================
+describe('Commandes de matériaux (création et suivi : admin et contremaître)', () => {
+  const ligne = { categorie: 'bois', article: "2×10 × 12'", quantite: 12, unite: '', usage: 'Plancher', manuelle: false };
+  const commande = (over = {}) => ({
+    companyId: 'A', chantierId: 'chA', nom: 'Plancher Tremblay',
+    lignes: [ligne], projet: '{"v":1}', statut: 'brouillon',
+    ajoutePar: 'plusA', ajouteParNom: 'Plus A', dateAjout: serverTimestamp(), ...over,
+  });
+  const col = (uid) => collection(ctxDe(uid), 'chantier_commandes');
+  const seme = async (id = 'cmd1', over = {}) => env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'chantier_commandes', id), { ...commande(), dateAjout: new Date(), ...over }));
+
+  test('contremaître et admin enregistrent une commande ; employé et autre compagnie refusés', async () => {
+    await assertSucceeds(addDoc(col('uid-plusA'), commande()));
+    await assertSucceeds(addDoc(col('uid-adminA'), commande({ ajoutePar: 'adminA', ajouteParNom: 'Admin A' })));
+    await assertFails(addDoc(col('uid-empA'), commande({ ajoutePar: 'empA', ajouteParNom: 'Emp A' })));
+    await assertFails(addDoc(col('uid-adminB'), commande()));
+  });
+
+  test('valeurs invalides refusées (statut, lignes, nom, projet, champs inconnus, chantier d’une autre compagnie)', async () => {
+    const c = col('uid-plusA');
+    const { projet: _omis, ...sansProjet } = commande();
+    await assertSucceeds(addDoc(c, sansProjet));
+    await assertSucceeds(addDoc(c, commande({ lignes: Array.from({ length: 300 }, () => ligne) })));
+    await assertSucceeds(addDoc(c, commande({ projet: 'x'.repeat(150000) })));
+    for (const mauvais of [
+      { statut: 'commandee' }, { statut: 'recue' }, { statut: 'autre' },
+      { lignes: [] }, { lignes: 'beaucoup' }, { lignes: Array.from({ length: 301 }, () => ligne) },
+      { nom: '' }, { nom: 'x'.repeat(201) }, { nom: 3 },
+      { projet: 'x'.repeat(150001) }, { projet: { v: 1 } },
+      { notes: 'x'.repeat(2001) }, { fournisseur: 'x'.repeat(201) },
+      { total: 100 }, { dateCommande: new Date() },
+      { chantierId: 'chB' }, { companyId: 'B' },
+    ]) {
+      await assertFails(addDoc(c, commande(mauvais)));
+    }
+  });
+
+  test('l’auteur est celui de la session', async () => {
+    await assertFails(addDoc(col('uid-plusA'), commande({ ajoutePar: 'adminA' })));
+    await assertFails(addDoc(col('uid-plusA'), commande({ ajouteParNom: "Quelqu'un d'autre" })));
+    await assertFails(addDoc(col('uid-plusA'), commande({ dateAjout: new Date('2020-01-01') })));
+  });
+
+  test('lecture : admin et contremaître de la compagnie seulement', async () => {
+    await seme();
+    await assertSucceeds(getDoc(doc(ctxDe('uid-plusA'), 'chantier_commandes/cmd1')));
+    await assertSucceeds(getDoc(doc(ctxDe('uid-adminA'), 'chantier_commandes/cmd1')));
+    await assertFails(getDoc(doc(ctxDe('uid-empA'), 'chantier_commandes/cmd1')));
+    await assertFails(getDoc(doc(ctxDe('uid-adminB'), 'chantier_commandes/cmd1')));
+    await assertSucceeds(getDocs(query(collection(ctxDe('uid-plusA'), 'chantier_commandes'),
+      where('companyId', '==', 'A'), where('chantierId', '==', 'chA'))));
+    await assertFails(getDocs(query(collection(ctxDe('uid-empA'), 'chantier_commandes'), where('companyId', '==', 'A'))));
+    await assertFails(getDocs(query(collection(ctxDe('uid-adminB'), 'chantier_commandes'), where('companyId', '==', 'A'))));
+  });
+
+  test('suivi : statut, notes, fournisseur, nom et date de commande ; jamais les lignes ni l’auteur', async () => {
+    await seme();
+    const ref = (uid) => doc(ctxDe(uid), 'chantier_commandes/cmd1');
+    await assertSucceeds(updateDoc(ref('uid-plusA'), { statut: 'commandee', dateCommande: serverTimestamp() }));
+    await assertSucceeds(updateDoc(ref('uid-adminA'), { statut: 'recue', notes: 'Livré mardi', fournisseur: 'BMR Laval' }));
+    await assertSucceeds(updateDoc(ref('uid-plusA'), { nom: 'Plancher Tremblay (v2)' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { lignes: [] }));
+    await assertFails(updateDoc(ref('uid-plusA'), { lignes: [{ ...ligne, quantite: 99 }] }));
+    await assertFails(updateDoc(ref('uid-plusA'), { projet: '{}' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { ajoutePar: 'adminA' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { chantierId: 'chB' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { companyId: 'B' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { statut: 'perdue' }));
+    await assertFails(updateDoc(ref('uid-plusA'), { dateCommande: new Date('2020-01-01') }));
+    await assertFails(updateDoc(ref('uid-plusA'), { notes: 'x'.repeat(2001) }));
+    await assertFails(updateDoc(ref('uid-empA'), { statut: 'commandee' }));
+    await assertFails(updateDoc(ref('uid-adminB'), { statut: 'commandee' }));
+  });
+
+  test('suppression : admin toujours ; contremaître seulement un brouillon', async () => {
+    await seme('brouillon1', { statut: 'brouillon' });
+    await seme('commandee1', { statut: 'commandee' });
+    const ref = (uid, id) => doc(ctxDe(uid), 'chantier_commandes/' + id);
+    await assertFails(deleteDoc(ref('uid-empA', 'brouillon1')));
+    await assertFails(deleteDoc(ref('uid-adminB', 'brouillon1')));
+    await assertFails(deleteDoc(ref('uid-plusA', 'commandee1')));
+    await assertSucceeds(deleteDoc(ref('uid-plusA', 'brouillon1')));
+    await assertSucceeds(deleteDoc(ref('uid-adminA', 'commandee1')));
+  });
+});
+
+// =============================================================================
 describe('Documents de chantier (dépôt : admin ; consultation : admin et contremaître)', () => {
   const document = (over = {}) => ({
     companyId: 'A', chantierId: 'chA', nom: 'Devis toiture.xlsx',

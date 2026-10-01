@@ -16,8 +16,10 @@ class FormatFeuille {
 
 const formatsFeuilles = [
   FormatFeuille('4 × 8 pi', 4, 8),
+  FormatFeuille('4 × 9 pi', 4, 9),
   FormatFeuille('4 × 10 pi', 4, 10),
   FormatFeuille('4 × 12 pi', 4, 12),
+  FormatFeuille('OSB isolant R-4 (Isobrace) 4 × 9 pi', 4, 9),
 ];
 
 /// Nombre de feuilles pour couvrir [surface] (pi² ou m² selon [metrique]),
@@ -103,6 +105,7 @@ class _CalculMateriauxState extends State<CalculMateriaux> {
             DropdownButtonFormField<FormatFeuille>(
               key: const ValueKey('materiaux_format'),
               initialValue: _format,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Format de feuille',
                 border: OutlineInputBorder(),
@@ -115,6 +118,7 @@ class _CalculMateriauxState extends State<CalculMateriaux> {
                       metrique
                           ? '${f.nom} (${f.surfaceM2.toStringAsFixed(2)} m²)'
                           : '${f.nom} (${f.surfacePi2.toStringAsFixed(0)} pi²)',
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
               ],

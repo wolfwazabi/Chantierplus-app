@@ -391,6 +391,47 @@ service cloud.firestore {
       allow delete: if adminDe(resource.data.companyId);
     }
 
+    // -------------------------------------------------- Commandes de matériaux
+    // Liste d'achat du calcul de charpente, enregistrée pour un chantier :
+    // lignes (tableau), projet (texte JSON pour rouvrir le calcul), statut et
+    // notes. Admin et contremaître les créent, les suivent (brouillon →
+    // commandée → reçue) et les consultent ; les lignes ne changent plus une
+    // fois enregistrées. Un admin supprime n'importe quelle commande, un
+    // contremaître seulement un brouillon.
+
+    function commandeValide(d) {
+      return texte(d.nom, 1, 200)
+        && d.lignes is list && d.lignes.size() >= 1 && d.lignes.size() <= 300
+        && (!d.keys().hasAny(['projet']) || texte(d.projet, 0, 150000))
+        && d.statut in ['brouillon', 'commandee', 'recue']
+        && texteOptionnel(d, 'notes', 2000)
+        && texteOptionnel(d, 'fournisseur', 200);
+    }
+
+    match /chantier_commandes/{commandeId} {
+      allow read: if gestionnaireDe(resource.data.companyId);
+
+      allow create: if gestionnaireDe(request.resource.data.companyId)
+        && champsPermis(request.resource.data,
+             ['companyId', 'chantierId', 'nom', 'lignes', 'projet', 'statut',
+              'notes', 'fournisseur', 'ajoutePar', 'ajouteParNom', 'dateAjout'])
+        && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
+        && commandeValide(request.resource.data)
+        && request.resource.data.statut == 'brouillon'
+        && request.resource.data.ajoutePar == session().employeeId
+        && request.resource.data.ajouteParNom == moi().nom
+        && request.resource.data.dateAjout == request.time;
+
+      allow update: if gestionnaireDe(resource.data.companyId)
+        && champsModifiesPermis(['nom', 'statut', 'notes', 'fournisseur', 'dateCommande'])
+        && commandeValide(request.resource.data)
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['dateCommande'])
+            || request.resource.data.dateCommande == request.time);
+
+      allow delete: if adminDe(resource.data.companyId)
+        || (gestionnaireDe(resource.data.companyId) && resource.data.statut == 'brouillon');
+    }
+
     // ------------------------------------------------ Documents de chantier
     // Plans, devis, photos, etc. Consultés par les admins et contremaîtres ;
     // déposés et supprimés par les admins (dont le super-admin) seulement.

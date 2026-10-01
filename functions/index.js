@@ -23,6 +23,7 @@ const yazl = require("yazl");
 const dossier = require("./src/dossier_chantier");
 const xlsx = require("./src/xlsx");
 const PAGE_CREER_NIP = require("./src/page_creer_nip");
+const assistantCharpente = require("./src/assistant_charpente");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
@@ -979,3 +980,60 @@ exports.validerReinitialisationNip = onCall({secrets: SECRETS_NIP_COURRIEL}, asy
   });
   return {ok: true};
 });
+
+// =============================================================================
+// Assistant de charpente : une description en français devient un projet validé
+// =============================================================================
+
+// Le modèle ne fait que convertir du texte en paramètres ; l'application calcule
+// elle-même le bois. Accès : admin et contremaître. Clé d'API dans Secret Manager
+// (ANTHROPIC_API_KEY), jamais côté client.
+exports.assistantCharpente = onCall(
+    {secrets: [assistantCharpente.ANTHROPIC_API_KEY], timeoutSeconds: 90, memory: "256MiB"},
+    async (request) => {
+      verifierAppCheck(request, "assistantCharpente");
+      const ctx = await contexteEmploye(request);
+      if (!["admin", "plus"].includes(ctx.employe.role)) {
+        throw new HttpsError("permission-denied", "Accès réservé aux admins et aux contremaîtres.");
+      }
+      const description = texte(request.data?.texte, "texte", {min: 5, max: assistantCharpente.MAX_TEXTE});
+
+      // Projet actuel facultatif (pour modifier plutôt que recommencer) : relu et
+      // filtré, jamais transmis tel quel.
+      let projetActuel = null;
+      const brut = request.data?.projetActuel;
+      if (brut !== undefined && brut !== null) {
+        if (typeof brut !== "string" || brut.length > assistantCharpente.MAX_PROJET_ACTUEL) {
+          throw new HttpsError("invalid-argument", "Projet actuel invalide.");
+        }
+        try {
+          projetActuel = JSON.stringify(assistantCharpente.normaliserProjet(JSON.parse(brut)).projet);
+        } catch (e) {
+          projetActuel = null;
+        }
+      }
+
+      // Limites : par employé (20 par heure) et par compagnie (200 par jour).
+      const parHeure = limiteur(`assistant_h_${ctx.employeeId}`, 20, HEURE);
+      const parJour = limiteur(`assistant_j_${ctx.companyId}`, 200, JOUR);
+      await parHeure.verifier();
+      await parJour.verifier();
+      await parHeure.compter();
+      await parJour.compter();
+
+      try {
+        const resultat = await assistantCharpente.interroger({
+          texte: description,
+          projetActuel,
+          cle: assistantCharpente.ANTHROPIC_API_KEY.value(),
+          url: assistantCharpente.URL_API_ANTHROPIC.value(),
+          modele: assistantCharpente.MODELE_ASSISTANT.value(),
+        });
+        logger.info("Assistant charpente", {companyId: ctx.companyId, longueur: description.length});
+        return resultat;
+      } catch (e) {
+        if (e.detailInterne) logger.error("Assistant charpente : échec de l'API", {detail: e.detailInterne});
+        throw e;
+      }
+    },
+);
