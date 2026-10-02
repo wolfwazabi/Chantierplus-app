@@ -60,7 +60,7 @@ describe('Storage — documents de chantier', () => {
     await assertFails(getBytes(ref(st(employe(env, 'uid-empA')), 'chantiers/A/chA/documents/plan.pdf')));
     await assertFails(getBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/documents/plan.pdf')));
     await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/documents/x.pdf'), IMAGE, PDF));
-    await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminA')), 'chantiers/A/chB/documents/x.pdf'), IMAGE, PDF));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminA')), 'chantiers/B/chB/documents/x.pdf'), IMAGE, PDF));
     await assertFails(deleteObject(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/documents/plan.pdf')));
   });
 
@@ -100,10 +100,11 @@ describe('Storage — photos de chantier', () => {
     await assertFails(uploadBytes(ref(st(employe(env, 'uid-plusA')), 'chantiers/A/chA/chantier_extras/x.html'), IMAGE, { contentType: 'text/html' }));
   });
 
-  test('contremaître A : refusé dans la compagnie B ou sur un chantier de B', async () => {
+  test('contremaître A : refusé dans la compagnie B (dépôt, lecture, suppression)', async () => {
     const s = st(employe(env, 'uid-plusA'));
     await assertFails(uploadBytes(ref(s, 'chantiers/B/chB/photos/x.jpg'), IMAGE, JPEG));
-    await assertFails(uploadBytes(ref(s, 'chantiers/A/chB/photos/x.jpg'), IMAGE, JPEG));
+    await assertFails(getBytes(ref(s, 'chantiers/B/chB/photos/secrete.jpg')));
+    await assertFails(deleteObject(ref(s, 'chantiers/B/chB/photos/secrete.jpg')));
   });
 
   test('refusé : type de dossier inconnu, fichier non-image, fichier trop gros', async () => {
@@ -135,10 +136,12 @@ describe('Storage — photos de chantier', () => {
     await assertFails(deleteObject(ref(s, 'chantiers/A/chA/photos/existante.jpg')));
   });
 
-  test('sessions invalides (forgée, employé supprimé, compagnie en attente) → refusé', async () => {
+  // Le statut de la compagnie n'est pas relu ici (limite de 2 documents, voir
+  // storage_limite.unit.test.mjs) : seule une compagnie approuvée ouvre une session.
+  test('sessions invalides (forgée, employé supprimé, aucune session) → refusé', async () => {
     await assertFails(uploadBytes(ref(st(employe(env, 'uid-forge')), 'chantiers/B/chB/photos/f.jpg'), IMAGE, JPEG));
     await assertFails(getBytes(ref(st(employe(env, 'uid-supprime')), 'chantiers/A/chA/photos/existante.jpg')));
-    await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminP')), 'chantiers/P/chP/photos/p.jpg'), IMAGE, JPEG));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-sans-session')), 'chantiers/A/chA/photos/s.jpg'), IMAGE, JPEG));
   });
 
   test('non authentifié ou particulier → refusé ; hors de chantiers/ → refusé', async () => {

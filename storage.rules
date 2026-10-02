@@ -10,9 +10,19 @@ rules_version = '2';
 //   type == documents : plans, devis, etc. Lecture admin et contremaître,
 //          dépôt et suppression par les admins (dont le super-admin).
 //
-// L'appartenance à la compagnie est vérifiée dans Firestore (même modèle que
-// firestore.rules : session écrite par le serveur + employé existant de la
-// compagnie avec le bon rôle + compagnie approuvée + chantier de la compagnie).
+// L'appartenance à la compagnie est vérifiée dans Firestore : session écrite
+// par le serveur + employé existant de la compagnie avec le bon rôle.
+//
+// LIMITE DE FIREBASE : une évaluation de règles Storage peut lire AU PLUS DEUX
+// documents Firestore distincts ; au-delà, l'accès est refusé en production.
+// L'émulateur n'applique PAS cette limite : tout passe aux tests et tout est
+// refusé une fois déployé. D'où les deux seuls documents lus ici
+// (sessions/{uid}, employees/{id}) et le test tests/rules/storage_limite.unit.test.mjs
+// qui échoue si on en ajoute un troisième. Ne sont donc PAS vérifiés ici :
+//  - le statut de la compagnie : seule une compagnie approuvée peut ouvrir une
+//    session (connexionEmploye) et aucune fonction ne retire l'approbation ;
+//  - l'existence du chantier : le chemin est déjà limité à la compagnie de la
+//    session, un chantier inexistant ne donne accès à rien d'une autre compagnie.
 //
 // Note : une URL obtenue par getDownloadURL() contient un jeton d'accès qui
 // contourne ces règles en lecture. Ne jamais exposer ces URL hors compagnie.
@@ -33,8 +43,7 @@ service firebase.storage {
       return s.companyId == companyId
         && firestore.exists(/databases/(default)/documents/employees/$(s.employeeId))
         && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.companyId == companyId
-        && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.role in roles
-        && firestore.get(/databases/(default)/documents/companies/$(companyId)).data.statut == 'approuvee';
+        && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.role in roles;
     }
 
     // Admin ou contremaître.
@@ -44,11 +53,6 @@ service firebase.storage {
 
     function adminDe(companyId) {
       return employeDe(companyId, ['admin']);
-    }
-
-    function chantierDe(chantierId, companyId) {
-      return firestore.exists(/databases/(default)/documents/chantiers/$(chantierId))
-        && firestore.get(/databases/(default)/documents/chantiers/$(chantierId)).data.companyId == companyId;
     }
 
     // ------------------------------------------------ Photos (travaux, matériel)
@@ -63,7 +67,6 @@ service firebase.storage {
       allow create: if resource == null
         && type in ['photos', 'chantier_travaux', 'chantier_materiel', 'chantier_extras']
         && gestionnaireDe(companyId)
-        && chantierDe(chantierId, companyId)
         && request.resource.size > 0
         && request.resource.size < 10 * 1024 * 1024
         && request.resource.contentType.matches('image/(jpeg|png|webp|heic)');
@@ -99,7 +102,6 @@ service firebase.storage {
 
       allow create: if resource == null
         && adminDe(companyId)
-        && chantierDe(chantierId, companyId)
         && extensionPermise(fichier)
         && !typeDangereux(request.resource.contentType)
         && request.resource.size > 0
