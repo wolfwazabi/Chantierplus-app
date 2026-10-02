@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/app_session.dart';
+import '../../services/erreurs_firebase.dart';
 import '../../services/stockage.dart';
 import '../../services/theme_compagnie.dart';
 
@@ -204,9 +205,10 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
       }
       return null;
     } on FirebaseException catch (e) {
-      return e.code == 'unauthorized' || e.code == 'permission-denied'
-          ? 'refusé (droits insuffisants ou format non accepté)'
-          : 'erreur réseau, réessayez';
+      // On dit d'où vient le refus : stockage des fichiers ou base de données.
+      return estRefusFirebase(e)
+          ? 'refusé par le ${sourceErreurFirebase(e)} (${e.code}) : droits insuffisants ou format non accepté'
+          : 'erreur (${detailErreurFirebase(e)}), réessayez';
     } catch (_) {
       return 'erreur inattendue, réessayez';
     }

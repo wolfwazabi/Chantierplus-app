@@ -11,6 +11,7 @@ import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
 import 'materiaux/calcul_chantier.dart';
 import '../widgets/recherche_chantier.dart';
+import '../services/erreurs_firebase.dart';
 import '../services/photos.dart';
 import '../services/stockage.dart';
 import 'extras/extras_tab.dart';
@@ -254,11 +255,13 @@ class _PhotosTabState extends State<_PhotosTab> {
     });
 
     var echecs = 0;
+    String? premiereCause;
     for (int i = 0; i < images.length; i++) {
       try {
         await _uploaderUnePhoto(images[i]);
-      } catch (_) {
+      } catch (e) {
         echecs++;
+        premiereCause ??= detailErreurFirebase(e);
       } finally {
         // La copie temporaire ne reste pas dans le téléphone.
         await Photos.supprimerTemporaire(images[i]);
@@ -273,8 +276,8 @@ class _PhotosTabState extends State<_PhotosTab> {
         SnackBar(
           content: Text(
             echecs == 1
-                ? 'Une photo n\'a pas pu être envoyée. Réessayez.'
-                : '$echecs photos n\'ont pas pu être envoyées. Réessayez.',
+                ? 'Une photo n\'a pas pu être envoyée ($premiereCause). Réessayez.'
+                : '$echecs photos n\'ont pas pu être envoyées ($premiereCause). Réessayez.',
           ),
           backgroundColor: Colors.red,
         ),
