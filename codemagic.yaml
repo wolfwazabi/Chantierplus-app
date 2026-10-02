@@ -38,9 +38,24 @@ workflows:
           xcode-project use-profiles
       - name: Compilation de l'IPA
         script: |
+          #!/usr/bin/env bash
+          set -o pipefail
           BUILD=$(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APPLE_ID") + 1))
-          flutter build ipa --release --build-number="$BUILD" \
-            --export-options-plist=/Users/builder/export_options.plist
+          # Xcode télécharge les dépendances Firebase (Swift Package Manager) chez
+          # Google ; un délai dépassé est passager. On ne recommence que dans ce
+          # cas : une vraie erreur de compilation arrête le build tout de suite.
+          for tentative in 1 2 3; do
+            if flutter build ipa --release --build-number="$BUILD" \
+              --export-options-plist=/Users/builder/export_options.plist 2>&1 | tee build_ipa.log; then
+              exit 0
+            fi
+            if ! grep -qiE "resolve (swift package manager|package) dependencies" build_ipa.log \
+              || [ "$tentative" -eq 3 ]; then
+              exit 1
+            fi
+            echo "Téléchargement des dépendances Swift échoué (essai $tentative sur 3) : nouvel essai dans 30 s."
+            sleep 30
+          done
     artifacts:
       - build/ios/ipa/*.ipa
     publishing:
