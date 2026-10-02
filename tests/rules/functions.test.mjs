@@ -245,6 +245,7 @@ describe('Création d\'employés : courriel de confirmation et lien pour créer 
     assert.ok(lien.texte.includes(`Numéro de compagnie : ${numero}`));
     assert.ok(lien.texte.includes('Courriel : jean@exemple.ca'));
     assert.ok(lien.texte.includes('inscription est confirmée'));
+    assert.ok(lien.texte.includes('Vous recevez ce message parce que'), 'bas de courriel : motif de réception');
     assert.equal(lien.employeeId, jeanId);
     const fiche = (await adminDb.collection('employees').doc(jeanId).get()).data();
     assert.equal(fiche.pinHash, undefined, 'pas de NIP tant que l\'employé ne l\'a pas créé');

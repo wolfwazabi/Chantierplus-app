@@ -8,7 +8,19 @@ const RESEND_API_KEY = defineSecret("RESEND_API_KEY");
 // Adresse d'expédition vérifiée chez Resend, ex. « Boréal <noreply@boreal.ca> ».
 const COURRIEL_EXPEDITEUR = defineString("COURRIEL_EXPEDITEUR", {default: ""});
 
+// Adresse où aboutissent les réponses des destinataires (une vraie boîte, lue
+// par une personne) ; vide : pas d'en-tête « Répondre à ».
+const COURRIEL_REPONSE = defineString("COURRIEL_REPONSE", {default: ""});
+
 const NOM_APP = "Chantier+";
+
+// Bas de courriel : dit pourquoi le message est reçu (les filtres antipourriel
+// et les destinataires s'y fient) et où répondre.
+const MOTIF_RECEPTION =
+  "Vous recevez ce message parce que votre adresse courriel est associée à un compte " +
+  "Chantier+ (inscription, ajout à une équipe ou demande de votre part). " +
+  "Si ce n'est pas le cas, ignorez-le : aucune action n'est requise. " +
+  "Une question ? Répondez simplement à ce courriel.";
 
 function courrielConfigure() {
   const cle = RESEND_API_KEY.value();
@@ -31,11 +43,12 @@ async function envoyerCourriel({a, sujet, lignes}) {
     logger.warn("Courriel non envoyé : Resend non configuré", {sujet});
     return false;
   }
-  const texteBrut = [...lignes, "", `— ${NOM_APP}`].join("\n\n");
+  const texteBrut = [...lignes, "", `— ${NOM_APP}`, MOTIF_RECEPTION].join("\n\n");
   const html = [
     "<div style=\"font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#222\">",
     ...lignes.map((l) => `<p>${echapper(l).replace(/\n/g, "<br>")}</p>`),
     `<p style="color:#777;font-size:13px">— ${NOM_APP}</p>`,
+    `<p style="color:#999;font-size:12px">${echapper(MOTIF_RECEPTION)}</p>`,
     "</div>",
   ].join("");
 
@@ -56,7 +69,14 @@ async function envoyerCourriel({a, sujet, lignes}) {
         "Authorization": `Bearer ${RESEND_API_KEY.value()}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({from: COURRIEL_EXPEDITEUR.value(), to: [a], subject: sujet, text: texteBrut, html}),
+      body: JSON.stringify({
+        from: COURRIEL_EXPEDITEUR.value(),
+        to: [a],
+        subject: sujet,
+        text: texteBrut,
+        html,
+        ...(COURRIEL_REPONSE.value() ? {reply_to: COURRIEL_REPONSE.value()} : {}),
+      }),
       signal: AbortSignal.timeout(10000),
     });
     if (!reponse.ok) {
@@ -70,4 +90,4 @@ async function envoyerCourriel({a, sujet, lignes}) {
   }
 }
 
-module.exports = {RESEND_API_KEY, COURRIEL_EXPEDITEUR, envoyerCourriel, courrielConfigure, NOM_APP};
+module.exports = {RESEND_API_KEY, COURRIEL_EXPEDITEUR, COURRIEL_REPONSE, MOTIF_RECEPTION, envoyerCourriel, courrielConfigure, NOM_APP};
