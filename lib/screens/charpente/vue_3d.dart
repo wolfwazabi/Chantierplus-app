@@ -49,6 +49,8 @@ Color _ombre(Color base, double intensite) => Color.fromARGB(
   (((base.b * 255.0).round()) * intensite).round().clamp(0, 255),
 );
 
+DateTime _maintenant() => DateTime.now();
+
 /// Vue 3D d'une scène : rotation à un doigt, zoom et déplacement à deux
 /// doigts (molette sur ordinateur), couches, cotes, fiche d'une pièce au toucher.
 ///
@@ -69,6 +71,9 @@ class Vue3D extends StatefulWidget {
   final bool interactif;
   final VoidCallback? onTap;
 
+  /// Heure courante (toucher bref, double toucher) ; remplaçable dans les tests.
+  final DateTime Function() horloge;
+
   const Vue3D({
     super.key,
     required this.scene,
@@ -76,6 +81,7 @@ class Vue3D extends StatefulWidget {
     this.hauteur,
     this.interactif = true,
     this.onTap,
+    this.horloge = _maintenant,
   });
 
   @override
@@ -103,14 +109,18 @@ class _Vue3DState extends State<Vue3D> {
   bool _cotes = false;
   String? _groupe;
 
-  // Geste en cours.
+  // Geste en cours. La reconnaissance du pincement (ScaleGestureRecognizer)
+  // termine puis recommence le geste chaque fois que le nombre de doigts change :
+  // le premier doigt d'un pincement ressemble alors à un toucher. Les doigts sont
+  // donc comptés ici, séquence par séquence (du premier doigt posé au dernier levé).
   double _echelleDebut = 1;
   Pt _decalageDebut = const Pt(0, 0);
   Offset _focaleDebut = Offset.zero;
+  final Set<int> _doigts = {};
   Offset _positionDebut = Offset.zero;
   double _deplacement = 0;
   int _maxDoigts = 1;
-  DateTime _heureDebut = DateTime.now();
+  DateTime _heureDebut = DateTime.fromMillisecondsSinceEpoch(0);
   DateTime? _dernierToucher;
 
   // Ordre d'affichage mis en mémoire : il ne dépend que de l'angle de vue et des
@@ -154,14 +164,27 @@ class _Vue3DState extends State<Vue3D> {
         !identical(_sceneAjustee, widget.scene)) {
       final az = c?.azimut ?? -0.6;
       final el = c?.elevation ?? 0.55;
-      c = Camera.pourScene(
+      final ajustee = Camera.pourScene(
         widget.scene,
         taille.width,
         taille.height,
         azimut: az,
         elevation: el,
       );
-      _echelleAjustee = c.echelle;
+      if (c != null &&
+          identical(_sceneAjustee, widget.scene) &&
+          _echelleAjustee > 0) {
+        // Même scène, zone redimensionnée (fiche d'une pièce qui apparaît,
+        // clavier) : le zoom et le déplacement choisis sont conservés.
+        final k = ajustee.echelle / _echelleAjustee;
+        c = ajustee.avec(
+          echelle: c.echelle * k,
+          decalage: Pt(c.decalage.x * k, c.decalage.y * k),
+        );
+      } else {
+        c = ajustee;
+      }
+      _echelleAjustee = ajustee.echelle;
       _taille = taille;
       _sceneAjustee = widget.scene;
       _camera = c;
@@ -226,6 +249,19 @@ class _Vue3DState extends State<Vue3D> {
     setState(() => _groupe = impact?.solide.groupe);
   }
 
+  void _doigtPose(PointerDownEvent e) {
+    if (_doigts.isEmpty) {
+      _positionDebut = e.localPosition;
+      _deplacement = 0;
+      _maxDoigts = 0;
+      _heureDebut = widget.horloge();
+    }
+    _doigts.add(e.pointer);
+    _maxDoigts = math.max(_maxDoigts, _doigts.length);
+  }
+
+  void _doigtLeve(PointerEvent e) => _doigts.remove(e.pointer);
+
   void _debutGeste(ScaleStartDetails d) {
     final c = _camera;
     if (c == null) {
@@ -234,10 +270,6 @@ class _Vue3DState extends State<Vue3D> {
     _echelleDebut = c.echelle;
     _decalageDebut = c.decalage;
     _focaleDebut = d.localFocalPoint;
-    _positionDebut = d.localFocalPoint;
-    _deplacement = 0;
-    _maxDoigts = d.pointerCount;
-    _heureDebut = DateTime.now();
   }
 
   void _majGeste(ScaleUpdateDetails d) {
@@ -245,7 +277,6 @@ class _Vue3DState extends State<Vue3D> {
     if (c == null) {
       return;
     }
-    _maxDoigts = math.max(_maxDoigts, d.pointerCount);
     _deplacement = math.max(
       _deplacement,
       (d.localFocalPoint - _positionDebut).distance,
@@ -282,11 +313,15 @@ class _Vue3DState extends State<Vue3D> {
   }
 
   /// Un doigt posé puis levé sans bouger : toucher (pièce) ; deux touchers
-  /// rapprochés : retour à la vue de départ.
+  /// rapprochés : retour à la vue de départ. Un pincement, ou un geste qui
+  /// continue avec les doigts restants, n'est jamais un toucher.
   void _finGeste(ScaleEndDetails d) {
-    final bref = DateTime.now().difference(_heureDebut).inMilliseconds < 500;
+    if (_doigts.isNotEmpty) {
+      return;
+    }
+    final bref = widget.horloge().difference(_heureDebut).inMilliseconds < 500;
     if (_maxDoigts == 1 && _deplacement < 10 && bref) {
-      final maintenant = DateTime.now();
+      final maintenant = widget.horloge();
       final dernier = _dernierToucher;
       if (dernier != null &&
           maintenant.difference(dernier).inMilliseconds < 350) {
@@ -359,29 +394,67 @@ class _Vue3DState extends State<Vue3D> {
             ),
           );
         }
+        final centre = Offset(taille.width / 2, taille.height / 2);
         return ClipRect(
-          child: Listener(
-            onPointerSignal: (e) {
-              if (e is PointerScrollEvent) {
-                _zoomer(math.exp(-e.scrollDelta.dy / 400), e.localPosition);
-              }
-            },
-            child: RawGestureDetector(
-              behavior: HitTestBehavior.opaque,
-              gestures: {
-                _GesteImmediat:
-                    GestureRecognizerFactoryWithHandlers<_GesteImmediat>(
-                      _GesteImmediat.new,
-                      (r) {
-                        r
-                          ..onStart = _debutGeste
-                          ..onUpdate = _majGeste
-                          ..onEnd = _finGeste;
-                      },
-                    ),
-              },
-              child: peinture,
-            ),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: Listener(
+                  onPointerDown: _doigtPose,
+                  onPointerUp: _doigtLeve,
+                  onPointerCancel: _doigtLeve,
+                  onPointerSignal: (e) {
+                    if (e is PointerScrollEvent) {
+                      _zoomer(
+                        math.exp(-e.scrollDelta.dy / 400),
+                        e.localPosition,
+                      );
+                    }
+                  },
+                  child: RawGestureDetector(
+                    key: const ValueKey('vue3d_zone'),
+                    behavior: HitTestBehavior.opaque,
+                    gestures: {
+                      _GesteImmediat:
+                          GestureRecognizerFactoryWithHandlers<_GesteImmediat>(
+                            _GesteImmediat.new,
+                            (r) {
+                              r
+                                ..onStart = _debutGeste
+                                ..onUpdate = _majGeste
+                                ..onEnd = _finGeste;
+                            },
+                          ),
+                    },
+                    child: peinture,
+                  ),
+                ),
+              ),
+              // Zoom au bouton : plus simple que le pincement d'une seule main.
+              if (widget.controles)
+                Positioned(
+                  right: 8,
+                  bottom: 8,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton.filledTonal(
+                        key: const ValueKey('zoom_plus'),
+                        tooltip: 'Zoom avant',
+                        icon: const Icon(Icons.add),
+                        onPressed: () => _zoomer(1.4, centre),
+                      ),
+                      const SizedBox(height: 6),
+                      IconButton.filledTonal(
+                        key: const ValueKey('zoom_moins'),
+                        tooltip: 'Zoom arrière',
+                        icon: const Icon(Icons.remove),
+                        onPressed: () => _zoomer(1 / 1.4, centre),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
           ),
         );
       },
@@ -501,8 +574,8 @@ class _Vue3DState extends State<Vue3D> {
         else
           Text(
             'Touchez une pièce pour voir sa mesure et sa coupe. Un doigt : '
-            'tourner ; deux doigts : zoom et déplacement ; double toucher : '
-            'vue de départ.',
+            'tourner ; deux doigts (ou boutons + et −) : zoom et déplacement ; '
+            'double toucher : vue de départ.',
             style: Theme.of(context).textTheme.bodySmall,
           ),
       ],
