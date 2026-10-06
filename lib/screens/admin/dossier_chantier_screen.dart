@@ -6,8 +6,11 @@ import '../../models/chantier.dart';
 import '../../models/extra_chantier.dart';
 import '../../models/resume_chantier.dart';
 import '../../services/app_session.dart';
+import '../../services/fichiers_chantier.dart';
 import '../../services/fonctions.dart';
 import '../../services/theme_compagnie.dart';
+import '../../widgets/confirmer_action.dart';
+import 'grille_photos_dossier.dart';
 import 'resume_heures_carte.dart';
 
 /// Dossier d'un chantier pour l'admin : résumé des heures, extras, matériel et
@@ -26,11 +29,56 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
   String? _erreur;
   bool _chargement = true;
   bool _exportEnCours = false;
+  late bool _archive = widget.chantier.archive;
+  bool _archivageEnCours = false;
 
   @override
   void initState() {
     super.initState();
     _charger();
+  }
+
+  /// Archive le chantier (après confirmation) ou le restaure. Rien n'est
+  /// supprimé : photos, documents et heures restent dans le dossier.
+  Future<void> _basculerArchive() async {
+    final archiver = !_archive;
+    final messager = ScaffoldMessenger.of(context);
+    if (archiver) {
+      final ok = await confirmerAction(
+        context,
+        titre: 'Archiver ce chantier ?',
+        texte:
+            '${widget.chantier.nom} ne sera plus proposé dans les feuilles de '
+            'temps, les photos et les documents. Rien n\'est supprimé : vous '
+            'pouvez le restaurer à tout moment.',
+        action: 'Archiver',
+        destructive: false,
+      );
+      if (!ok || !mounted) return;
+    }
+    setState(() => _archivageEnCours = true);
+    try {
+      await FirebaseFirestore.instance
+          .collection('chantiers')
+          .doc(widget.chantier.id)
+          .update({'archive': archiver});
+      if (!mounted) return;
+      setState(() => _archive = archiver);
+      messager.showSnackBar(
+        SnackBar(
+          content: Text(archiver ? 'Chantier archivé.' : 'Chantier restauré.'),
+        ),
+      );
+    } catch (_) {
+      messager.showSnackBar(
+        const SnackBar(
+          content: Text('Impossible de modifier le chantier. Réessayez.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _archivageEnCours = false);
+    }
   }
 
   Future<void> _charger() async {
@@ -151,7 +199,7 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                if (c.archive)
+                if (_archive)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
@@ -196,12 +244,28 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                   ),
                 ),
                 const Padding(
-                  padding: EdgeInsets.only(top: 6, bottom: 12),
+                  padding: EdgeInsets.only(top: 6, bottom: 8),
                   child: Text(
                     'Résumé des heures, extras, matériel et photos, à garder sur l\'ordinateur de la compagnie.',
                     style: TextStyle(fontSize: 12, color: Colors.black54),
                   ),
                 ),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    key: const ValueKey('dossier_archiver'),
+                    onPressed: _archivageEnCours ? null : _basculerArchive,
+                    icon: Icon(
+                      _archive
+                          ? Icons.unarchive_outlined
+                          : Icons.inventory_2_outlined,
+                    ),
+                    label: Text(
+                      _archive ? 'Restaurer le chantier' : 'Archiver le chantier',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 if (_chargement)
                   const Padding(
                     padding: EdgeInsets.all(24),
@@ -431,6 +495,38 @@ class _SectionDocuments extends StatelessWidget {
   final String chantierId;
   const _SectionDocuments({required this.companyId, required this.chantierId});
 
+  Future<void> _supprimer(
+    BuildContext context,
+    String docId,
+    Map<String, dynamic> data,
+  ) async {
+    final messager = ScaffoldMessenger.of(context);
+    final ok = await confirmerAction(
+      context,
+      titre: 'Supprimer ce document ?',
+      texte:
+          '« ${data['nom']} » sera supprimé définitivement pour tous. '
+          'Cette action est irréversible.',
+      action: 'Supprimer',
+    );
+    if (!ok) return;
+    final resultat = await supprimerElementsChantier('chantier_documents', [
+      ElementChantier(docId, data['cheminStorage'] as String?),
+    ]);
+    messager.showSnackBar(
+      SnackBar(
+        content: Text(
+          messageSuppression(
+            resultat,
+            singulier: 'document supprimé',
+            pluriel: 'documents supprimés',
+          ),
+        ),
+        backgroundColor: resultat.toutSupprime ? null : Colors.red,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -455,6 +551,12 @@ class _SectionDocuments extends StatelessWidget {
                     formatTaille(((d.data()['taille'] ?? 0) as num).toInt()),
                     style: const TextStyle(fontSize: 12),
                   ),
+                  trailing: IconButton(
+                    key: ValueKey('supprimer_document_${d.id}'),
+                    tooltip: 'Supprimer',
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () => _supprimer(context, d.id, d.data()),
+                  ),
                 ),
               ),
           ],
@@ -469,6 +571,29 @@ class _SectionPhotos extends StatelessWidget {
   final String chantierId;
   const _SectionPhotos({required this.companyId, required this.chantierId});
 
+  Future<void> _supprimer(
+    BuildContext context,
+    List<PhotoDossier> photos,
+  ) async {
+    final messager = ScaffoldMessenger.of(context);
+    final resultat = await supprimerElementsChantier(
+      'chantier_photos',
+      photos.map((p) => p.element),
+    );
+    messager.showSnackBar(
+      SnackBar(
+        content: Text(
+          messageSuppression(
+            resultat,
+            singulier: 'photo supprimée',
+            pluriel: 'photos supprimées',
+          ),
+        ),
+        backgroundColor: resultat.toutSupprime ? null : Colors.red,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
@@ -482,30 +607,16 @@ class _SectionPhotos extends StatelessWidget {
             _titreSection('Photos', snap.hasData ? docs.length : null),
             if (snap.hasData && docs.isEmpty) _vide('Aucune photo.'),
             if (docs.isNotEmpty)
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 4,
-                  crossAxisSpacing: 6,
-                  mainAxisSpacing: 6,
-                ),
-                itemCount: docs.length,
-                itemBuilder: (context, i) {
-                  final url = (docs[i].data()['url'] ?? '').toString();
-                  return GestureDetector(
-                    onTap: () => _voirPhoto(context, url),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(6),
-                      child: Image.network(
-                        url,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) =>
-                            const Icon(Icons.broken_image_outlined),
-                      ),
+              GrillePhotosDossier(
+                photos: [
+                  for (final d in docs)
+                    PhotoDossier(
+                      d.id,
+                      (d.data()['url'] ?? '').toString(),
+                      d.data()['cheminStorage'] as String?,
                     ),
-                  );
-                },
+                ],
+                onSupprimer: (photos) => _supprimer(context, photos),
               ),
             const SizedBox(height: 24),
           ],

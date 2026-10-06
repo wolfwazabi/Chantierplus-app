@@ -12,7 +12,9 @@ import 'documents/documents_chantier.dart';
 import 'materiaux/calcul_chantier.dart';
 import '../widgets/recherche_chantier.dart';
 import '../services/erreurs_firebase.dart';
+import '../services/fichiers_chantier.dart';
 import '../services/photos.dart';
+import 'admin/grille_photos_dossier.dart';
 import '../services/stockage.dart';
 import 'extras/extras_tab.dart';
 import '../services/theme_compagnie.dart';
@@ -304,14 +306,26 @@ class _PhotosTabState extends State<_PhotosTab> {
     });
   }
 
-  Future<void> _supprimerPhoto(String docId, String cheminStorage) async {
-    await FirebaseFirestore.instance
-        .collection('chantier_photos')
-        .doc(docId)
-        .delete();
-    try {
-      await Stockage.instance.ref().child(cheminStorage).delete();
-    } catch (_) {}
+  /// Supprime les photos choisies (déjà confirmées) : fichier du Storage puis
+  /// fiche, et dit à l'utilisateur ce qui a réussi.
+  Future<void> _supprimer(List<PhotoDossier> photos) async {
+    final messager = ScaffoldMessenger.of(context);
+    final resultat = await supprimerElementsChantier(
+      'chantier_photos',
+      photos.map((p) => p.element),
+    );
+    messager.showSnackBar(
+      SnackBar(
+        content: Text(
+          messageSuppression(
+            resultat,
+            singulier: 'photo supprimée',
+            pluriel: 'photos supprimées',
+          ),
+        ),
+        backgroundColor: resultat.toutSupprime ? null : Colors.red,
+      ),
+    );
   }
 
   @override
@@ -382,58 +396,34 @@ class _PhotosTabState extends State<_PhotosTab> {
                   child: Text('Aucune photo pour ce chantier.'),
                 );
               }
-              return GridView.builder(
+              // Admin et contremaître (les règles Firestore et Storage les
+              // autorisent) : « Sélectionner » ou appui long, ou la photo
+              // agrandie, pour supprimer une ou plusieurs photos.
+              return ListView(
                 padding: const EdgeInsets.all(12),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 6,
-                  mainAxisSpacing: 6,
-                ),
-                itemCount: docs.length,
-                itemBuilder: (context, index) {
-                  final doc = docs[index];
-                  final data = doc.data() as Map<String, dynamic>;
-                  return GestureDetector(
-                    onLongPress: widget.connecte
-                        ? () => _confirmerSuppression(
-                            doc.id,
-                            data['cheminStorage'],
-                          )
-                        : null,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(8),
-                      child: Image.network(data['url'], fit: BoxFit.cover),
-                    ),
-                  );
-                },
+                children: [
+                  GrillePhotosDossier(
+                    key: const ValueKey('photos_grille'),
+                    colonnes: 3,
+                    peutSupprimer: widget.connecte && AppSession.estPlusOuAdmin,
+                    photos: [
+                      for (final d in docs)
+                        PhotoDossier(
+                          d.id,
+                          ((d.data() as Map<String, dynamic>)['url'] ?? '')
+                              .toString(),
+                          (d.data() as Map<String, dynamic>)['cheminStorage']
+                              as String?,
+                        ),
+                    ],
+                    onSupprimer: _supprimer,
+                  ),
+                ],
               );
             },
           ),
         ),
       ],
-    );
-  }
-
-  void _confirmerSuppression(String docId, String cheminStorage) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Supprimer la photo ?'),
-        content: const Text('Cette action est irréversible.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _supprimerPhoto(docId, cheminStorage);
-            },
-            child: const Text('Supprimer', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
     );
   }
 }
