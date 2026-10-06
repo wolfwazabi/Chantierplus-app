@@ -24,6 +24,7 @@ const dossier = require("./src/dossier_chantier");
 const xlsx = require("./src/xlsx");
 const PAGE_CREER_NIP = require("./src/page_creer_nip");
 const assistantCharpente = require("./src/assistant_charpente");
+const suppression = require("./src/suppression_compagnie");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
@@ -217,6 +218,28 @@ exports.approuverCompagnie = onCall({secrets: [RESEND_API_KEY]}, async (request)
     });
   }
   return {ok: true};
+});
+
+/**
+ * Supprime définitivement une compagnie et tout ce qu'elle contient (employés,
+ * admins, contremaîtres, chantiers, photos, documents, feuilles de temps,
+ * commandes, fichiers). Réservé au Proprio de l'application, qui doit envoyer le
+ * numéro exact de la compagnie ; la sienne est protégée. Peut être rappelée si
+ * elle s'interrompt : elle reprend où elle s'était arrêtée.
+ */
+exports.supprimerCompagnie = onCall({timeoutSeconds: 540, memory: "512MiB"}, async (request) => {
+  verifierAppCheck(request, "supprimerCompagnie");
+  const ctx = await contexteProprioApp(request);
+  const companyId = texte(request.data?.companyId, "companyId", {max: 128});
+  const numeroConfirme = texte(request.data?.confirmationNumero, "numéro de confirmation", {max: 10});
+
+  const compagnie = await suppression.verrouiller({db, FieldValue, companyId, numeroConfirme, ctx});
+  const bucket = getStorage().bucket(BUCKET_STOCKAGE);
+  const supprime = await suppression.effacerDonnees({db, bucket, FieldValue, compagnie, ctx});
+  logger.warn("Compagnie supprimée", {
+    companyId, numero: compagnie.numero, par: ctx.employeeId, supprime,
+  });
+  return {ok: true, supprime};
 });
 
 // =============================================================================

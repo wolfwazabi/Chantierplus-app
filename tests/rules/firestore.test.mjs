@@ -76,6 +76,17 @@ describe('Sessions', () => {
     await assertFails(getDoc(doc(ctxDe('uid-adminP'), 'companies/P')));
   });
 
+  test('compagnie en cours de suppression → plus aucun accès, même pour ses admins', async () => {
+    await assertSucceeds(getDocs(query(collection(ctxDe('uid-adminA'), 'chantiers'), where('companyId', '==', 'A'))));
+    await env.withSecurityRulesDisabled(async (ctx) => {
+      await updateDoc(doc(db(ctx), 'companies/A'), { statut: 'suppression' });
+    });
+    for (const uid of ['uid-adminA', 'uid-superA', 'uid-plusA', 'uid-empA']) {
+      await assertFails(getDocs(query(collection(ctxDe(uid), 'chantiers'), where('companyId', '==', 'A'))));
+      await assertFails(getDoc(doc(ctxDe(uid), 'companies/A')));
+    }
+  });
+
   test('compte courriel (particulier) avec une session → ignorée', async () => {
     await env.withSecurityRulesDisabled((c) =>
       setDoc(doc(c.firestore(), 'sessions/uid-ind'), { employeeId: 'adminA', companyId: 'A' }));
@@ -706,7 +717,8 @@ describe('Collections serveur uniquement', () => {
     for (const uid of ['uid-adminA', 'uid-superA']) {
       const d = ctxDe(uid);
       for (const chemin of ['compteurs/companies', 'limites_connexion/x', 'companies_prive/A',
-        'reinitialisations_nip/empA', 'invitations_nip/empA', 'config/securite']) {
+        'reinitialisations_nip/empA', 'invitations_nip/empA', 'config/securite',
+        'journal_suppressions/A']) {
         await assertFails(getDoc(doc(d, chemin)));
         await assertFails(setDoc(doc(d, chemin), { a: 1 }));
       }

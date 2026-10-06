@@ -172,6 +172,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // Trace des compagnies supprimées (numéro, nom, date, décompte) : serveur seulement.
+    match /journal_suppressions/{doc=**} {
+      allow read, write: if false;
+    }
+
     // ----------------------------------------------------------------- Sessions
 
     match /sessions/{uid} {

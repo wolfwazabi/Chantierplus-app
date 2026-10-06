@@ -1097,3 +1097,204 @@ describe('Limites anti-force brute', () => {
     await rejette(e.appeler('changerNip', { nipActuel: '123456', nouveauNip: '654321' }), 'resource-exhausted');
   });
 });
+
+// =============================================================================
+describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
+  const PIN = '482915'; const BUCKET = 'chantierplus-mtl';
+  const CIBLE = 'sup-cible'; const TEMOIN = 'sup-temoin';
+  const NUM_CIBLE = '770001'; const NUM_TEMOIN = '770002';
+  const bucket = () => getAdminStorage(adminApp).bucket(BUCKET);
+  const COLLECTIONS = ['chantiers', 'chantier_photos', 'chantier_travaux', 'chantier_materiel',
+    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'feuilles_temps'];
+
+  const existe = async (chemin) => (await adminDb.doc(chemin).get()).exists;
+  const compter = async (collection, cid) =>
+    (await adminDb.collection(collection).where('companyId', '==', cid).get()).size;
+  const fichiers = async (prefixe) => (await bucket().getFiles({ prefix: prefixe }))[0].length;
+  const limitesDe = async (cid) =>
+    (await adminDb.collection('limites_connexion').get()).docs.filter((d) => d.id.includes(cid)).length;
+
+  /** Une compagnie complète : employés de chaque rôle, données, fichiers, accès. */
+  async function semerCompagnie(cid, numero, nom, statut = 'approuvee') {
+    await adminDb.collection('companies').doc(cid).set({ numero, nomEntreprise: nom, statut });
+    await adminDb.collection('companies_prive').doc(cid).set({ emailAdmin: `admin@${cid}.ca`, proprietaireId: `${cid}-admin` });
+    const roles = [['admin', 'admin', true], ['plus', 'plus', false], ['emp', 'employe', false]];
+    for (const [suffixe, role, estProprietaire] of roles) {
+      await adminDb.collection('employees').doc(`${cid}-${suffixe}`).set({
+        companyId: cid, nom: `${nom} ${suffixe}`, courriel: `${suffixe}@${cid}.ca`, role, estProprietaire,
+        pinHash: hacher(cid, PIN),
+      });
+      await adminDb.collection('reinitialisations_nip').doc(`${cid}-${suffixe}`).set({ code: 'x' });
+      await adminDb.collection('invitations_nip').doc(`${cid}-${suffixe}`).set({ jeton: 'x' });
+    }
+    for (const c of COLLECTIONS) {
+      for (let i = 0; i < 3; i++) await adminDb.collection(c).doc(`${cid}-${c}-${i}`).set({ companyId: cid, chantierId: `${cid}-ch` });
+    }
+    const deposer = (chemin) => bucket().file(chemin).save(Buffer.from('x'), { contentType: 'image/jpeg' });
+    await deposer(`chantiers/${cid}/${cid}-ch/photos/1.jpg`);
+    await deposer(`chantiers/${cid}/${cid}-ch/photos/2.jpg`);
+    await deposer(`chantiers/${cid}/${cid}-ch/documents/plan.pdf`);
+    await deposer(`exports/${cid}/2026-10-01_ch.zip`);
+  }
+
+  // Compteurs anti-abus : semés juste avant l'appel (le beforeEach global les vide).
+  async function semerLimites(cid) {
+    for (const suffixe of ['admin', 'plus', 'emp']) {
+      for (const p of ['feuille', 'export', 'nip', 'assistant_h']) {
+        await adminDb.collection('limites_connexion').doc(`${p}_${cid}-${suffixe}`).set({ compte: 1 });
+      }
+    }
+    await adminDb.collection('limites_connexion').doc(`co_${cid}`).set({ compte: 1 });
+    await adminDb.collection('limites_connexion').doc(`assistant_j_${cid}`).set({ compte: 1 });
+    assert.equal(await limitesDe(cid), 3 * 4 + 2);
+  }
+
+  const etatIntact = async (cid) => {
+    assert.equal((await adminDb.collection('companies').doc(cid).get()).data().statut, 'approuvee');
+    assert.equal(await compter('employees', cid), 3);
+    for (const c of COLLECTIONS) assert.equal(await compter(c, cid), 3, c);
+    assert.equal(await fichiers(`chantiers/${cid}/`), 3);
+    assert.equal(await fichiers(`exports/${cid}/`), 1);
+    assert.ok(await existe(`companies_prive/${cid}`));
+    for (const suffixe of ['admin', 'plus', 'emp']) {
+      for (const coll of ['reinitialisations_nip', 'invitations_nip']) assert.ok(await existe(`${coll}/${cid}-${suffixe}`));
+    }
+  };
+
+  let proprio;
+  before(async () => {
+    await semerCompagnie(CIBLE, NUM_CIBLE, 'Cible');
+    await semerCompagnie(TEMOIN, NUM_TEMOIN, 'Témoin');
+  });
+  beforeEach(async () => { proprio = await connecter(numeroS, 'proprio-app@exemple.ca', '246810'); });
+
+  test('seul le Proprio : super-admin, contremaître et employé de la compagnie visée sont refusés', async () => {
+    for (const courriel of ['admin', 'plus', 'emp']) {
+      const u = await connecter(NUM_CIBLE, `${courriel}@${CIBLE}.ca`, PIN);
+      await rejette(u.appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: NUM_CIBLE }), 'permission-denied');
+      await rejette(u.appeler('supprimerCompagnie', { companyId: TEMOIN, confirmationNumero: NUM_TEMOIN }), 'permission-denied');
+    }
+    // Appareil sans session de compagnie (compte anonyme seulement).
+    await rejette((await appareil()).appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: NUM_CIBLE }), 'permission-denied');
+    await etatIntact(CIBLE);
+    await etatIntact(TEMOIN);
+  });
+
+  test('double vérification : numéro manquant, faux ou celui d\'une autre compagnie → rien n\'est modifié', async () => {
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: CIBLE }), 'invalid-argument');
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: '' }), 'invalid-argument');
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: '123456' }), 'invalid-argument');
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: NUM_TEMOIN }), 'invalid-argument');
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: NUM_CIBLE.slice(0, 5) }), 'invalid-argument');
+    await etatIntact(CIBLE);
+    await etatIntact(TEMOIN);
+  });
+
+  test('compagnie inconnue ou identifiant forgé → refusé', async () => {
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: 'inexistante', confirmationNumero: NUM_CIBLE }), 'not-found');
+    for (const id of ['../chantiers', 'a/b', 'sup-cible/', '*', 'x y']) {
+      await rejette(proprio.appeler('supprimerCompagnie', { companyId: id, confirmationNumero: NUM_CIBLE }), 'invalid-argument');
+    }
+    await etatIntact(CIBLE);
+  });
+
+  test('la compagnie du Proprio ne peut pas être supprimée', async () => {
+    const comp = (await adminDb.collection('companies').where('numero', '==', numeroS).get()).docs[0];
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: comp.id, confirmationNumero: numeroS }), 'failed-precondition');
+    assert.equal((await comp.ref.get()).data().statut, 'approuvee');
+    assert.equal((await adminDb.collection('employees').where('companyId', '==', comp.id).get()).empty, false);
+    assert.equal((await adminDb.collection('config').doc('proprio_app').get()).exists, true);
+  });
+
+  test('suppression : tout disparaît, la compagnie témoin reste intacte, un journal sans donnée personnelle est écrit', async () => {
+    const admin = await connecter(NUM_CIBLE, `admin@${CIBLE}.ca`, PIN);
+    await connecter(NUM_CIBLE, `emp@${CIBLE}.ca`, PIN);
+    await connecter(NUM_TEMOIN, `admin@${TEMOIN}.ca`, PIN);
+    const sessionsCible = await compter('sessions', CIBLE);
+    const sessionsTemoin = await compter('sessions', TEMOIN);
+    assert.ok(sessionsCible >= 2 && sessionsTemoin >= 1);
+    await semerLimites(CIBLE);
+    await semerLimites(TEMOIN);
+
+    const r = await proprio.appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: NUM_CIBLE });
+    assert.equal(r.ok, true);
+    assert.equal(r.supprime.employes, 3);
+    assert.equal(r.supprime.sessions, sessionsCible);
+    assert.equal(r.supprime.fichiers, 4);
+    for (const c of COLLECTIONS) assert.equal(r.supprime[c], 3, c);
+
+    // Plus rien de la compagnie visée.
+    assert.equal(await existe(`companies/${CIBLE}`), false);
+    assert.equal(await existe(`companies_prive/${CIBLE}`), false);
+    for (const c of ['employees', 'sessions', ...COLLECTIONS]) assert.equal(await compter(c, CIBLE), 0, c);
+    assert.equal(await fichiers(`chantiers/${CIBLE}/`), 0);
+    assert.equal(await fichiers(`exports/${CIBLE}/`), 0);
+    for (const suffixe of ['admin', 'plus', 'emp']) {
+      for (const coll of ['reinitialisations_nip', 'invitations_nip']) assert.equal(await existe(`${coll}/${CIBLE}-${suffixe}`), false);
+    }
+    assert.equal(await limitesDe(CIBLE), 0);
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM_CIBLE, courriel: `admin@${CIBLE}.ca`, pin: PIN }), 'not-found');
+    await assert.rejects(getDoc(doc(admin.db, 'companies', CIBLE)));
+
+    // La compagnie témoin et celle du Proprio n'ont pas bougé.
+    await etatIntact(TEMOIN);
+    assert.equal(await compter('sessions', TEMOIN), sessionsTemoin);
+    assert.equal(await limitesDe(TEMOIN), 3 * 4 + 2);
+    assert.equal(await existe('config/proprio_app'), true);
+    assert.equal((await adminDb.collection('companies').where('numero', '==', numeroS).get()).size, 1);
+
+    // Journal : numéro, nom, décompte ; aucun courriel ni nom d'employé.
+    const journal = (await adminDb.collection('journal_suppressions').doc(CIBLE).get()).data();
+    assert.equal(journal.numero, NUM_CIBLE);
+    assert.equal(journal.nomEntreprise, 'Cible');
+    assert.equal(journal.statutAvant, 'approuvee');
+    assert.equal(journal.parEmployeeId, proprio.profil.id);
+    assert.equal(journal.compteurs.employes, 3);
+    assert.doesNotMatch(JSON.stringify(journal), /@|Cible admin|Cible plus/);
+  });
+
+  test('un deuxième appel sur une compagnie déjà supprimée → introuvable', async () => {
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: CIBLE, confirmationNumero: NUM_CIBLE }), 'not-found');
+  });
+
+  test('suppression interrompue : la compagnie est verrouillée, puis un nouvel appel la termine', async () => {
+    const ID = 'sup-reprise'; const NUM = '770003';
+    await semerCompagnie(ID, NUM, 'Reprise', 'refusee');
+    await semerLimites(ID);
+    // État laissé par une suppression coupée après les fichiers et les photos : compagnie
+    // verrouillée, employés et le reste des données encore là.
+    await adminDb.collection('companies').doc(ID).update({ statut: 'suppression', statutAvant: 'refusee' });
+    await bucket().deleteFiles({ prefix: `chantiers/${ID}/` });
+    for (const d of (await adminDb.collection('chantier_photos').where('companyId', '==', ID).get()).docs) await d.ref.delete();
+
+    // Verrouillée : aucune connexion possible avant la fin.
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: `admin@${ID}.ca`, pin: PIN }), 'not-found');
+    // Le mauvais numéro est toujours refusé, même en reprise.
+    await rejette(proprio.appeler('supprimerCompagnie', { companyId: ID, confirmationNumero: NUM_TEMOIN }), 'invalid-argument');
+    assert.equal(await existe(`companies/${ID}`), true);
+
+    const r = await proprio.appeler('supprimerCompagnie', { companyId: ID, confirmationNumero: NUM });
+    assert.equal(r.supprime.employes, 3);
+    assert.equal(r.supprime.chantier_photos, 0);
+    assert.equal(r.supprime.chantiers, 3);
+    assert.equal(r.supprime.fichiers, 1); // l'export ; les fichiers de chantiers/ étaient déjà partis
+    assert.equal(await existe(`companies/${ID}`), false);
+    for (const c of ['employees', ...COLLECTIONS]) assert.equal(await compter(c, ID), 0, c);
+    assert.equal(await fichiers(`chantiers/${ID}/`), 0);
+    assert.equal(await fichiers(`exports/${ID}/`), 0);
+    assert.equal(await limitesDe(ID), 0);
+    assert.equal((await adminDb.collection('journal_suppressions').doc(ID).get()).data().statutAvant, 'refusee');
+    await etatIntact(TEMOIN);
+  });
+
+  test('une compagnie en attente peut aussi être supprimée', async () => {
+    const ID = 'sup-attente'; const NUM = '770004';
+    await semerCompagnie(ID, NUM, 'Attente', 'attente');
+    const r = await proprio.appeler('supprimerCompagnie', { companyId: ID, confirmationNumero: NUM });
+    assert.equal(r.ok, true);
+    assert.equal(await existe(`companies/${ID}`), false);
+    assert.equal((await adminDb.collection('journal_suppressions').doc(ID).get()).data().statutAvant, 'attente');
+  });
+});

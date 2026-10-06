@@ -1,10 +1,79 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import '../../services/app_session.dart';
 import '../../services/fonctions.dart';
+import 'confirmation_suppression_compagnie.dart';
 
 class CompagniesAttenteScreen extends StatelessWidget {
   const CompagniesAttenteScreen({super.key});
+
+  /// Supprime la compagnie, ses employés et toutes ses données, après la double
+  /// vérification (lecture des conséquences, puis saisie du numéro). Le serveur
+  /// revérifie le numéro et protège la compagnie du Proprio. Si elle s'interrompt,
+  /// relancer la suppression la termine.
+  Future<void> _supprimer(
+    BuildContext context,
+    String companyId,
+    Map<String, dynamic> data,
+  ) async {
+    final messager = ScaffoldMessenger.of(context);
+    final navigateur = Navigator.of(context, rootNavigator: true);
+    final numero = '${data['numero'] ?? ''}';
+    final nom = '${data['nomEntreprise'] ?? ''}';
+    final ok = await confirmerSuppressionCompagnie(
+      context,
+      nom: nom,
+      numero: numero,
+    );
+    if (!ok || !context.mounted) return;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  'Suppression en cours…\nNe fermez pas l\'application.',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    try {
+      await Fonctions.appelerAvecDelai('supprimerCompagnie', {
+        'companyId': companyId,
+        'confirmationNumero': numero,
+      }, const Duration(minutes: 9));
+      navigateur.pop();
+      messager.showSnackBar(
+        SnackBar(content: Text('Compagnie « $nom » supprimée.')),
+      );
+    } catch (e) {
+      navigateur.pop();
+      messager.showSnackBar(
+        SnackBar(
+          content: Text(
+            Fonctions.message(
+              e,
+              'La suppression a échoué. Relancez-la : elle reprend là où '
+              'elle s\'est arrêtée.',
+            ),
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 8),
+        ),
+      );
+    }
+  }
 
   Future<void> _repondre(
     BuildContext context,
@@ -77,6 +146,10 @@ class CompagniesAttenteScreen extends StatelessWidget {
                 case 'refusee':
                   couleur = Colors.red;
                   libelle = 'Refusée';
+                  break;
+                case 'suppression':
+                  couleur = Colors.grey;
+                  libelle = 'Suppression en cours';
                   break;
                 default:
                   couleur = Colors.orange;
@@ -161,6 +234,25 @@ class CompagniesAttenteScreen extends StatelessWidget {
                           ],
                         ),
                       ],
+                      // La compagnie du Proprio ne se supprime pas (le serveur
+                      // le refuse aussi) ; les autres, quel que soit leur statut.
+                      if (doc.id != AppSession.current?.companyId)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton.icon(
+                            key: ValueKey('supprimer_compagnie_${doc.id}'),
+                            onPressed: () => _supprimer(context, doc.id, data),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.red,
+                            ),
+                            icon: const Icon(Icons.delete_outline, size: 18),
+                            label: Text(
+                              statut == 'suppression'
+                                  ? 'Reprendre la suppression'
+                                  : 'Supprimer la compagnie',
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                 ),
