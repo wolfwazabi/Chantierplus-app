@@ -2,10 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../charpente/assistant_charpente.dart';
 import '../charpente/charpente_screen.dart';
+import '../charpente/ecran_escalier.dart';
 import 'calcul_materiaux.dart';
 
-/// Onglet « Calcul » d'un chantier : calcul de feuilles (simple) et calcul de
-/// charpente (plancher, murs, vue 3D, commande).
+/// Onglet « Calcul » d'un chantier : calcul de feuilles (simple), calcul de
+/// charpente (plancher, murs, vue 3D, commande) et calcul des limons d'escalier.
 class CalculChantier extends StatefulWidget {
   final String companyId;
   final String chantierId;
@@ -60,6 +61,11 @@ class _CalculChantierState extends State<CalculChantier>
                 icon: Icon(Icons.architecture),
                 label: Text('Charpente'),
               ),
+              ButtonSegment(
+                value: 2,
+                icon: Icon(Icons.stairs_outlined),
+                label: Text('Escalier'),
+              ),
             ],
             selected: {_mode},
             onSelectionChanged: (s) => setState(() => _mode = s.first),
@@ -77,6 +83,7 @@ class _CalculChantierState extends State<CalculChantier>
                 listeEnregistrees: widget.listeEnregistrees,
                 appelAssistant: widget.appelAssistant,
               ),
+              const EcranEscalier(),
             ],
           ),
         ),
