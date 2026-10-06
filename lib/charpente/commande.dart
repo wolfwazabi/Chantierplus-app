@@ -192,12 +192,13 @@ void _bois(
   String usage,
   bool metrique, {
   String prefixe = '',
+  String suffixe = '',
 }) {
   for (final e in d.parLongueur.entries) {
     out.add(
       LigneCommande(
         categorie: CategorieCommande.bois,
-        article: '$prefixe${_planche(section, e.key, metrique)}',
+        article: '$prefixe${_planche(section, e.key, metrique)}$suffixe',
         quantite: e.value.toDouble(),
         usage: usage,
       ),
@@ -228,6 +229,38 @@ Commande construireCommande({
           usage: 'Plancher',
         ),
       );
+      // Clous d'étriers : les clous nécessaires plus la marge, en boîtes.
+      brutes.add(
+        LigneCommande(
+          categorie: CategorieCommande.quincaillerie,
+          article:
+              'Clous d\'étriers 10d × 1 1/2 po (boîte d\'environ ${plancher.spec.clousParBoite})',
+          quantite: plancher.boitesClousEtriers.toDouble(),
+          usage: 'Plancher',
+        ),
+      );
+    }
+    final poutres = plancher.poutres;
+    if (poutres != null) {
+      _bois(
+        brutes,
+        poutres.bois,
+        poutres.spec.section,
+        'Poutres',
+        metrique,
+        suffixe: ' traité',
+      );
+      if (poutres.pattes != null) {
+        _bois(
+          brutes,
+          poutres.pattes!,
+          '6×6',
+          'Pattes (pieux)',
+          metrique,
+          suffixe: ' traité',
+        );
+      }
+      avert.addAll(poutres.avertissements.map((a) => 'Poutres : $a'));
     }
     final pn = plancher.panneaux;
     if (pn.feuillesACommander > 0) {

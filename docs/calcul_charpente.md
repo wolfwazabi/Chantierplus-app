@@ -14,6 +14,15 @@ description en paramètres.
   choix), étriers (aucun / un bout / deux bouts), entremises (0 à 3 rangées),
   sous-plancher en 4×8, 4×9, 4×10 ou 4×12 avec joints décalés, chaque joint sur
   le centre d'une solive, avec la pièce à couper de chaque feuille.
+  **Plancher sur pieux vissés** (réglages de l'entrepreneur, voir
+  `exemples_reels_plancher.md`) : côté de la maison (sa rive reste simple, les
+  autres sont doublées ; si elle est faite de plusieurs morceaux, elle est doublée
+  et les joints sont alternés), étriers seulement sur les solives intérieures,
+  clous d'étriers (par étrier et par boîte, avec marge), entremises automatiques
+  (une rangée chaque fois que la portée dépasse 7 à 10 pi) en pose alternée, coupes
+  séparées (solives, rives et entremises chacune dans leurs planches), poutres de
+  plusieurs plis en bois traité sur toute la largeur, pieux (nombre, premier à
+  1 pi du bord, entraxe calculé) et pattes en 6×6 traité qui rehaussent les pieux.
 - **Murs** : un mur par côté du contour du plancher ou murs libres ; montants,
   coins, lisses (1 ou 2 hautes), rois, jacks, linteaux, appuis, courts montants,
   feuilles (OSB, 4×9, **OSB isolant R-4 Isobrace**), membrane, fourrures,

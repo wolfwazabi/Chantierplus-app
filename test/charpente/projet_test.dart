@@ -93,6 +93,7 @@ ProjetCharpente _complet() => ProjetCharpente(
 );
 
 void main() {
+  mainPlancherReel();
   group('JSON', () {
     test('projet par défaut : aller-retour', () {
       const p = ProjetCharpente();
@@ -368,4 +369,160 @@ void main() {
       );
     },
   );
+}
+
+// Réglages ajoutés pour les planchers sur pieux vissés (rives par côté, étriers,
+// entremises automatiques, coupes séparées, poutres, clous). Un projet enregistré
+// avant leur ajout doit se relire et se calculer comme avant.
+void mainPlancherReel() {
+  const poutres = ParametresPoutres(
+    nombre: 2,
+    plis: 3,
+    pieuxParPoutre: 3,
+    hauteurPatte: 16,
+  );
+  const plancherReel = ParametresPlancher(
+    forme: FormeRectangle(180, 168),
+    section: section2x8,
+    solivesDoublesAuxCotes: true,
+    riveDouble: true,
+    coteMaison: 2,
+    etriers: ModeEtriers.unBout,
+    etriersBordures: false,
+    entremisesAuto: true,
+    entremisesEspacement: 108,
+    entremisesAlternees: true,
+    coupesSeparees: true,
+    poutres: poutres,
+    clousParEtrier: 12,
+    clousParBoite: 100,
+    margeClous: 10,
+  );
+
+  group('réglages du plancher sur pieux vissés', () {
+    test('aller-retour JSON : tout est conservé', () {
+      final lu = ProjetCharpente.fromJson(
+        jsonDecode(
+          jsonEncode(const ProjetCharpente(plancher: plancherReel).toJson()),
+        ),
+      );
+      final p = lu.plancher;
+      expect(p.coteMaison, 2);
+      expect(p.etriersBordures, isFalse);
+      expect(p.entremisesAuto, isTrue);
+      expect(p.entremisesEspacement, 108);
+      expect(p.entremisesAlternees, isTrue);
+      expect(p.coupesSeparees, isTrue);
+      expect(p.clousParEtrier, 12);
+      expect(p.clousParBoite, 100);
+      expect(p.margeClous, 10);
+      expect(p.poutres!.nombre, 2);
+      expect(p.poutres!.plis, 3);
+      expect(p.poutres!.section.nom, '2×8');
+      expect(p.poutres!.pieuxParPoutre, 3);
+      expect(p.poutres!.hauteurPatte, 16);
+      expect(lu.toJson(), const ProjetCharpente(plancher: plancherReel).toJson());
+    });
+
+    test('sans poutres : null dans le JSON et à la relecture', () {
+      final j = const ProjetCharpente().toJson();
+      expect((j['plancher'] as Map)['poutres'], isNull);
+      expect((j['plancher'] as Map)['coteMaison'], isNull);
+      expect(ProjetCharpente.fromJson(jsonDecode(jsonEncode(j))).plancher.poutres, isNull);
+    });
+
+    test('un projet enregistré avant ces réglages se relit avec les valeurs d\'avant', () {
+      final j = jsonDecode(jsonEncode(const ProjetCharpente().toJson())) as Map;
+      for (final cle in [
+        'coteMaison',
+        'etriersBordures',
+        'entremisesAuto',
+        'entremisesEspacement',
+        'entremisesAlternees',
+        'coupesSeparees',
+        'poutres',
+        'clousParEtrier',
+        'clousParBoite',
+        'margeClous',
+      ]) {
+        (j['plancher'] as Map).remove(cle);
+      }
+      final p = ProjetCharpente.fromJson(j).plancher;
+      expect(p.coteMaison, isNull);
+      expect(p.etriersBordures, isTrue);
+      expect(p.entremisesAuto, isFalse);
+      expect(p.coupesSeparees, isFalse);
+      expect(p.poutres, isNull);
+      expect(p.clousParEtrier, 10);
+      expect(p.clousParBoite, 120);
+    });
+
+    test('même calcul avec ou sans les nouveaux champs (ancien projet)', () {
+      final ancien = const ProjetCharpente(
+        plancher: ParametresPlancher(
+          forme: FormeRectangle(180, 168),
+          riveDouble: true,
+          rangeesEntremises: 1,
+        ),
+      );
+      final j = jsonDecode(jsonEncode(ancien.toJson())) as Map;
+      (j['plancher'] as Map)
+        ..remove('coteMaison')
+        ..remove('poutres')
+        ..remove('coupesSeparees');
+      final a = calculerProjet(ancien).commande.enTexte();
+      final b = calculerProjet(ProjetCharpente.fromJson(j)).commande.enTexte();
+      expect(b, a);
+    });
+
+    test('valeurs invalides refusées', () {
+      Map base() =>
+          jsonDecode(jsonEncode(const ProjetCharpente(plancher: plancherReel).toJson()))
+              as Map;
+      void refuse(void Function(Map plancher) change) {
+        final j = base();
+        change(j['plancher'] as Map);
+        expect(() => ProjetCharpente.fromJson(j), throwsFormatException);
+      }
+
+      refuse((p) => p['coteMaison'] = -1);
+      refuse((p) => p['coteMaison'] = 'haut');
+      refuse((p) => p['etriersBordures'] = 'oui');
+      refuse((p) => p['entremisesEspacement'] = 5);
+      refuse((p) => p['clousParEtrier'] = 0);
+      refuse((p) => p['clousParBoite'] = 'x');
+      refuse((p) => p['margeClous'] = 500);
+      refuse((p) => (p['poutres'] as Map)['nombre'] = 99);
+      refuse((p) => (p['poutres'] as Map)['plis'] = 0);
+      refuse((p) => (p['poutres'] as Map)['pieux'] = 1);
+      refuse((p) => (p['poutres'] as Map)['section'] = '2×99');
+      refuse((p) => (p['poutres'] as Map)['hauteurPatte'] = -2);
+      refuse((p) => p['poutres'] = 'beaucoup');
+    });
+
+    test('calcul du projet : poutres, pattes, clous et rives dans la commande', () {
+      final r = calculerProjet(const ProjetCharpente(plancher: plancherReel));
+      expect(r.erreurPlancher, isNull);
+      final lignes = {for (final l in r.commande.lignes) l.article: l.quantite};
+      expect(lignes["2×8 × 16' traité"], 6);
+      expect(lignes["6×6 × 8' traité"], 1);
+      expect(lignes['Étrier de solive pour 2×8'], 11);
+      // 11 étriers × 12 clous + 10 % = 145,2 clous : 2 boîtes de 100.
+      expect(
+        lignes.entries.firstWhere((e) => e.key.startsWith('Clous d')).value,
+        2,
+      );
+      expect(r.plancher!.rives, hasLength(3));
+    });
+
+    test('un côté de maison hors du contour est refusé au calcul, sans exception', () {
+      final r = calculerProjet(
+        const ProjetCharpente(
+          plancher: ParametresPlancher(forme: FormeRectangle(180, 168), coteMaison: 9),
+        ),
+      );
+      expect(r.plancher, isNull);
+      expect(r.erreurPlancher, contains('Côté de la maison'));
+    });
+  });
 }

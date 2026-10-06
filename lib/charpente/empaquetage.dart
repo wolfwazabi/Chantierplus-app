@@ -34,6 +34,20 @@ class ResultatDecoupe {
   final List<PieceCoupe> horsLimites;
   const ResultatDecoupe(this.planches, this.horsLimites);
 
+  /// Réunit des découpes faites séparément (solives, rives, entremises… chacune
+  /// dans ses propres planches) : les planches sont additionnées, jamais
+  /// mélangées d'une catégorie à l'autre.
+  factory ResultatDecoupe.reunir(Iterable<ResultatDecoupe> parties) {
+    final planches = [for (final p in parties) ...p.planches];
+    planches.sort((a, b) {
+      final c = b.stock.compareTo(a.stock);
+      return c != 0 ? c : b.utilise.compareTo(a.utilise);
+    });
+    return ResultatDecoupe(planches, [
+      for (final p in parties) ...p.horsLimites,
+    ]);
+  }
+
   /// « 12 pi » → nombre de planches de cette longueur.
   Map<double, int> get parLongueur {
     final m = <double, int>{};

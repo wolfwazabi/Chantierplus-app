@@ -349,7 +349,8 @@ void main() {
       'rive doublée sur un côté trop long : un seul avertissement d\'épissure',
       () {
         final r = _calc(Polygone.rectangle(360, 144), riveDouble: true);
-        expect(r.rives, hasLength(8));
+        // Par côté : 2 morceaux au 1er pli, 3 au 2e (joints alternés).
+        expect(r.rives, hasLength(10));
         expect(
           r.avertissements.where((a) => a.contains('plusieurs morceaux')),
           hasLength(1),

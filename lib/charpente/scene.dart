@@ -145,7 +145,7 @@ void _ajouterPlancher(
     final n = f.normaleInterieure(i);
     final ply = rive.doublon ? 1 : 0;
     final a = ply * e, b = (ply + 1) * e;
-    final s0 = rive.morceau * rive.longueur, s1 = s0 + rive.longueur;
+    final s0 = rive.depart, s1 = s0 + rive.longueur;
     final mitreDebut = rive.morceau == 0 && !_horizontale(f.sommet(i - 1), v);
     final mitreFin =
         rive.morceau == rive.morceaux - 1 && !_horizontale(w, f.sommet(i + 2));

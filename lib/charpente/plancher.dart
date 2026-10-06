@@ -16,6 +16,106 @@ const espacementsStandards = <double>[12, 16, 19.2, 24];
 /// 8, 10, 12, 14, 16, 18 et 20 pi.
 const longueursPlanchesParDefaut = <double>[96, 120, 144, 168, 192, 216, 240];
 
+/// Poutres du plancher (en bois traité) posées sur des pieux vissés : plusieurs
+/// plis de planches, sur toute la largeur du plancher (perpendiculaires aux
+/// solives), avec une patte (6×6 traité) qui rehausse chaque pieu au besoin.
+///
+/// La position des pieux vient du plan : le premier est à [retraitPieux] du bord
+/// du plancher, les autres sont répartis également jusqu'à l'autre bout.
+class SpecPoutres {
+  /// Nombre de poutres (en général 2 : une près de l'avant, une vers le centre).
+  final int nombre;
+
+  /// Planches côte à côte dans chaque poutre (3 : poutre 3-2×8).
+  final int plis;
+
+  /// Section d'une planche de poutre (« 2×8 »).
+  final String section;
+  final int pieuxParPoutre;
+
+  /// Distance du premier pieu au bord du plancher.
+  final double retraitPieux;
+
+  /// Hauteur de la patte en 6×6 posée sur chaque pieu ; 0 : pas de patte.
+  final double hauteurPatte;
+
+  const SpecPoutres({
+    this.nombre = 2,
+    this.plis = 3,
+    this.section = '2×8',
+    this.pieuxParPoutre = 3,
+    this.retraitPieux = 12,
+    this.hauteurPatte = 0,
+  });
+
+  void valider() {
+    if (nombre < 1 || nombre > 6) {
+      throw const SpecInvalide('Poutres : de 1 à 6.');
+    }
+    if (plis < 1 || plis > 5) {
+      throw const SpecInvalide('Épaisseurs de poutre : de 1 à 5.');
+    }
+    if (pieuxParPoutre < 2 || pieuxParPoutre > 10) {
+      throw const SpecInvalide('Pieux par poutre : de 2 à 10.');
+    }
+    if (!(retraitPieux >= 0 && retraitPieux <= 120)) {
+      throw const SpecInvalide('Retrait du premier pieu : entre 0 et 10 pi.');
+    }
+    if (!(hauteurPatte >= 0 && hauteurPatte <= 120)) {
+      throw const SpecInvalide('Hauteur de la patte : entre 0 et 10 pi.');
+    }
+  }
+}
+
+class ResultatPoutres {
+  final SpecPoutres spec;
+
+  /// Longueur d'une poutre : la largeur du plancher, perpendiculaire aux solives.
+  final double longueur;
+
+  /// Planches des poutres (bois traité).
+  final ResultatDecoupe bois;
+  final int nombrePieux;
+
+  /// Distance entre deux pieux voisins d'une même poutre, centre à centre.
+  final double entraxePieux;
+
+  /// Pattes en 6×6 traité ; null sans patte.
+  final ResultatDecoupe? pattes;
+  final List<String> avertissements;
+  const ResultatPoutres({
+    required this.spec,
+    required this.longueur,
+    required this.bois,
+    required this.nombrePieux,
+    required this.entraxePieux,
+    required this.pattes,
+    required this.avertissements,
+  });
+
+  int get planchesDePoutre => spec.nombre * spec.plis;
+}
+
+/// Longueurs des morceaux d'une pièce de [longueur] faite de plusieurs morceaux
+/// de [maxPlanche] au plus, pour le pli numéro [pli] d'une pièce à plusieurs
+/// plis (rive doublée, poutre à plusieurs plis).
+///
+/// Les plis pairs sont faits de n morceaux égaux. Les plis impairs commencent et
+/// finissent par un demi-morceau : leurs joints tombent au milieu des morceaux
+/// du pli voisin, jamais sur les siens (joints alternés), et aucun morceau n'est
+/// plus court qu'un demi-morceau. La longueur totale de chaque pli est la même.
+List<double> morceauxEnPlis(double longueur, double maxPlanche, int pli) {
+  if (longueur <= maxPlanche + 1e-9) {
+    return [longueur];
+  }
+  final n = (longueur / maxPlanche - 1e-9).ceil();
+  final p = longueur / n;
+  if (pli.isEven) {
+    return [for (var i = 0; i < n; i++) p];
+  }
+  return [p / 2, for (var i = 1; i < n; i++) p, p / 2];
+}
+
 class SpecInvalide implements Exception {
   final String message;
   const SpecInvalide(this.message);
@@ -56,6 +156,41 @@ class SpecPlancher {
   /// Marge d'achat sur les feuilles, en %.
   final double margePanneauxPourcent;
 
+  /// Côté du contour (indice dans la forme d'origine) qui touche la maison. Sa
+  /// solive de rive reste simple, même quand les autres rives sont doublées,
+  /// sauf si elle doit être faite de plusieurs morceaux : elle est alors doublée
+  /// et les joints sont alternés. Null : aucun côté n'est contre la maison.
+  final int? coteMaison;
+
+  /// Faux : les solives de bordure (le long des côtés parallèles aux solives)
+  /// ne reçoivent pas d'étrier ; seules les solives intérieures en reçoivent.
+  final bool etriersBordures;
+
+  /// Entremises automatiques : une rangée chaque fois que la portée dépasse
+  /// [espacementMaxEntremises] (le nombre de rangées choisi à la main est alors
+  /// ignoré).
+  final bool entremisesAuto;
+
+  /// Portée maximale sans entremises (po) : 7 à 10 pi selon l'ouvrage.
+  final double espacementMaxEntremises;
+
+  /// Entremises décalées d'une épaisseur de solive, d'un côté puis de l'autre,
+  /// pour pouvoir les clouer.
+  final bool entremisesAlternees;
+
+  /// Vrai : solives, rives et entremises sont coupées chacune dans leurs propres
+  /// planches (on n'utilise pas le bout d'une solive pour une entremise).
+  final bool coupesSeparees;
+
+  /// Poutres, pieux vissés et pattes ; null : sans poutres.
+  final SpecPoutres? poutres;
+
+  /// Clous par étrier (10 pour un LUS28), clous par boîte (environ 120 pour
+  /// 1 lb de 10d × 1 1/2 po) et marge d'achat.
+  final int clousParEtrier;
+  final int clousParBoite;
+  final double margeClousPourcent;
+
   const SpecPlancher({
     required this.forme,
     this.espacement = 16,
@@ -70,6 +205,16 @@ class SpecPlancher {
     this.panneau = panneau4x8,
     this.decalageMin = 24,
     this.margePanneauxPourcent = 0,
+    this.coteMaison,
+    this.etriersBordures = true,
+    this.entremisesAuto = false,
+    this.espacementMaxEntremises = 120,
+    this.entremisesAlternees = false,
+    this.coupesSeparees = false,
+    this.poutres,
+    this.clousParEtrier = 10,
+    this.clousParBoite = 120,
+    this.margeClousPourcent = 5,
   });
 
   void valider() {
@@ -94,6 +239,24 @@ class SpecPlancher {
     if (!(margePanneauxPourcent >= 0 && margePanneauxPourcent <= 50)) {
       throw const SpecInvalide('Marge sur les feuilles : entre 0 et 50 %.');
     }
+    if (coteMaison != null && (coteMaison! < 0 || coteMaison! >= forme.nombre)) {
+      throw const SpecInvalide('Côté de la maison : ce côté n\'existe pas.');
+    }
+    if (!(espacementMaxEntremises >= 24 && espacementMaxEntremises <= 240)) {
+      throw const SpecInvalide(
+        'Portée sans entremises : entre 2 et 20 pi.',
+      );
+    }
+    if (clousParEtrier < 1 || clousParEtrier > 40) {
+      throw const SpecInvalide('Clous par étrier : de 1 à 40.');
+    }
+    if (clousParBoite < 10 || clousParBoite > 5000) {
+      throw const SpecInvalide('Clous par boîte : de 10 à 5000.');
+    }
+    if (!(margeClousPourcent >= 0 && margeClousPourcent <= 100)) {
+      throw const SpecInvalide('Marge sur les clous : entre 0 et 100 %.');
+    }
+    poutres?.valider();
     if (angleSolivesDeg != null && !angleSolivesDeg!.isFinite) {
       throw const SpecInvalide('Direction des solives invalide.');
     }
@@ -174,6 +337,11 @@ class PieceRive {
 
   /// Deuxième pièce d'une rive doublée.
   final bool doublon;
+
+  /// Distance de ce morceau au début du côté, quand les morceaux sont inégaux
+  /// (rive doublée faite de plusieurs morceaux, joints alternés) ; null : les
+  /// morceaux sont égaux.
+  final double? debut;
   const PieceRive({
     required this.cote,
     required this.longueur,
@@ -182,7 +350,11 @@ class PieceRive {
     required this.morceau,
     required this.morceaux,
     this.doublon = false,
+    this.debut,
   });
+
+  /// Début du morceau le long du côté.
+  double get depart => debut ?? morceau * longueur;
 }
 
 /// Une pièce de feuille posée : bande de largeur [u1 - u0], de [v0] à [v1].
@@ -248,6 +420,9 @@ class ResultatPlancher {
   final double porteeMax;
   final List<String> avertissements;
 
+  /// Poutres, pieux et pattes ; null si le plancher n'en a pas.
+  final ResultatPoutres? poutres;
+
   const ResultatPlancher({
     required this.spec,
     required this.angleSolivesDeg,
@@ -261,10 +436,27 @@ class ResultatPlancher {
     required this.panneaux,
     required this.porteeMax,
     required this.avertissements,
+    this.poutres,
   });
 
   int get nombreSolives => solives.length;
   int get nombreRives => rives.length;
+
+  /// Boîtes de clous d'étriers à acheter : les clous nécessaires, plus la marge,
+  /// arrondis à la boîte au-dessus (0 sans étrier).
+  int get boitesClousEtriers {
+    if (etriers <= 0) {
+      return 0;
+    }
+    final clous =
+        etriers * spec.clousParEtrier * (1 + spec.margeClousPourcent / 100);
+    return (clous / spec.clousParBoite - 1e-9).ceil();
+  }
+
+  /// Côtés du contour qui portent une solive de rive (non parallèles aux solives).
+  List<int> get cotesDeRive => [
+    for (final c in {for (final p in rives) p.cote}) c,
+  ]..sort();
 
   /// Point du repère pivoté → repère de la forme d'origine.
   Pt versForme(Pt p) => p.pivote(degEnRad(angleSolivesDeg));
@@ -331,18 +523,20 @@ double angleSolivesAuto(Polygone p) {
   return meilleur ?? 0;
 }
 
-/// Contour décalé vers l'intérieur de [e] le long des côtés qui reçoivent une
-/// rive (non parallèles aux solives) ; les côtés parallèles aux solives ne sont
-/// pas décalés. Les sommets sont les intersections des droites décalées
-/// voisines. Null si la forme décalée n'est pas valable (détail plus petit que
-/// la rive) : on retombe alors sur le calcul par retrait.
-Polygone? _polygoneInterieur(Polygone r, double e) {
+/// Contour décalé vers l'intérieur de [e] (par côté) le long des côtés qui
+/// reçoivent une rive (non parallèles aux solives) ; les côtés parallèles aux
+/// solives ne sont pas décalés. [e] donne l'épaisseur de la rive de chaque côté :
+/// une rive simple d'un côté et doublée de l'autre décalent différemment. Les
+/// sommets sont les intersections des droites décalées voisines. Null si la
+/// forme décalée n'est pas valable (détail plus petit que la rive) : on retombe
+/// alors sur le calcul par retrait.
+Polygone? _polygoneInterieur(Polygone r, double Function(int cote) e) {
   final n = r.nombre;
   final points = <Pt>[];
   final dirs = <Pt>[];
   for (var i = 0; i < n; i++) {
     final p = r.sommet(i), q = r.sommet(i + 1);
-    final off = _estHorizontale(p, q) ? 0.0 : e;
+    final off = _estHorizontale(p, q) ? 0.0 : e(i);
     points.add(p + r.normaleInterieure(i) * off);
     dirs.add((q - p).unitaire);
   }
@@ -389,9 +583,33 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   final r = spec.forme.pivote(-degEnRad(angle));
   final boite = r.boite;
   final t = spec.epaisseurSolive;
-  // Rive doublée : deux épaisseurs à chaque bout des solives.
-  final trEff = spec.epaisseurRive * (spec.riveDouble ? 2 : 1);
   final s = spec.espacement;
+  final maxPlanche = spec.longueursPlanches.reduce(math.max);
+
+  // Rive de chaque côté (non parallèle aux solives) : une ou deux épaisseurs.
+  //  - rives doublées : les deux épaisseurs partout ;
+  //  - côté de la maison : simple, sauf si la rive doit être faite de plusieurs
+  //    morceaux (côté plus long que la plus longue planche) : doublée, joints
+  //    alternés.
+  final plisRive = List<int>.filled(r.nombre, 0);
+  for (var i = 0; i < r.nombre; i++) {
+    if (_estHorizontale(r.sommet(i), r.sommet(i + 1))) {
+      continue;
+    }
+    final epissee = r.longueurCote(i) > maxPlanche + 1e-9;
+    plisRive[i] = i == spec.coteMaison
+        ? (epissee ? 2 : 1)
+        : (spec.riveDouble ? 2 : 1);
+  }
+  if (spec.coteMaison != null && plisRive[spec.coteMaison!] == 0) {
+    avertissements.add(
+      'Le côté ${spec.coteMaison! + 1} (maison) est parallèle aux solives : il '
+      'n\'a pas de solive de rive. Choisissez un autre côté ou une autre '
+      'direction des solives.',
+    );
+  }
+  double epaisseurRiveCote(int i) => plisRive[i] * spec.epaisseurRive;
+  final trMax = plisRive.fold<int>(0, math.max) * spec.epaisseurRive;
 
   // --- Solives de bordure (côtés parallèles aux solives) ---------------------
   final brutes = <_Brute>[];
@@ -456,18 +674,18 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   final solives = <Solive>[];
   // Les bouts des solives sont sur les faces intérieures des rives : les cordes
   // du contour décalé (côtés parallèles aux solives : pas de rive, pas de décalage).
-  final interieur = _polygoneInterieur(r, trEff);
+  final interieur = _polygoneInterieur(r, epaisseurRiveCote);
   if (interieur == null) {
     avertissements.add(
       'La forme est trop étroite par endroits pour la solive de rive '
-      '(${formatImperial(trEff)}) : les longueurs de solives sont approximatives, '
+      '(${formatImperial(trMax)}) : les longueurs de solives sont approximatives, '
       'vérifiez la forme.',
     );
   }
   for (final b in brutes) {
     double retrait(int arete) {
       final n = r.normaleInterieure(arete);
-      return trEff / math.max(n.x.abs(), 0.02);
+      return epaisseurRiveCote(arete) / math.max(n.x.abs(), 0.02);
     }
 
     double biseau(int arete) {
@@ -569,27 +787,35 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   }
 
   // --- Solives de rive : côtés non parallèles aux solives --------------------
-  final maxPlanche = spec.longueursPlanches.reduce(math.max);
   final rives = <PieceRive>[];
   for (var i = 0; i < r.nombre; i++) {
-    if (_estHorizontale(r.sommet(i), r.sommet(i + 1))) {
+    if (plisRive[i] == 0) {
       continue;
     }
     final longueur = r.longueurCote(i);
     final morceaux = math.max(1, (longueur / maxPlanche - 1e-9).ceil());
-    for (var m = 0; m < morceaux; m++) {
-      for (var d = 0; d < (spec.riveDouble ? 2 : 1); d++) {
+    final plis = plisRive[i];
+    for (var d = 0; d < plis; d++) {
+      // Rive doublée faite de plusieurs morceaux : les joints du second pli
+      // sont décalés de ceux du premier. Sinon, morceaux égaux.
+      final longueurs = (plis > 1 && morceaux > 1)
+          ? morceauxEnPlis(longueur, maxPlanche, d)
+          : [for (var m = 0; m < morceaux; m++) longueur / morceaux];
+      var debut = 0.0;
+      for (var m = 0; m < longueurs.length; m++) {
         rives.add(
           PieceRive(
             cote: i,
-            longueur: longueur / morceaux,
+            longueur: longueurs[m],
             angleDebutDeg: r.angleInterieurDeg(i),
             angleFinDeg: r.angleInterieurDeg(i + 1),
             morceau: m,
-            morceaux: morceaux,
+            morceaux: longueurs.length,
             doublon: d == 1,
+            debut: debut,
           ),
         );
+        debut += longueurs[m];
       }
     }
   }
@@ -607,8 +833,9 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   // --- Entremises (blocage) --------------------------------------------------
   final entremises = <PieceCoupe>[];
   final entremisesPoses = <PoseEntremise>[];
-  if (spec.rangeesEntremises > 0) {
+  if (spec.rangeesEntremises > 0 || spec.entremisesAuto) {
     final distinctes = solives.where((x) => !x.doublon).toList();
+    var ecartsPoses = 0; // sert à alterner les entremises d'un écart à l'autre
     // Une solive de bordure doublée occupe 2 épaisseurs : l'entremise s'arrête
     // contre la seconde.
     final bornes = <(double, double)>[
@@ -640,13 +867,29 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
         final chevauche = math.min(a.u1, b.u1) - math.max(a.u0, b.u0);
         if (chevauche >= 24) {
           final lo = math.max(a.u0, b.u0);
-          for (var k = 0; k < spec.rangeesEntremises; k++) {
+          // Automatique : une rangée chaque fois que la portée dépasse la
+          // portée maximale sans entremises (14 pi, maximum 10 pi : 1 rangée ;
+          // 21 pi : 2 rangées).
+          final rangees = spec.entremisesAuto
+              ? math.max(
+                  0,
+                  (chevauche / spec.espacementMaxEntremises - 1e-9).ceil() - 1,
+                )
+              : spec.rangeesEntremises;
+          // Pose alternée : décalage d'une demi-épaisseur de chaque côté.
+          final decalage = !spec.entremisesAlternees || rangees == 0
+              ? 0.0
+              : (ecartsPoses.isEven ? -t / 2 : t / 2);
+          for (var k = 0; k < rangees; k++) {
             entremises.add(
               PieceCoupe('e${entremises.length}', ecart, 'entremise'),
             );
             // Rangées réparties également sur la portée (1 : à mi-portée).
-            final u = lo + chevauche * (k + 1) / (spec.rangeesEntremises + 1);
+            final u = lo + chevauche * (k + 1) / (rangees + 1) + decalage;
             entremisesPoses.add(PoseEntremise(u, bornes[i].$2, bornes[j].$1));
+          }
+          if (rangees > 0) {
+            ecartsPoses++;
           }
         }
         break; // seulement la solive voisine
@@ -655,18 +898,30 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   }
 
   // --- Bois à commander ------------------------------------------------------
-  final pieces = <PieceCoupe>[
+  final piecesSolives = <PieceCoupe>[
     for (var i = 0; i < solives.length; i++)
       PieceCoupe(
         's$i',
         solives[i].longueurCoupe,
         solives[i].bordure ? 'solive de bordure' : 'solive',
       ),
+  ];
+  final piecesRives = <PieceCoupe>[
     for (var i = 0; i < rives.length; i++)
       PieceCoupe('r$i', rives[i].longueur, 'solive de rive'),
-    ...entremises,
   ];
-  final bois = decouperPlanches(pieces, spec.longueursPlanches);
+  final bois = spec.coupesSeparees
+      // Chaque catégorie dans ses propres planches (solives, rives, entremises).
+      ? ResultatDecoupe.reunir([
+          for (final groupe in [piecesSolives, piecesRives, entremises])
+            if (groupe.isNotEmpty)
+              decouperPlanches(groupe, spec.longueursPlanches),
+        ])
+      : decouperPlanches([
+          ...piecesSolives,
+          ...piecesRives,
+          ...entremises,
+        ], spec.longueursPlanches);
   if (bois.horsLimites.isNotEmpty) {
     final plusLongue = bois.horsLimites.map((p) => p.longueur).reduce(math.max);
     avertissements.add(
@@ -681,11 +936,28 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
     ModeEtriers.unBout => 1,
     ModeEtriers.deuxBouts => 2,
   };
-  final etriers = solives.length * parSolive;
+  // Solives de bordure exclues (option) : seules les solives intérieures sont
+  // posées dans des étriers.
+  final suspendues = spec.etriersBordures
+      ? solives.length
+      : solives.where((x) => !x.bordure).length;
+  final etriers = suspendues * parSolive;
 
   final portee = solives.isEmpty
       ? 0.0
       : solives.map((x) => x.longueurCoupe).reduce(math.max);
+
+  // --- Poutres, pieux et pattes ----------------------------------------------
+  final poutres = spec.poutres == null
+      ? null
+      : _calculerPoutres(
+          spec.poutres!,
+          // Elles vont d'un côté à l'autre du plancher, perpendiculairement aux
+          // solives : la largeur hors tout dans le repère des solives.
+          boite.hauteur,
+          spec.longueursPlanches,
+          spec.forme.estRectangle,
+        );
 
   // --- Feuilles ---------------------------------------------------------------
   final plan = _planifierPanneaux(r, solives, spec, avertissements);
@@ -714,6 +986,87 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
     panneaux: plan,
     porteeMax: portee,
     avertissements: avertissements,
+    poutres: poutres,
+  );
+}
+
+/// Poutres sur pieux : planches de chaque poutre, nombre de pieux et leur
+/// entraxe, pattes en 6×6. Le calcul de coupe est le même que pour les solives :
+/// chaque pièce est prise dans la plus courte planche du commerce qui la contient.
+ResultatPoutres _calculerPoutres(
+  SpecPoutres sp,
+  double longueur,
+  List<double> longueursPlanches,
+  bool rectangle,
+) {
+  final avert = <String>[];
+  final maxPlanche = longueursPlanches.reduce(math.max);
+  final pieces = <PieceCoupe>[];
+  var epissee = false;
+  for (var b = 0; b < sp.nombre; b++) {
+    for (var p = 0; p < sp.plis; p++) {
+      final morceaux = morceauxEnPlis(longueur, maxPlanche, p);
+      epissee = epissee || morceaux.length > 1;
+      for (var m = 0; m < morceaux.length; m++) {
+        pieces.add(PieceCoupe('p${b}_${p}_$m', morceaux[m], 'poutre'));
+      }
+    }
+  }
+  final bois = decouperPlanches(pieces, longueursPlanches);
+  if (epissee) {
+    avert.add(
+      'Une poutre de ${formatImperial(longueur)} dépasse la plus longue planche '
+      '(${formatImperial(maxPlanche)}) : elle est faite de plusieurs morceaux, '
+      'joints alternés d\'un pli à l\'autre, à placer au-dessus d\'un pieu.',
+    );
+  }
+  if (!rectangle) {
+    avert.add(
+      'Forme irrégulière : les poutres sont comptées sur la largeur hors tout '
+      '(${formatImperial(longueur)}).',
+    );
+  }
+
+  final entraxe = sp.pieuxParPoutre > 1
+      ? (longueur - 2 * sp.retraitPieux) / (sp.pieuxParPoutre - 1)
+      : 0.0;
+  if (entraxe <= 0) {
+    avert.add(
+      'Le retrait des pieux (${formatImperial(sp.retraitPieux)}) est trop grand '
+      'pour une poutre de ${formatImperial(longueur)}.',
+    );
+  }
+  final nbPieux = sp.nombre * sp.pieuxParPoutre;
+
+  // Pattes : un morceau de 6×6 traité sur chaque pieu, pour rehausser la poutre.
+  ResultatDecoupe? pattes;
+  if (sp.hauteurPatte > 0) {
+    // La hauteur d'une patte est une mesure approximative du terrain : le trait
+    // de scie (1/8 po) n'entre pas dans le compte (6 pattes de 16 po : un 6×6
+    // de 8 pi).
+    pattes = decouperPlanches(
+      [
+        for (var i = 0; i < nbPieux; i++)
+          PieceCoupe('t$i', sp.hauteurPatte, 'patte'),
+      ],
+      longueursPlanches,
+      trait: 0,
+    );
+    if (pattes.horsLimites.isNotEmpty) {
+      avert.add(
+        'Une patte de ${formatImperial(sp.hauteurPatte)} dépasse la plus longue '
+        'planche (${formatImperial(maxPlanche)}).',
+      );
+    }
+  }
+  return ResultatPoutres(
+    spec: sp,
+    longueur: longueur,
+    bois: bois,
+    nombrePieux: nbPieux,
+    entraxePieux: entraxe,
+    pattes: pattes,
+    avertissements: avert,
   );
 }
 

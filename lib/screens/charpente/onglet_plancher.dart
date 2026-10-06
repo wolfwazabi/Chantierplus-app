@@ -99,6 +99,7 @@ class OngletPlancher extends StatelessWidget {
             value: _p.riveDouble,
             onChanged: (v) => _set(_p.copieAvec(riveDouble: v)),
           ),
+          _coteMaison(),
           SwitchListTile(
             key: const ValueKey('bordure_double'),
             contentPadding: EdgeInsets.zero,
@@ -126,21 +127,21 @@ class OngletPlancher extends StatelessWidget {
             selected: {_p.etriers},
             onSelectionChanged: (s) => _set(_p.copieAvec(etriers: s.first)),
           ),
+          if (_p.etriers != ModeEtriers.aucun) ..._etriersEtClous(),
           const SizedBox(height: 12),
-          const Text('Rangées d\'entremises (blocage)'),
-          const SizedBox(height: 4),
-          SegmentedButton<int>(
-            key: const ValueKey('entremises'),
-            segments: const [
-              ButtonSegment(value: 0, label: Text('0')),
-              ButtonSegment(value: 1, label: Text('1')),
-              ButtonSegment(value: 2, label: Text('2')),
-              ButtonSegment(value: 3, label: Text('3')),
-            ],
-            selected: {_p.rangeesEntremises},
-            onSelectionChanged: (s) =>
-                _set(_p.copieAvec(rangeesEntremises: s.first)),
+          ..._entremises(),
+          SwitchListTile(
+            key: const ValueKey('coupes_separees'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Coupes séparées par catégorie'),
+            subtitle: const Text(
+              'Solives, rives et entremises dans leurs propres planches '
+              '(pas de bout de solive pour une entremise)',
+            ),
+            value: _p.coupesSeparees,
+            onChanged: (v) => _set(_p.copieAvec(coupesSeparees: v)),
           ),
+          ..._poutres(),
           const TitreSection(
             'Sous-plancher',
             aide:
@@ -203,6 +204,268 @@ class OngletPlancher extends StatelessWidget {
         ],
       ],
     );
+  }
+
+  /// Côté du contour contre la maison : sa rive reste simple.
+  Widget _coteMaison() {
+    final contour = resultats.contour;
+    final cotes = <int>{
+      ...?resultats.plancher?.cotesDeRive,
+      if (_p.coteMaison != null) _p.coteMaison!,
+    }.toList()..sort();
+    String etiquette(int i) {
+      final l = contour != null && i < contour.nombre
+          ? ' — ${formatLongueur(contour.longueurCote(i), metrique: _metrique)}'
+          : '';
+      return 'Côté ${i + 1}$l';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 4),
+      child: DropdownButtonFormField<int?>(
+        key: ValueKey('cote_maison_${_p.coteMaison}'),
+        initialValue: _p.coteMaison,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Côté de la maison',
+          helperText:
+              'Sa solive de rive reste simple (doublée seulement si elle est '
+              'faite de plusieurs morceaux, joints alternés).',
+          helperMaxLines: 3,
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+        items: [
+          const DropdownMenuItem<int?>(value: null, child: Text('Aucun')),
+          for (final i in cotes)
+            DropdownMenuItem<int?>(value: i, child: Text(etiquette(i))),
+        ],
+        onChanged: (v) => _set(_p.copieAvec(coteMaison: () => v)),
+      ),
+    );
+  }
+
+  List<Widget> _etriersEtClous() => [
+    SwitchListTile(
+      key: const ValueKey('etriers_bordures'),
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Étriers sur les solives de bordure'),
+      subtitle: const Text('Décoché : seulement les solives intérieures'),
+      value: _p.etriersBordures,
+      onChanged: (v) => _set(_p.copieAvec(etriersBordures: v)),
+    ),
+    ExpansionTile(
+      key: const ValueKey('clous_etriers'),
+      tilePadding: EdgeInsets.zero,
+      title: const Text('Clous d\'étriers'),
+      subtitle: Text(
+        '${_p.clousParEtrier} par étrier · boîte de ${_p.clousParBoite} · '
+        'marge ${formatNombre(_p.margeClous, decimales: 0)} %',
+        style: const TextStyle(fontSize: 12),
+      ),
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(top: 4, bottom: 8),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: ChampNombre(
+                  key: const ValueKey('clous_par_etrier'),
+                  label: 'Par étrier',
+                  valeur: _p.clousParEtrier.toDouble(),
+                  min: 1,
+                  max: 40,
+                  decimales: 0,
+                  aide: 'LUS28 : 6 + 4',
+                  onChange: (v) =>
+                      _set(_p.copieAvec(clousParEtrier: v.round())),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ChampNombre(
+                  key: const ValueKey('clous_par_boite'),
+                  label: 'Par boîte',
+                  valeur: _p.clousParBoite.toDouble(),
+                  min: 10,
+                  max: 5000,
+                  decimales: 0,
+                  aide: '1 lb de 10d × 1 1/2 po : environ 120',
+                  onChange: (v) =>
+                      _set(_p.copieAvec(clousParBoite: v.round())),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: ChampNombre(
+                  key: const ValueKey('clous_marge'),
+                  label: 'Marge',
+                  valeur: _p.margeClous,
+                  min: 0,
+                  max: 100,
+                  decimales: 0,
+                  suffixe: '%',
+                  onChange: (v) => _set(_p.copieAvec(margeClous: v)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  ];
+
+  List<Widget> _entremises() => [
+    SwitchListTile(
+      key: const ValueKey('entremises_auto'),
+      contentPadding: EdgeInsets.zero,
+      title: const Text('Entremises automatiques'),
+      subtitle: const Text(
+        'Une rangée chaque fois que la portée dépasse la portée sans '
+        'entremises (7 à 10 pi)',
+      ),
+      value: _p.entremisesAuto,
+      onChanged: (v) => _set(_p.copieAvec(entremisesAuto: v)),
+    ),
+    if (_p.entremisesAuto) ...[
+      const SizedBox(height: 4),
+      ChampLongueur(
+        key: const ValueKey('entremises_espacement'),
+        label: 'Portée sans entremises',
+        aide: 'Entre 7 et 10 pi',
+        valeur: _p.entremisesEspacement,
+        min: 24,
+        max: 240,
+        onChange: (v) => _set(_p.copieAvec(entremisesEspacement: v)),
+      ),
+    ] else ...[
+      const Text('Rangées d\'entremises (blocage)'),
+      const SizedBox(height: 4),
+      SegmentedButton<int>(
+        key: const ValueKey('entremises'),
+        segments: const [
+          ButtonSegment(value: 0, label: Text('0')),
+          ButtonSegment(value: 1, label: Text('1')),
+          ButtonSegment(value: 2, label: Text('2')),
+          ButtonSegment(value: 3, label: Text('3')),
+        ],
+        selected: {_p.rangeesEntremises},
+        onSelectionChanged: (s) =>
+            _set(_p.copieAvec(rangeesEntremises: s.first)),
+      ),
+    ],
+    if (_p.entremisesAuto || _p.rangeesEntremises > 0)
+      SwitchListTile(
+        key: const ValueKey('entremises_alternees'),
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Pose alternée'),
+        subtitle: const Text(
+          'Blocs décalés d\'un côté puis de l\'autre, pour les clouer',
+        ),
+        value: _p.entremisesAlternees,
+        onChanged: (v) => _set(_p.copieAvec(entremisesAlternees: v)),
+      ),
+  ];
+
+  List<Widget> _poutres() {
+    final po = _p.poutres;
+    void maj(ParametresPoutres Function(ParametresPoutres) f) =>
+        _set(_p.copieAvec(poutres: () => f(po!)));
+    return [
+      const TitreSection(
+        'Poutres et pieux vissés',
+        aide: 'Poutres en bois traité sur toute la largeur du plancher.',
+      ),
+      SwitchListTile(
+        key: const ValueKey('poutres_actives'),
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Poutres sur pieux vissés'),
+        subtitle: const Text('Poutres, pieux et pattes en 6×6'),
+        value: po != null,
+        onChanged: (v) => _set(
+          _p.copieAvec(poutres: () => v ? const ParametresPoutres() : null),
+        ),
+      ),
+      if (po != null) ...[
+        const SizedBox(height: 4),
+        const Text('Nombre de poutres'),
+        const SizedBox(height: 4),
+        SegmentedButton<int>(
+          key: const ValueKey('poutres_nombre'),
+          showSelectedIcon: false,
+          segments: [
+            for (final n in const [1, 2, 3, 4])
+              ButtonSegment(value: n, label: Text('$n')),
+          ],
+          selected: {po.nombre.clamp(1, 4)},
+          onSelectionChanged: (s) => maj((p) => p.copieAvec(nombre: s.first)),
+        ),
+        const SizedBox(height: 12),
+        const Text('Épaisseurs par poutre (plis)'),
+        const SizedBox(height: 4),
+        SegmentedButton<int>(
+          key: const ValueKey('poutres_plis'),
+          showSelectedIcon: false,
+          segments: [
+            for (final n in const [2, 3, 4])
+              ButtonSegment(value: n, label: Text('$n')),
+          ],
+          selected: {po.plis.clamp(2, 4)},
+          onSelectionChanged: (s) => maj((p) => p.copieAvec(plis: s.first)),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<SectionBois>(
+          key: ValueKey('poutres_section_${po.section.nom}'),
+          initialValue: po.section,
+          decoration: const InputDecoration(
+            labelText: 'Section des planches de poutre (traité)',
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          items: [
+            for (final s in sectionsPlancher)
+              DropdownMenuItem(value: s, child: Text(s.nom)),
+          ],
+          onChanged: (s) =>
+              s == null ? null : maj((p) => p.copieAvec(section: s)),
+        ),
+        const SizedBox(height: 12),
+        const Text('Pieux vissés par poutre'),
+        const SizedBox(height: 4),
+        SegmentedButton<int>(
+          key: const ValueKey('poutres_pieux'),
+          showSelectedIcon: false,
+          segments: [
+            for (final n in const [2, 3, 4, 5, 6])
+              ButtonSegment(value: n, label: Text('$n')),
+          ],
+          selected: {po.pieuxParPoutre.clamp(2, 6)},
+          onSelectionChanged: (s) =>
+              maj((p) => p.copieAvec(pieuxParPoutre: s.first)),
+        ),
+        const SizedBox(height: 12),
+        ChampLongueur(
+          key: const ValueKey('poutres_retrait'),
+          label: 'Premier pieu à',
+          aide: 'Du bord du plancher, d\'après le plan',
+          valeur: po.retraitPieux,
+          min: 0,
+          max: 120,
+          onChange: (v) => maj((p) => p.copieAvec(retraitPieux: v)),
+        ),
+        const SizedBox(height: 12),
+        ChampLongueur(
+          key: const ValueKey('poutres_patte'),
+          label: 'Hauteur de la patte (6×6)',
+          aide: '0 : pas de patte. Rehausse chaque pieu s\'il est trop bas.',
+          valeur: po.hauteurPatte,
+          min: 0,
+          max: 120,
+          onChange: (v) => maj((p) => p.copieAvec(hauteurPatte: v)),
+        ),
+      ],
+    ];
   }
 
   Widget _entraxe() {
@@ -683,6 +946,32 @@ class _Resultats extends StatelessWidget {
       ('Solives de rive', '${r.nombreRives}'),
       if (r.entremises.isNotEmpty) ('Entremises', '${r.entremises.length}'),
       if (r.etriers > 0) ('Étriers', '${r.etriers}'),
+      if (r.boitesClousEtriers > 0)
+        (
+          'Clous d\'étriers',
+          '${r.boitesClousEtriers} boîte${r.boitesClousEtriers > 1 ? 's' : ''} '
+              '(${r.etriers * r.spec.clousParEtrier} clous, boîtes de ${r.spec.clousParBoite})',
+        ),
+      if (r.poutres != null) ...[
+        (
+          'Poutres',
+          '${r.poutres!.spec.nombre} de ${r.poutres!.spec.plis} plis en '
+              '${r.poutres!.spec.section}, ${formatLongueur(r.poutres!.longueur, metrique: metrique)} '
+              '(${r.poutres!.planchesDePoutre} planches)',
+        ),
+        (
+          'Pieux vissés',
+          '${r.poutres!.nombrePieux} · entraxe '
+              '${formatLongueur(r.poutres!.entraxePieux, metrique: metrique)} · '
+              'premier à ${formatLongueur(r.poutres!.spec.retraitPieux, metrique: metrique)} du bord',
+        ),
+        if (r.poutres!.pattes != null)
+          (
+            'Pattes en 6×6',
+            '${r.poutres!.nombrePieux} de '
+                '${formatLongueur(r.poutres!.spec.hauteurPatte, metrique: metrique)}',
+          ),
+      ],
       (
         'Portée la plus longue',
         formatLongueur(r.porteeMax, metrique: metrique),
@@ -728,7 +1017,30 @@ class _Resultats extends StatelessWidget {
               'Perte de bois : ${formatNombre(r.bois.pertePourcent, decimales: 1)} %',
               style: const TextStyle(fontSize: 12),
             ),
-            BlocMessages(r.avertissements),
+            if (r.poutres != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Poutres (${r.poutres!.spec.section} traité)',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              for (final e in r.poutres!.bois.parLongueur.entries)
+                Text('${e.value} × ${formatPlanche(e.key, metrique: metrique)}'),
+              if (r.poutres!.pattes != null) ...[
+                const SizedBox(height: 8),
+                const Text(
+                  'Pattes (6×6 traité)',
+                  style: TextStyle(fontWeight: FontWeight.w700),
+                ),
+                for (final e in r.poutres!.pattes!.parLongueur.entries)
+                  Text(
+                    '${e.value} × ${formatPlanche(e.key, metrique: metrique)}',
+                  ),
+              ],
+            ],
+            BlocMessages([
+              ...r.avertissements,
+              ...?r.poutres?.avertissements.map((a) => 'Poutres : $a'),
+            ]),
           ],
         ),
       ),

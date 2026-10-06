@@ -123,6 +123,73 @@ class FormePoints extends FormePlancher {
 // Projet
 // =============================================================================
 
+/// Poutres sur pieux vissés (bois traité) et pattes en 6×6 : voir [SpecPoutres].
+class ParametresPoutres {
+  final int nombre;
+  final int plis;
+  final SectionBois section;
+  final int pieuxParPoutre;
+  final double retraitPieux;
+  final double hauteurPatte;
+
+  const ParametresPoutres({
+    this.nombre = 2,
+    this.plis = 3,
+    this.section = section2x8,
+    this.pieuxParPoutre = 3,
+    this.retraitPieux = 12,
+    this.hauteurPatte = 0,
+  });
+
+  ParametresPoutres copieAvec({
+    int? nombre,
+    int? plis,
+    SectionBois? section,
+    int? pieuxParPoutre,
+    double? retraitPieux,
+    double? hauteurPatte,
+  }) => ParametresPoutres(
+    nombre: nombre ?? this.nombre,
+    plis: plis ?? this.plis,
+    section: section ?? this.section,
+    pieuxParPoutre: pieuxParPoutre ?? this.pieuxParPoutre,
+    retraitPieux: retraitPieux ?? this.retraitPieux,
+    hauteurPatte: hauteurPatte ?? this.hauteurPatte,
+  );
+
+  SpecPoutres versSpec() => SpecPoutres(
+    nombre: nombre,
+    plis: plis,
+    section: section.nom,
+    pieuxParPoutre: pieuxParPoutre,
+    retraitPieux: retraitPieux,
+    hauteurPatte: hauteurPatte,
+  );
+
+  Map<String, dynamic> toJson() => {
+    'nombre': nombre,
+    'plis': plis,
+    'section': section.nom,
+    'pieux': pieuxParPoutre,
+    'retraitPieux': retraitPieux,
+    'hauteurPatte': hauteurPatte,
+  };
+
+  static ParametresPoutres fromJson(Object? j) {
+    if (j is! Map) {
+      throw const FormatException('poutres invalides');
+    }
+    return ParametresPoutres(
+      nombre: _entier(j['nombre'], 1, 6),
+      plis: _entier(j['plis'], 1, 5),
+      section: _section(j['section'], sectionsPlancher),
+      pieuxParPoutre: _entier(j['pieux'], 2, 10),
+      retraitPieux: _num(j, 'retraitPieux', 0, 120),
+      hauteurPatte: _num(j, 'hauteurPatte', 0, 120),
+    );
+  }
+}
+
 class ParametresPlancher {
   final FormePlancher forme;
   final double espacement;
@@ -139,6 +206,29 @@ class ParametresPlancher {
   final double margePanneauxPourcent;
   final List<double> longueursPlanches;
 
+  /// Côté du contour contre la maison (sa rive reste simple) ; null : aucun.
+  final int? coteMaison;
+
+  /// Faux : pas d'étrier sur les solives de bordure.
+  final bool etriersBordures;
+
+  /// Entremises : une rangée chaque fois que la portée dépasse
+  /// [entremisesEspacement] (po) ; remplace [rangeesEntremises].
+  final bool entremisesAuto;
+  final double entremisesEspacement;
+  final bool entremisesAlternees;
+
+  /// Solives, rives et entremises dans des planches séparées.
+  final bool coupesSeparees;
+
+  /// Poutres, pieux et pattes ; null : sans.
+  final ParametresPoutres? poutres;
+
+  /// Clous d'étriers : par étrier, par boîte et marge d'achat (%).
+  final int clousParEtrier;
+  final int clousParBoite;
+  final double margeClous;
+
   const ParametresPlancher({
     this.forme = const FormeRectangle(156, 126),
     this.espacement = 16,
@@ -152,6 +242,16 @@ class ParametresPlancher {
     this.decalageMin = 24,
     this.margePanneauxPourcent = 0,
     this.longueursPlanches = longueursPlanchesParDefaut,
+    this.coteMaison,
+    this.etriersBordures = true,
+    this.entremisesAuto = false,
+    this.entremisesEspacement = 120,
+    this.entremisesAlternees = false,
+    this.coupesSeparees = false,
+    this.poutres,
+    this.clousParEtrier = 10,
+    this.clousParBoite = 120,
+    this.margeClous = 5,
   });
 
   ParametresPlancher copieAvec({
@@ -167,6 +267,16 @@ class ParametresPlancher {
     double? decalageMin,
     double? margePanneauxPourcent,
     List<double>? longueursPlanches,
+    int? Function()? coteMaison,
+    bool? etriersBordures,
+    bool? entremisesAuto,
+    double? entremisesEspacement,
+    bool? entremisesAlternees,
+    bool? coupesSeparees,
+    ParametresPoutres? Function()? poutres,
+    int? clousParEtrier,
+    int? clousParBoite,
+    double? margeClous,
   }) => ParametresPlancher(
     forme: forme ?? this.forme,
     espacement: espacement ?? this.espacement,
@@ -183,6 +293,16 @@ class ParametresPlancher {
     decalageMin: decalageMin ?? this.decalageMin,
     margePanneauxPourcent: margePanneauxPourcent ?? this.margePanneauxPourcent,
     longueursPlanches: longueursPlanches ?? this.longueursPlanches,
+    coteMaison: coteMaison != null ? coteMaison() : this.coteMaison,
+    etriersBordures: etriersBordures ?? this.etriersBordures,
+    entremisesAuto: entremisesAuto ?? this.entremisesAuto,
+    entremisesEspacement: entremisesEspacement ?? this.entremisesEspacement,
+    entremisesAlternees: entremisesAlternees ?? this.entremisesAlternees,
+    coupesSeparees: coupesSeparees ?? this.coupesSeparees,
+    poutres: poutres != null ? poutres() : this.poutres,
+    clousParEtrier: clousParEtrier ?? this.clousParEtrier,
+    clousParBoite: clousParBoite ?? this.clousParBoite,
+    margeClous: margeClous ?? this.margeClous,
   );
 
   SpecPlancher versSpec(Polygone contour) => SpecPlancher(
@@ -199,6 +319,16 @@ class ParametresPlancher {
     panneau: panneau,
     decalageMin: decalageMin,
     margePanneauxPourcent: margePanneauxPourcent,
+    coteMaison: coteMaison,
+    etriersBordures: etriersBordures,
+    entremisesAuto: entremisesAuto,
+    espacementMaxEntremises: entremisesEspacement,
+    entremisesAlternees: entremisesAlternees,
+    coupesSeparees: coupesSeparees,
+    poutres: poutres?.versSpec(),
+    clousParEtrier: clousParEtrier,
+    clousParBoite: clousParBoite,
+    margeClousPourcent: margeClous,
   );
 }
 
@@ -290,6 +420,16 @@ class ProjetCharpente {
       'decalageMin': plancher.decalageMin,
       'marge': plancher.margePanneauxPourcent,
       'longueursPlanches': plancher.longueursPlanches,
+      'coteMaison': plancher.coteMaison,
+      'etriersBordures': plancher.etriersBordures,
+      'entremisesAuto': plancher.entremisesAuto,
+      'entremisesEspacement': plancher.entremisesEspacement,
+      'entremisesAlternees': plancher.entremisesAlternees,
+      'coupesSeparees': plancher.coupesSeparees,
+      'poutres': plancher.poutres?.toJson(),
+      'clousParEtrier': plancher.clousParEtrier,
+      'clousParBoite': plancher.clousParBoite,
+      'margeClous': plancher.margeClous,
     },
     'mursActifs': mursActifs,
     'murs': {
@@ -351,6 +491,20 @@ class ProjetCharpente {
         20,
         (e) => _nombre(e, 1, 1000),
       ),
+      coteMaison: p['coteMaison'] == null
+          ? null
+          : _entier(p['coteMaison'], 0, 23),
+      etriersBordures: _boolOu(p['etriersBordures'], true),
+      entremisesAuto: _boolOu(p['entremisesAuto'], false),
+      entremisesEspacement: _numOu(p['entremisesEspacement'], 24, 240, 120),
+      entremisesAlternees: _boolOu(p['entremisesAlternees'], false),
+      coupesSeparees: _boolOu(p['coupesSeparees'], false),
+      poutres: p['poutres'] == null
+          ? null
+          : ParametresPoutres.fromJson(p['poutres']),
+      clousParEtrier: _entierOu(p['clousParEtrier'], 1, 40, 10),
+      clousParBoite: _entierOu(p['clousParBoite'], 10, 5000, 120),
+      margeClous: _numOu(p['margeClous'], 0, 100, 5),
     );
     final mode = ModeMurs.values.where((e) => e.name == m['mode']);
     if (mode.isEmpty) {
@@ -537,6 +691,16 @@ int _entier(Object? v, int min, int max) {
   }
   return v;
 }
+
+/// Champs ajoutés après la version 1 : absents d'un ancien projet (valeur par
+/// défaut), mais refusés s'ils sont présents et invalides.
+bool _boolOu(Object? v, bool defaut) => v == null ? defaut : _bool(v);
+
+double _numOu(Object? v, double min, double max, double defaut) =>
+    v == null ? defaut : _nombre(v, min, max);
+
+int _entierOu(Object? v, int min, int max, int defaut) =>
+    v == null ? defaut : _entier(v, min, max);
 
 bool _bool(Object? v) {
   if (v is! bool) {

@@ -186,6 +186,56 @@ describe('normaliserProjet : sortie du modèle', () => {
         [96, 120, 144, 168, 192, 216, 240]);
   });
 
+  test('plancher sur pieux : poutres, côté de la maison, étriers, entremises, clous', () => {
+    const { projet, corrections } = a.normaliserProjet({
+      plancher: {
+        coteMaison: 2, etriersBordures: false, entremisesAuto: true, entremisesEspacement: 108,
+        entremisesAlternees: true, coupesSeparees: true,
+        poutres: { nombre: 2, plis: 3, section: '2×8', pieux: 3, retraitPieux: 12, hauteurPatte: 16 },
+        clousParEtrier: 10, clousParBoite: 120, margeClous: 5,
+      },
+    });
+    assert.deepEqual(corrections, []);
+    const p = projet.plancher;
+    assert.equal(p.coteMaison, 2);
+    assert.equal(p.etriersBordures, false);
+    assert.equal(p.entremisesAuto, true);
+    assert.equal(p.entremisesEspacement, 108);
+    assert.equal(p.entremisesAlternees, true);
+    assert.equal(p.coupesSeparees, true);
+    assert.deepEqual(p.poutres, { nombre: 2, plis: 3, section: '2×8', pieux: 3, retraitPieux: 12, hauteurPatte: 16 });
+  });
+
+  test('plancher sur pieux : valeurs invalides remplacées, poutres absentes = null', () => {
+    const { projet, corrections } = a.normaliserProjet({
+      plancher: {
+        coteMaison: 'haut', entremisesEspacement: 3, clousParEtrier: 0, clousParBoite: 1e9, margeClous: -4,
+        poutres: { nombre: 99, plis: 0, section: '2×99', pieux: 1, retraitPieux: -1, hauteurPatte: 1e6 },
+      },
+    });
+    const p = projet.plancher;
+    assert.equal(p.coteMaison, 0);
+    assert.equal(p.entremisesEspacement, 120);
+    assert.equal(p.clousParEtrier, 10);
+    assert.equal(p.clousParBoite, 120);
+    assert.equal(p.margeClous, 5);
+    assert.deepEqual(p.poutres, { nombre: 2, plis: 3, section: '2×8', pieux: 3, retraitPieux: 12, hauteurPatte: 0 });
+    assert.ok(corrections.length >= 8, corrections.join(' | '));
+    for (const sans of [undefined, null, 'oui', 3, []]) {
+      assert.equal(a.normaliserProjet({ plancher: { poutres: sans } }).projet.plancher.poutres, null);
+    }
+    assert.equal(a.normaliserProjet({ plancher: { coteMaison: null } }).projet.plancher.coteMaison, null);
+  });
+
+  test('le schéma de l\'outil et la consigne connaissent les réglages du plancher sur pieux', () => {
+    const props = a.SCHEMA_OUTIL.properties.projet.properties.plancher.properties;
+    for (const cle of ['coteMaison', 'etriersBordures', 'entremisesAuto', 'entremisesEspacement',
+      'entremisesAlternees', 'coupesSeparees', 'poutres', 'clousParEtrier', 'clousParBoite', 'margeClous']) {
+      assert.ok(props[cle], cle);
+    }
+    assert.match(a.PROMPT_SYSTEME, /Conserve tel quel tout champ du projet actuel/);
+  });
+
   test('angle des solives : null ou nombre borné', () => {
     assert.equal(a.normaliserProjet({ plancher: { angle: null } }).projet.plancher.angle, null);
     assert.equal(a.normaliserProjet({ plancher: { angle: 35 } }).projet.plancher.angle, 35);

@@ -26,7 +26,17 @@
       192,
       216,
       240
-    ]
+    ],
+    "coteMaison": null,
+    "etriersBordures": true,
+    "entremisesAuto": false,
+    "entremisesEspacement": 120.0,
+    "entremisesAlternees": false,
+    "coupesSeparees": false,
+    "poutres": null,
+    "clousParEtrier": 10,
+    "clousParBoite": 120,
+    "margeClous": 5.0
   },
   "mursActifs": true,
   "murs": {
