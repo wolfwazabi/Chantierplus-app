@@ -9,16 +9,39 @@ import '../../services/app_session.dart';
 import '../../services/fichiers_chantier.dart';
 import '../../services/fonctions.dart';
 import '../../services/theme_compagnie.dart';
-import '../../widgets/confirmer_action.dart';
+import '../documents/documents_chantier.dart';
+import 'chantier_admin_actions.dart';
 import 'grille_photos_dossier.dart';
 import 'resume_heures_carte.dart';
 
-/// Dossier d'un chantier pour l'admin : résumé des heures, extras, matériel et
-/// photos, même si le chantier est archivé. Permet de préparer la facture et
-/// d'exporter tout le dossier (ZIP) pour le garder sur l'ordinateur.
+/// Page d'un chantier pour l'admin, avec tout ce qui le concerne :
+///  - Résumé : heures, extras, matériel, travaux, export du dossier (ZIP) ;
+///  - Photos : agrandir, sélectionner et supprimer ;
+///  - Documents : déposer, ouvrir et supprimer des plans, devis, etc.
+/// Le menu en haut permet de modifier ou d'archiver le chantier. Fonctionne aussi
+/// pour un chantier archivé (le dossier reste complet).
 class DossierChantierScreen extends StatefulWidget {
   final Chantier chantier;
-  const DossierChantierScreen({super.key, required this.chantier});
+
+  /// Tests : remplacent les lectures Firestore et fonctions (le chantier en
+  /// direct et le contenu de chaque onglet).
+  @visibleForTesting
+  final Stream<Chantier?>? fluxChantier;
+  @visibleForTesting
+  final Widget Function(String companyId, Chantier c)? contenuResume;
+  @visibleForTesting
+  final Widget Function(String companyId, Chantier c)? contenuPhotos;
+  @visibleForTesting
+  final Widget Function(String companyId, Chantier c)? contenuDocuments;
+
+  const DossierChantierScreen({
+    super.key,
+    required this.chantier,
+    this.fluxChantier,
+    this.contenuResume,
+    this.contenuPhotos,
+    this.contenuDocuments,
+  });
 
   @override
   State<DossierChantierScreen> createState() => _DossierChantierScreenState();
@@ -29,56 +52,11 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
   String? _erreur;
   bool _chargement = true;
   bool _exportEnCours = false;
-  late bool _archive = widget.chantier.archive;
-  bool _archivageEnCours = false;
 
   @override
   void initState() {
     super.initState();
-    _charger();
-  }
-
-  /// Archive le chantier (après confirmation) ou le restaure. Rien n'est
-  /// supprimé : photos, documents et heures restent dans le dossier.
-  Future<void> _basculerArchive() async {
-    final archiver = !_archive;
-    final messager = ScaffoldMessenger.of(context);
-    if (archiver) {
-      final ok = await confirmerAction(
-        context,
-        titre: 'Archiver ce chantier ?',
-        texte:
-            '${widget.chantier.nom} ne sera plus proposé dans les feuilles de '
-            'temps, les photos et les documents. Rien n\'est supprimé : vous '
-            'pouvez le restaurer à tout moment.',
-        action: 'Archiver',
-        destructive: false,
-      );
-      if (!ok || !mounted) return;
-    }
-    setState(() => _archivageEnCours = true);
-    try {
-      await FirebaseFirestore.instance
-          .collection('chantiers')
-          .doc(widget.chantier.id)
-          .update({'archive': archiver});
-      if (!mounted) return;
-      setState(() => _archive = archiver);
-      messager.showSnackBar(
-        SnackBar(
-          content: Text(archiver ? 'Chantier archivé.' : 'Chantier restauré.'),
-        ),
-      );
-    } catch (_) {
-      messager.showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de modifier le chantier. Réessayez.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _archivageEnCours = false);
-    }
+    if (widget.contenuResume == null) _charger();
   }
 
   Future<void> _charger() async {
@@ -188,112 +166,223 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
     }
   }
 
+  /// Onglet Résumé : état du chantier, export, heures, extras, matériel, travaux.
+  Widget _ongletResume(Chantier c, String companyId) {
+    return ListView(
+      key: const ValueKey('onglet_resume'),
+      padding: const EdgeInsets.all(16),
+      children: [
+        if (c.archive)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.inventory_2_outlined, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  'Chantier archivé',
+                  key: const ValueKey('bandeau_archive'),
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+              ],
+            ),
+          ),
+        if (c.adresse.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Text(
+              c.adresse,
+              style: const TextStyle(color: Colors.black54),
+            ),
+          ),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            key: const ValueKey('dossier_exporter'),
+            onPressed: _exportEnCours ? null : _exporter,
+            icon: _exportEnCours
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Icon(Icons.archive_outlined),
+            label: Text(
+              _exportEnCours
+                  ? 'Préparation de l\'export…'
+                  : 'Exporter le dossier (ZIP)',
+            ),
+          ),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 6, bottom: 8),
+          child: Text(
+            'Résumé des heures, extras, matériel, photos et documents, à garder '
+            'sur l\'ordinateur de la compagnie.',
+            style: TextStyle(fontSize: 12, color: Colors.black54),
+          ),
+        ),
+        if (_chargement)
+          const Padding(
+            padding: EdgeInsets.all(24),
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_erreur != null)
+          Card(
+            color: Colors.red.shade50,
+            child: ListTile(
+              leading: const Icon(Icons.cloud_off),
+              title: Text(_erreur!),
+              trailing: TextButton(
+                onPressed: _charger,
+                child: const Text('Réessayer'),
+              ),
+            ),
+          )
+        else if (_resume != null)
+          ResumeHeuresCarte(resume: _resume!),
+        const SizedBox(height: 8),
+        _SectionExtras(companyId: companyId, chantierId: c.id),
+        _SectionMateriel(companyId: companyId, chantierId: c.id),
+        _SectionTravaux(companyId: companyId, chantierId: c.id),
+        const SizedBox(height: 24),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final companyId = AppSession.current?.companyId;
-    final c = widget.chantier;
-    return Scaffold(
-      appBar: AppBar(title: Text(c.nom, overflow: TextOverflow.ellipsis)),
-      body: companyId == null || !AppSession.estAdmin
-          ? const Center(child: Text('Réservé aux administrateurs.'))
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (_archive)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.inventory_2_outlined, size: 18),
-                        const SizedBox(width: 6),
-                        Text(
-                          'Chantier archivé',
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                      ],
+    if (companyId == null || !AppSession.estAdmin) {
+      return Scaffold(
+        appBar: AppBar(title: Text(widget.chantier.nom)),
+        body: const Center(child: Text('Réservé aux administrateurs.')),
+      );
+    }
+    // Le chantier est suivi en direct : le nom, l'adresse et l'archivage
+    // modifiés depuis le menu se voient tout de suite.
+    return StreamBuilder<Chantier?>(
+      stream:
+          widget.fluxChantier ??
+          FirebaseFirestore.instance
+              .collection('chantiers')
+              .doc(widget.chantier.id)
+              .snapshots()
+              .map((d) {
+                final data = d.data();
+                return data == null
+                    ? null
+                    : Chantier.fromFirestore(widget.chantier.id, data);
+              }),
+      builder: (context, snap) {
+        final c = snap.data ?? widget.chantier;
+        return DefaultTabController(
+          length: 3,
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text(c.nom, overflow: TextOverflow.ellipsis),
+              actions: [
+                PopupMenuButton<String>(
+                  key: const ValueKey('dossier_menu'),
+                  onSelected: (v) {
+                    if (v == 'modifier') {
+                      ouvrirFormulaireChantier(
+                        context,
+                        docId: c.id,
+                        donnees: {'nom': c.nom, 'adresse': c.adresse},
+                      );
+                    } else {
+                      archiverOuRestaurerChantier(
+                        context,
+                        docId: c.id,
+                        nom: c.nom,
+                        archiver: !c.archive,
+                      );
+                    }
+                  },
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(
+                      value: 'modifier',
+                      child: Text('Modifier le chantier'),
                     ),
-                  ),
-                if (c.adresse.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    child: Text(
-                      c.adresse,
-                      style: const TextStyle(color: Colors.black54),
-                    ),
-                  ),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    key: const ValueKey('dossier_exporter'),
-                    onPressed: _exportEnCours ? null : _exporter,
-                    icon: _exportEnCours
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Icon(Icons.archive_outlined),
-                    label: Text(
-                      _exportEnCours
-                          ? 'Préparation de l\'export…'
-                          : 'Exporter le dossier (ZIP)',
-                    ),
-                  ),
-                ),
-                const Padding(
-                  padding: EdgeInsets.only(top: 6, bottom: 8),
-                  child: Text(
-                    'Résumé des heures, extras, matériel et photos, à garder sur l\'ordinateur de la compagnie.',
-                    style: TextStyle(fontSize: 12, color: Colors.black54),
-                  ),
-                ),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    key: const ValueKey('dossier_archiver'),
-                    onPressed: _archivageEnCours ? null : _basculerArchive,
-                    icon: Icon(
-                      _archive
-                          ? Icons.unarchive_outlined
-                          : Icons.inventory_2_outlined,
-                    ),
-                    label: Text(
-                      _archive ? 'Restaurer le chantier' : 'Archiver le chantier',
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                if (_chargement)
-                  const Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Center(child: CircularProgressIndicator()),
-                  )
-                else if (_erreur != null)
-                  Card(
-                    color: Colors.red.shade50,
-                    child: ListTile(
-                      leading: const Icon(Icons.cloud_off),
-                      title: Text(_erreur!),
-                      trailing: TextButton(
-                        onPressed: _charger,
-                        child: const Text('Réessayer'),
+                    PopupMenuItem(
+                      value: 'archive',
+                      child: Text(
+                        c.archive ? 'Restaurer le chantier' : 'Archiver le chantier',
                       ),
                     ),
-                  )
-                else if (_resume != null)
-                  ResumeHeuresCarte(resume: _resume!),
-                const SizedBox(height: 8),
-                _SectionExtras(companyId: companyId, chantierId: c.id),
-                _SectionMateriel(companyId: companyId, chantierId: c.id),
-                _SectionTravaux(companyId: companyId, chantierId: c.id),
-                _SectionDocuments(companyId: companyId, chantierId: c.id),
-                _SectionPhotos(companyId: companyId, chantierId: c.id),
+                  ],
+                ),
+              ],
+              bottom: const TabBar(
+                key: ValueKey('onglets_chantier'),
+                tabs: [
+                  Tab(icon: Icon(Icons.assessment_outlined), text: 'Résumé'),
+                  Tab(icon: Icon(Icons.photo_library_outlined), text: 'Photos'),
+                  Tab(icon: Icon(Icons.description_outlined), text: 'Documents'),
+                ],
+              ),
+            ),
+            body: TabBarView(
+              children: [
+                _GardeEnVie(
+                  child:
+                      widget.contenuResume?.call(companyId, c) ??
+                      _ongletResume(c, companyId),
+                ),
+                _GardeEnVie(
+                  child:
+                      widget.contenuPhotos?.call(companyId, c) ??
+                      ListView(
+                        key: const ValueKey('onglet_photos'),
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          _SectionPhotos(companyId: companyId, chantierId: c.id),
+                        ],
+                      ),
+                ),
+                _GardeEnVie(
+                  // Dépôt, ouverture et suppression des documents (admin).
+                  child:
+                      widget.contenuDocuments?.call(companyId, c) ??
+                      DocumentsChantier(
+                        key: ValueKey('docs_${c.id}'),
+                        companyId: companyId,
+                        chantierId: c.id,
+                        peutGerer: true,
+                      ),
+                ),
               ],
             ),
+          ),
+        );
+      },
     );
+  }
+}
+
+/// Garde l'état d'un onglet quand on passe à un autre (un envoi de document en
+/// cours, une sélection de photos).
+class _GardeEnVie extends StatefulWidget {
+  final Widget child;
+  const _GardeEnVie({required this.child});
+
+  @override
+  State<_GardeEnVie> createState() => _GardeEnVieState();
+}
+
+class _GardeEnVieState extends State<_GardeEnVie>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
 
@@ -480,82 +569,6 @@ class _SectionTravaux extends StatelessWidget {
                   subtitle: Text(
                     d.data()['complete'] == true ? 'Complété' : 'À compléter',
                     style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SectionDocuments extends StatelessWidget {
-  final String companyId;
-  final String chantierId;
-  const _SectionDocuments({required this.companyId, required this.chantierId});
-
-  Future<void> _supprimer(
-    BuildContext context,
-    String docId,
-    Map<String, dynamic> data,
-  ) async {
-    final messager = ScaffoldMessenger.of(context);
-    final ok = await confirmerAction(
-      context,
-      titre: 'Supprimer ce document ?',
-      texte:
-          '« ${data['nom']} » sera supprimé définitivement pour tous. '
-          'Cette action est irréversible.',
-      action: 'Supprimer',
-    );
-    if (!ok) return;
-    final resultat = await supprimerElementsChantier('chantier_documents', [
-      ElementChantier(docId, data['cheminStorage'] as String?),
-    ]);
-    messager.showSnackBar(
-      SnackBar(
-        content: Text(
-          messageSuppression(
-            resultat,
-            singulier: 'document supprimé',
-            pluriel: 'documents supprimés',
-          ),
-        ),
-        backgroundColor: resultat.toutSupprime ? null : Colors.red,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _requete('chantier_documents', companyId, chantierId).snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) return _vide('Impossible de charger les documents.');
-        final docs = snap.data?.docs ?? [];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _titreSection('Documents', snap.hasData ? docs.length : null),
-            if (snap.hasData && docs.isEmpty) _vide('Aucun document.'),
-            for (final d in docs)
-              Card(
-                child: ListTile(
-                  leading: Icon(
-                    Icons.description_outlined,
-                    color: ThemeCompagnie.accentDe(context),
-                  ),
-                  title: Text((d.data()['nom'] ?? '').toString()),
-                  subtitle: Text(
-                    formatTaille(((d.data()['taille'] ?? 0) as num).toInt()),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  trailing: IconButton(
-                    key: ValueKey('supprimer_document_${d.id}'),
-                    tooltip: 'Supprimer',
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                    onPressed: () => _supprimer(context, d.id, d.data()),
                   ),
                 ),
               ),

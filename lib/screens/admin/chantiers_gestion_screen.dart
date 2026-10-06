@@ -1,195 +1,80 @@
-import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
 
 import '../../models/chantier.dart';
 import '../../services/app_session.dart';
-import '../../widgets/recherche_chantier.dart';
 import '../../services/theme_compagnie.dart';
+import '../../widgets/recherche_chantier.dart';
+import 'chantier_admin_actions.dart';
+import 'dossier_chantier_screen.dart';
 
+/// Filtre de la liste des chantiers.
+enum FiltreChantiers { actifs, archives, tous }
+
+/// Garde les chantiers selon le filtre et la recherche (nom ou adresse).
+List<Chantier> filtrerChantiers(
+  List<Chantier> chantiers,
+  FiltreChantiers filtre,
+  String requete,
+) {
+  return chantiers.where((c) {
+    final okFiltre = switch (filtre) {
+      FiltreChantiers.tous => true,
+      FiltreChantiers.actifs => !c.archive,
+      FiltreChantiers.archives => c.archive,
+    };
+    return okFiltre && chantierCorrespond(c, requete);
+  }).toList();
+}
+
+/// Section Admin « Chantiers » : tout ce qui touche un chantier au même endroit.
+/// La liste (recherche, actifs / archivés) mène à la page du chantier : résumé des
+/// heures, photos, documents (dépôt et suppression), export, modification et
+/// archivage.
 class ChantiersGestionScreen extends StatefulWidget {
-  const ChantiersGestionScreen({super.key});
+  /// Remplace la lecture des chantiers dans Firestore (tests).
+  @visibleForTesting
+  final Stream<List<Chantier>>? fluxChantiers;
+
+  /// Remplace la page d'un chantier ouverte au toucher (tests).
+  @visibleForTesting
+  final Widget Function(Chantier chantier)? pageChantier;
+
+  const ChantiersGestionScreen({
+    super.key,
+    this.fluxChantiers,
+    this.pageChantier,
+  });
 
   @override
   State<ChantiersGestionScreen> createState() => _ChantiersGestionScreenState();
 }
 
 class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
-  /// Filtre de la liste (nom ou adresse), même logique que la recherche « … ».
+  FiltreChantiers _filtre = FiltreChantiers.actifs;
   String _requete = '';
-
-  /// Un chantier ne se supprime pas : il s'archive (ses photos, documents et
-  /// heures sont conservés) et peut être restauré.
-  void _confirmerArchivage(BuildContext context, String docId, String nom) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Archiver ce chantier ?'),
-        content: Text(
-          '$nom ne sera plus proposé dans les feuilles de temps, les photos et '
-          'les documents. Rien n\'est supprimé : vous pouvez le restaurer '
-          'à tout moment dans « Archivés ».',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Annuler'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              _definirArchive(docId, true);
-            },
-            child: const Text('Archiver'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _definirArchive(String docId, bool archive) async {
-    final messager = ScaffoldMessenger.of(context);
-    try {
-      await FirebaseFirestore.instance
-          .collection('chantiers')
-          .doc(docId)
-          .update({'archive': archive});
-      messager.showSnackBar(
-        SnackBar(
-          content: Text(archive ? 'Chantier archivé.' : 'Chantier restauré.'),
-        ),
-      );
-    } catch (_) {
-      messager.showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de modifier le chantier. Réessayez.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  void _ouvrirFormulaire(
-    BuildContext context, {
-    String? docId,
-    Map<String, dynamic>? donnees,
-  }) {
-    final nomCtrl = TextEditingController(text: donnees?['nom'] ?? '');
-    final adresseCtrl = TextEditingController(text: donnees?['adresse'] ?? '');
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                docId == null ? 'Nouveau chantier' : 'Modifier le chantier',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: nomCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Nom du chantier',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: adresseCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Adresse',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 20),
-              SizedBox(
-                width: double.infinity,
-                child: FilledButton(
-                  onPressed: () async {
-                    final nom = nomCtrl.text.trim();
-                    final adresse = adresseCtrl.text.trim();
-                    if (nom.isEmpty) return;
-
-                    final companyId = AppSession.current?.companyId;
-                    if (companyId == null) return;
-
-                    if (docId == null) {
-                      await FirebaseFirestore.instance
-                          .collection('chantiers')
-                          .add({
-                            'companyId': companyId,
-                            'nom': nom,
-                            'adresse': adresse,
-                          });
-                    } else {
-                      await FirebaseFirestore.instance
-                          .collection('chantiers')
-                          .doc(docId)
-                          .update({'nom': nom, 'adresse': adresse});
-                    }
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  },
-                  child: Text(docId == null ? 'Créer' : 'Enregistrer'),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  /// Chantiers archivés : repliés, avec « Restaurer ».
-  Widget _sectionArchives(List<QueryDocumentSnapshot> archives) {
-    if (archives.isEmpty) return const SizedBox(height: 80);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 80),
-      child: ExpansionTile(
-        key: const ValueKey('chantiers_archives'),
-        leading: const Icon(Icons.inventory_2_outlined),
-        title: Text('Archivés (${archives.length})'),
-        children: [
-          for (final doc in archives)
-            ListTile(
-              key: ValueKey('archive_${doc.id}'),
-              title: Text((doc.data() as Map)['nom'] ?? ''),
-              subtitle: Text((doc.data() as Map)['adresse'] ?? ''),
-              trailing: TextButton(
-                onPressed: () => _definirArchive(doc.id, false),
-                child: const Text('Restaurer'),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
     final companyId = AppSession.current?.companyId;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Gérer les chantiers')),
-      body: companyId == null
-          ? const Center(child: Text('Aucune compagnie associée.'))
-          : StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance
-                  .collection('chantiers')
-                  .where('companyId', isEqualTo: companyId)
-                  .snapshots(),
+      appBar: AppBar(title: const Text('Chantiers')),
+      body: companyId == null || !AppSession.estAdmin
+          ? const Center(child: Text('Réservé aux administrateurs.'))
+          : StreamBuilder<List<Chantier>>(
+              stream:
+                  widget.fluxChantiers ??
+                  FirebaseFirestore.instance
+                      .collection('chantiers')
+                      .where('companyId', isEqualTo: companyId)
+                      .snapshots()
+                      .map(
+                        (s) => [
+                          for (final d in s.docs)
+                            Chantier.fromFirestore(d.id, d.data()),
+                        ],
+                      ),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return const Center(
@@ -199,40 +84,11 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                 if (!snapshot.hasData) {
                   return const Center(child: CircularProgressIndicator());
                 }
-                final docs = snapshot.data!.docs.toList()
-                  ..sort(
-                    (a, b) => ((a.data() as Map)['nom'] ?? '').compareTo(
-                      (b.data() as Map)['nom'] ?? '',
-                    ),
-                  );
-
-                if (docs.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'Aucun chantier. Ajoutez-en un avec le bouton +.',
-                    ),
-                  );
-                }
-
-                final visibles = docs.where((d) {
-                  final chantier = Chantier.fromFirestore(
-                    d.id,
-                    d.data() as Map<String, dynamic>,
-                  );
-                  return !chantier.archive &&
-                      chantierCorrespond(chantier, _requete);
-                }).toList();
-                final archives = docs.where((d) {
-                  final chantier = Chantier.fromFirestore(
-                    d.id,
-                    d.data() as Map<String, dynamic>,
-                  );
-                  return chantier.archive &&
-                      chantierCorrespond(chantier, _requete);
-                }).toList();
-                final nbActifs = docs
-                    .where((d) => (d.data() as Map)['archive'] != true)
-                    .length;
+                final tous = [...snapshot.data!]
+                  ..sort((a, b) => a.nom.compareTo(b.nom));
+                final visibles = filtrerChantiers(tous, _filtre, _requete);
+                final nbActifs = tous.where((c) => !c.archive).length;
+                final nbArchives = tous.length - nbActifs;
 
                 return Column(
                   children: [
@@ -240,83 +96,132 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                       child: TextField(
                         key: const ValueKey('filtre_chantiers'),
-                        decoration: InputDecoration(
+                        decoration: const InputDecoration(
                           labelText: 'Rechercher par nom ou adresse',
-                          border: const OutlineInputBorder(),
-                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                          prefixIcon: Icon(Icons.search),
                           isDense: true,
-                          suffixText: _requete.isEmpty
-                              ? null
-                              : '${visibles.length} / $nbActifs',
                         ),
                         onChanged: (v) => setState(() => _requete = v),
                       ),
                     ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: SegmentedButton<FiltreChantiers>(
+                        key: const ValueKey('segments_chantiers'),
+                        showSelectedIcon: false,
+                        segments: [
+                          ButtonSegment(
+                            value: FiltreChantiers.actifs,
+                            label: Text('Actifs ($nbActifs)'),
+                          ),
+                          ButtonSegment(
+                            value: FiltreChantiers.archives,
+                            label: Text('Archivés ($nbArchives)'),
+                          ),
+                          const ButtonSegment(
+                            value: FiltreChantiers.tous,
+                            label: Text('Tous'),
+                          ),
+                        ],
+                        selected: {_filtre},
+                        onSelectionChanged: (s) =>
+                            setState(() => _filtre = s.first),
+                      ),
+                    ),
                     Expanded(
-                      child: visibles.isEmpty && archives.isEmpty
-                          ? const Center(
+                      child: visibles.isEmpty
+                          ? Center(
                               child: Padding(
-                                padding: EdgeInsets.all(24),
+                                padding: const EdgeInsets.all(24),
                                 child: Text(
-                                  'Aucun chantier ne correspond à ce nom ou à cette adresse.',
+                                  tous.isEmpty
+                                      ? 'Aucun chantier. Ajoutez-en un avec le bouton Ajouter.'
+                                      : 'Aucun chantier ne correspond.',
                                   textAlign: TextAlign.center,
                                 ),
                               ),
                             )
                           : ListView.builder(
-                              itemCount: visibles.length + 1,
-                              itemBuilder: (context, index) {
-                                if (index == visibles.length) {
-                                  return _sectionArchives(archives);
-                                }
-                                final doc = visibles[index];
-                                final data = doc.data() as Map<String, dynamic>;
-                                return ListTile(
-                                  leading: Icon(
-                                    Icons.construction,
-                                    color: ThemeCompagnie.accentDe(context),
+                              padding: const EdgeInsets.only(bottom: 88),
+                              itemCount: visibles.length,
+                              itemBuilder: (context, i) =>
+                                  _TuileChantier(
+                                    chantier: visibles[i],
+                                    pageChantier: widget.pageChantier,
                                   ),
-                                  title: Text(data['nom'] ?? ''),
-                                  subtitle: Text(data['adresse'] ?? ''),
-                                  trailing: PopupMenuButton<String>(
-                                    onSelected: (v) {
-                                      if (v == 'modifier') {
-                                        _ouvrirFormulaire(
-                                          context,
-                                          docId: doc.id,
-                                          donnees: data,
-                                        );
-                                      } else if (v == 'archiver') {
-                                        _confirmerArchivage(
-                                          context,
-                                          doc.id,
-                                          data['nom'] ?? '',
-                                        );
-                                      }
-                                    },
-                                    itemBuilder: (ctx) => const [
-                                      PopupMenuItem(
-                                        value: 'modifier',
-                                        child: Text('Modifier'),
-                                      ),
-                                      PopupMenuItem(
-                                        value: 'archiver',
-                                        child: Text('Archiver'),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
                             ),
                     ),
                   ],
                 );
               },
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _ouvrirFormulaire(context),
-        icon: const Icon(Icons.add),
-        label: const Text('Ajouter'),
+      floatingActionButton: companyId == null || !AppSession.estAdmin
+          ? null
+          : FloatingActionButton.extended(
+              key: const ValueKey('chantier_ajouter'),
+              onPressed: () => ouvrirFormulaireChantier(context),
+              icon: const Icon(Icons.add),
+              label: const Text('Ajouter'),
+            ),
+    );
+  }
+}
+
+/// Un chantier de la liste : un toucher ouvre sa page ; le menu permet de le
+/// modifier, de l'archiver ou de le restaurer.
+class _TuileChantier extends StatelessWidget {
+  final Chantier chantier;
+  final Widget Function(Chantier chantier)? pageChantier;
+  const _TuileChantier({required this.chantier, this.pageChantier});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = chantier;
+    return ListTile(
+      key: ValueKey('chantier_${c.id}'),
+      leading: Icon(
+        c.archive ? Icons.inventory_2_outlined : Icons.folder_open,
+        color: ThemeCompagnie.accentDe(context),
+      ),
+      title: Text(c.nom),
+      subtitle: Text(
+        [if (c.adresse.isNotEmpty) c.adresse, if (c.archive) 'Archivé'].join(' • '),
+      ),
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              pageChantier?.call(c) ?? DossierChantierScreen(chantier: c),
+        ),
+      ),
+      trailing: PopupMenuButton<String>(
+        key: ValueKey('menu_${c.id}'),
+        onSelected: (v) {
+          if (v == 'modifier') {
+            ouvrirFormulaireChantier(
+              context,
+              docId: c.id,
+              donnees: {'nom': c.nom, 'adresse': c.adresse},
+            );
+          } else {
+            archiverOuRestaurerChantier(
+              context,
+              docId: c.id,
+              nom: c.nom,
+              archiver: v == 'archiver',
+            );
+          }
+        },
+        itemBuilder: (ctx) => [
+          const PopupMenuItem(value: 'modifier', child: Text('Modifier')),
+          PopupMenuItem(
+            value: c.archive ? 'restaurer' : 'archiver',
+            child: Text(c.archive ? 'Restaurer' : 'Archiver'),
+          ),
+        ],
       ),
     );
   }

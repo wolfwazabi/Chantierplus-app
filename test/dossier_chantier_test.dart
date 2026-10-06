@@ -1,6 +1,6 @@
 import 'package:construction_app/models/chantier.dart';
 import 'package:construction_app/models/resume_chantier.dart';
-import 'package:construction_app/screens/admin/dossiers_chantiers_screen.dart';
+import 'package:construction_app/screens/admin/chantiers_gestion_screen.dart';
 import 'package:construction_app/screens/admin/resume_heures_carte.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -188,21 +188,21 @@ void main() {
       ),
     ];
 
-    List<String> ids(FiltreDossiers f, [String q = '']) =>
-        filtrerDossiers(chantiers, f, q).map((c) => c.id).toList();
+    List<String> ids(FiltreChantiers f, [String q = '']) =>
+        filtrerChantiers(chantiers, f, q).map((c) => c.id).toList();
 
     test('tous : les archivés restent visibles pour l\'admin', () {
-      expect(ids(FiltreDossiers.tous), ['1', '2', '3']);
+      expect(ids(FiltreChantiers.tous), ['1', '2', '3']);
     });
     test('actifs et archivés', () {
-      expect(ids(FiltreDossiers.actifs), ['1']);
-      expect(ids(FiltreDossiers.archives), ['2', '3']);
+      expect(ids(FiltreChantiers.actifs), ['1']);
+      expect(ids(FiltreChantiers.archives), ['2', '3']);
     });
     test('recherche par nom ou adresse, sans accents, avec le filtre', () {
-      expect(ids(FiltreDossiers.tous, 'tremblay'), ['3']);
-      expect(ids(FiltreDossiers.tous, 'lac'), ['2']);
-      expect(ids(FiltreDossiers.actifs, 'garage'), isEmpty);
-      expect(ids(FiltreDossiers.archives, 'rue'), ['2']);
+      expect(ids(FiltreChantiers.tous, 'tremblay'), ['3']);
+      expect(ids(FiltreChantiers.tous, 'lac'), ['2']);
+      expect(ids(FiltreChantiers.actifs, 'garage'), isEmpty);
+      expect(ids(FiltreChantiers.archives, 'rue'), ['2']);
     });
   });
 }

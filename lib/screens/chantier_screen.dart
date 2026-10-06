@@ -79,7 +79,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
                 child: Padding(
                   padding: EdgeInsets.all(24),
                   child: Text(
-                    'Aucun chantier n\'a été créé. Un administrateur peut en ajouter dans Admin → Gérer les chantiers.',
+                    'Aucun chantier n\'a été créé. Un administrateur peut en ajouter dans Admin → Chantiers.',
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -189,7 +189,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
                           icone: Icons.shopping_cart,
                           avecQuantite: true,
                         ),
-                        // Consultation seulement : le dépôt se fait dans l'onglet Admin.
+                        // Consultation seulement : le dépôt se fait dans Admin → Chantiers → Documents.
                         DocumentsChantier(
                           key: ValueKey('docs_${_chantierSelectionne!.id}'),
                           companyId: companyId,

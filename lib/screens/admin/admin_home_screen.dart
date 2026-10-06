@@ -6,8 +6,6 @@ import 'regles_paie_screen.dart';
 import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
 import 'chantiers_gestion_screen.dart';
-import 'documents_admin_screen.dart';
-import 'dossiers_chantiers_screen.dart';
 
 class AdminHomeScreen extends StatelessWidget {
   const AdminHomeScreen({super.key});
@@ -54,44 +52,14 @@ class AdminHomeScreen extends StatelessWidget {
         Card(
           child: ListTile(
             leading: Icon(Icons.construction, color: accent),
-            title: const Text('Gérer les chantiers'),
-            subtitle: const Text('Ajouter, modifier ou retirer des chantiers'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => ChantiersGestionScreen()),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.receipt_long_outlined, color: accent),
-            title: const Text('Dossiers de chantier'),
+            title: const Text('Chantiers'),
             subtitle: const Text(
-              'Résumé, facturation et export (archivés compris)',
+              'Ajouter, modifier, archiver · photos, documents, heures et export',
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const DossiersChantiersScreen(),
-                ),
-              );
-            },
-          ),
-        ),
-        const SizedBox(height: 12),
-        Card(
-          child: ListTile(
-            leading: Icon(Icons.folder_open, color: accent),
-            title: const Text('Documents des chantiers'),
-            subtitle: const Text('Déposer des plans, devis, photos…'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const DocumentsAdminScreen()),
+                MaterialPageRoute(builder: (_) => const ChantiersGestionScreen()),
               );
             },
           ),
