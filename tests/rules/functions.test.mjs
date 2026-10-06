@@ -537,10 +537,11 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
   });
 
   test('calcule heures, voyagement payé et totaux avec les règles de la compagnie', async () => {
+    // Seuil 60 min à 50 % : 90 min → 30 min au-delà du seuil, payées à 50 % = 15 min ; 40 min → rien.
     const r = await envoyer(emp, [jour({ tempsVoyagementMinutes: 90 }), jour({ tempsVoyagementMinutes: 40 })]);
     assert.deepEqual(r, {
-      totalHeures: 7.75 * 2 + 0.75, totalHeuresTravaillees: 15.5, totalVoyagementPaye: 0.75,
-      jours: [{ heuresTravaillees: 7.75, voyagementPayeHeures: 0.75 }, { heuresTravaillees: 7.75, voyagementPayeHeures: 0 }],
+      totalHeures: 7.75 * 2 + 0.25, totalHeuresTravaillees: 15.5, totalVoyagementPaye: 0.25,
+      jours: [{ heuresTravaillees: 7.75, voyagementPayeHeures: 0.25 }, { heuresTravaillees: 7.75, voyagementPayeHeures: 0 }],
     });
     const f = await feuilleDe('ft-emp');
     assert.equal(f.companyId, cid);
@@ -631,6 +632,83 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     assert.equal(f.jours[0].tempsVoyagementMinutes, null);
     await adminDb.collection('companies').doc(cid).update({
       'reglesPaie.voyagementActif': true, 'reglesPaie.dinerPaye': true,
+    });
+  });
+
+  describe('changement des règles de voyagement : semaine courante ajustée, semaines passées intactes', () => {
+    const PASSEE3 = lundi(-3);
+    const RESERVE = { 'reglesPaie.voyagementActif': true, 'reglesPaie.voyagementSeuilMinutes': 60,
+      'reglesPaie.voyagementPourcentage': 50, 'reglesPaie.dinerPaye': true };
+    const NOUVELLES = { 'reglesPaie.voyagementActif': true, 'reglesPaie.voyagementSeuilMinutes': 30,
+      'reglesPaie.voyagementPourcentage': 100 };
+    const regles = (maj) => adminDb.collection('companies').doc(cid).update(maj);
+
+    before(async () => { await regles(RESERVE); });
+    after(async () => { await regles(RESERVE); });
+
+    test('semaine passée renvoyée telle quelle après le changement : aucune valeur ne bouge', async () => {
+      await adminDb.collection('feuilles_temps').doc(`ft-adm_${PASSEE3}`).delete();
+      const avant = await envoyer(adm, [jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 90 })], PASSEE3);
+      assert.equal(avant.jours[0].voyagementPayeHeures, 0.5); // 60 min au-delà du seuil, à 50 %
+      const stockee = await feuilleDe('ft-adm', PASSEE3);
+
+      await regles(NOUVELLES);
+      const apres = await envoyer(adm, [jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 90 })], PASSEE3);
+      assert.deepEqual(apres.jours, avant.jours);
+      assert.equal(apres.totalVoyagementPaye, avant.totalVoyagementPaye);
+      const relue = await feuilleDe('ft-adm', PASSEE3);
+      assert.deepEqual(relue.jours, stockee.jours);
+      assert.equal(relue.totalHeures, stockee.totalHeures);
+      assert.equal(relue.reglesPaie.voyagementSeuilMinutes, 60, 'les règles d\'origine restent');
+
+      // Une journée corrigée est recalculée, l'autre garde sa valeur d'origine.
+      const corrigee = await envoyer(adm, [jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 150 })], PASSEE3);
+      assert.equal(corrigee.jours[0].voyagementPayeHeures, 0.5);
+      assert.equal(corrigee.jours[1].voyagementPayeHeures, 2); // 120 min au-delà de 30, à 100 %
+      await regles(RESERVE);
+    });
+
+    test('recalculerSemaineCourante : la semaine courante s\'ajuste, pas les autres', async () => {
+      const SEM = lundi(0);
+      await adminDb.collection('feuilles_temps').doc(`ft-emp_${SEM}`).delete();
+      await envoyer(emp, [jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 90, diner: false }), jour({ estAucun: true })], SEM);
+      const passee = await feuilleDe('ft-adm', PASSEE3);
+      // Feuille d'une autre compagnie, même semaine : jamais touchée.
+      await adminDb.collection('feuilles_temps').doc(`etranger_${SEM}`).set({
+        companyId: autreCid, estIndividuel: false, employeeId: 'etranger', lundiDate: SEM,
+        jours: [{ nomJour: 'Lundi', chantierId: 'ft-chB', estAucun: false, heureDebutMinutes: 420, heureFinMinutes: 900,
+          pauseMatin: true, diner: true, tempsVoyagementMinutes: 120, heuresTravaillees: 7.75, voyagementPayeHeures: 0.5, verrouille: true }],
+        totalHeures: 8.25, totalHeuresTravaillees: 7.75, totalVoyagementPaye: 0.5,
+      });
+      const etranger = (await adminDb.collection('feuilles_temps').doc(`etranger_${SEM}`).get()).data();
+
+      await regles(NOUVELLES);
+      const r = await adm.appeler('recalculerSemaineCourante');
+      assert.equal(r.semaine, SEM);
+      assert.ok(r.modifiees >= 1);
+
+      const f = await feuilleDe('ft-emp', SEM);
+      assert.equal(f.jours[0].voyagementPayeHeures, 1.5); // 120 − 30 = 90 min à 100 %
+      assert.equal(f.jours[1].voyagementPayeHeures, 1); // 90 − 30 = 60 min
+      assert.equal(f.totalVoyagementPaye, 2.5);
+      assert.equal(f.totalHeures, f.totalHeuresTravaillees + 2.5);
+      assert.equal(f.reglesPaie.voyagementSeuilMinutes, 30);
+      assert.equal(f.jours[0].tempsVoyagementMinutes, 120, 'la saisie reste');
+      assert.equal(f.jours[2].estAucun, true);
+      assert.ok(f.recalculeLe);
+
+      // Semaines passées et autre compagnie : exactement comme avant.
+      assert.deepEqual(await feuilleDe('ft-adm', PASSEE3), passee);
+      assert.deepEqual((await adminDb.collection('feuilles_temps').doc(`etranger_${SEM}`).get()).data(), etranger);
+
+      // Deuxième appel avec les mêmes règles : plus rien à ajuster.
+      assert.equal((await adm.appeler('recalculerSemaineCourante')).modifiees, 0);
+      await regles(RESERVE);
+    });
+
+    test('recalculerSemaineCourante : réservé aux admins de la compagnie', async () => {
+      await rejette(emp.appeler('recalculerSemaineCourante'), 'permission-denied');
+      await rejette((await appareil()).appeler('recalculerSemaineCourante'), 'permission-denied');
     });
   });
 

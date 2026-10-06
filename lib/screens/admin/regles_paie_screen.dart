@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 
 import '../../models/regles_paie.dart';
 import '../../services/app_session.dart';
+import '../../services/fonctions.dart';
 
 /// Règles de paie de la compagnie : pauses et voyagement.
 /// Réservé aux admins (dont le super-admin) ; appliqué par les règles
-/// Firestore. S'applique aux feuilles de temps saisies à partir de maintenant.
+/// Firestore. Après chaque enregistrement, le serveur recalcule les feuilles de
+/// la SEMAINE COURANTE ; les semaines précédentes ne sont jamais modifiées.
 class ReglesPaieScreen extends StatefulWidget {
   const ReglesPaieScreen({super.key});
 
@@ -17,6 +19,43 @@ class ReglesPaieScreen extends StatefulWidget {
 class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
   late ReglesPaie _r = AppSession.reglesPaie.value;
   bool _enCours = false;
+  bool _recalculEnCours = false;
+
+  /// Demande au serveur d'appliquer les règles actuelles aux feuilles de la
+  /// semaine courante. Retourne le message à montrer et le succès ; n'échoue jamais.
+  static Future<(String, bool)> recalculerSemaineCourante() async {
+    try {
+      final r = await Fonctions.appeler('recalculerSemaineCourante');
+      final n = (r['modifiees'] as num?)?.toInt() ?? 0;
+      return (
+        n == 0
+            ? 'Semaine courante déjà à jour.'
+            : 'Semaine courante mise à jour : $n feuille${n > 1 ? 's' : ''} '
+                  'recalculée${n > 1 ? 's' : ''}.',
+        true,
+      );
+    } catch (e) {
+      return (
+        Fonctions.message(
+          e,
+          'la semaine courante n\'a pas pu être mise à jour. Réessayez.',
+        ),
+        false,
+      );
+    }
+  }
+
+  Future<void> _recalculerMaintenant() async {
+    if (!AppSession.estAdmin) return;
+    setState(() => _recalculEnCours = true);
+    final messager = ScaffoldMessenger.of(context);
+    final (message, ok) = await recalculerSemaineCourante();
+    if (!mounted) return;
+    setState(() => _recalculEnCours = false);
+    messager.showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: ok ? null : Colors.red),
+    );
+  }
 
   void _modifier({
     int? pauseMatinMinutes,
@@ -64,10 +103,21 @@ class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
     );
     try {
       await ecriture;
+      // La semaine courante s'ajuste aux nouvelles règles (heures déjà saisies) ;
+      // les semaines précédentes ne bougent pas.
+      final (message, ok) = await recalculerSemaineCourante();
       messager
         ..hideCurrentSnackBar()
         ..showSnackBar(
-          const SnackBar(content: Text('Règles de paie enregistrées.')),
+          SnackBar(
+            content: Text(
+              ok
+                  ? 'Règles de paie enregistrées. $message'
+                  : 'Règles de paie enregistrées, mais $message',
+            ),
+            backgroundColor: ok ? null : Colors.orange.shade800,
+            duration: const Duration(seconds: 6),
+          ),
         );
     } catch (_) {
       messager
@@ -79,6 +129,18 @@ class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
           ),
         );
     }
+  }
+
+  /// « 2 h de voyagement → 1 h au-delà du seuil, payées à 50 % = 0 h 30. »
+  String get _exempleVoyagement {
+    const jour = 120; // 2 h de voyagement
+    final audela = jour - _r.voyagementSeuilMinutes;
+    if (audela <= 0) {
+      return 'Exemple : 2 h de voyagement → rien (sous le seuil).';
+    }
+    return 'Exemple : 2 h de voyagement → ${_heures(audela)} au-delà du seuil, '
+        'payées à ${_r.voyagementPourcentage} % = '
+        '${_heures(_r.minutesVoyagementPayees(jour))}.';
   }
 
   static String _heures(num minutes) {
@@ -103,8 +165,10 @@ class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
         padding: const EdgeInsets.all(16),
         children: [
           const Text(
-            'S\'applique aux feuilles de temps de toute la compagnie. Les semaines '
-            'déjà remises gardent les règles en vigueur au moment de la saisie.',
+            'S\'applique aux feuilles de temps de toute la compagnie. La semaine '
+            'courante est mise à jour avec les nouvelles règles ; les semaines '
+            'précédentes ne changent jamais.',
+            key: ValueKey('texte_semaines'),
           ),
           const SizedBox(height: 16),
           _Section(
@@ -175,6 +239,15 @@ class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
                 onChanged: (v) => _modifier(voyagementActif: v),
               ),
               if (_r.voyagementActif) ...[
+                const Padding(
+                  padding: EdgeInsets.only(top: 4, bottom: 4),
+                  child: Text(
+                    'Seul le temps au-delà du seuil est payé, au pourcentage '
+                    'choisi. Rien jusqu\'au seuil.',
+                    key: ValueKey('explication_voyagement'),
+                    style: TextStyle(fontSize: 13),
+                  ),
+                ),
                 _Compteur(
                   cle: 'voyagement_seuil',
                   libelle: 'Payé à partir de',
@@ -195,8 +268,7 @@ class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Exemples : ${_r.voyagementSeuilMinutes > 0 ? '${_r.voyagementSeuilMinutes - 1} min → rien ; ' : ''}'
-                  '90 min → ${_heures(_r.minutesVoyagementPayees(90))} payées.',
+                  _exempleVoyagement,
                   key: const ValueKey('exemple_voyagement'),
                   style: const TextStyle(fontSize: 13),
                 ),
@@ -219,6 +291,30 @@ class _ReglesPaieScreenState extends State<ReglesPaieScreen> {
             onPressed: (!modifie || _enCours) ? null : _enregistrer,
             icon: const Icon(Icons.check),
             label: const Text('Enregistrer pour la compagnie'),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            key: const ValueKey('recalculer_semaine'),
+            onPressed: (_enCours || _recalculEnCours || modifie)
+                ? null
+                : _recalculerMaintenant,
+            icon: _recalculEnCours
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync),
+            label: const Text('Recalculer la semaine courante'),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 4),
+            child: Text(
+              'Applique les règles enregistrées aux heures déjà saisies cette '
+              'semaine. Les semaines précédentes ne sont jamais modifiées.',
+              key: ValueKey('aide_recalcul'),
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
           ),
         ],
       ),

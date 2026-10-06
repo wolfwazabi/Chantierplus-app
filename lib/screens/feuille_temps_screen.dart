@@ -17,6 +17,27 @@ const Chantier chantierAucun = Chantier(
   adresse: '',
 );
 
+/// Valeurs calculées à l'enregistrement d'une journée d'une semaine antérieure,
+/// avec la saisie qui les a produites.
+class _ValeursFigees {
+  final int? debut;
+  final int? fin;
+  final bool pauseMatin;
+  final bool diner;
+  final int? voyagementMinutes;
+  final double? heures;
+  final double voyagementPaye;
+  const _ValeursFigees({
+    required this.debut,
+    required this.fin,
+    required this.pauseMatin,
+    required this.diner,
+    required this.voyagementMinutes,
+    required this.heures,
+    required this.voyagementPaye,
+  });
+}
+
 class JourTravail {
   final String nomJour;
   Chantier? chantier;
@@ -29,13 +50,52 @@ class JourTravail {
   bool verrouilleLocalement = false;
   bool modifieApresVerrouillage = false;
 
+  /// Journée d'une semaine antérieure : les heures et le voyagement payés restent
+  /// ceux calculés à l'époque, tant que la saisie n'a pas changé. Un changement
+  /// des règles de paie ne réécrit jamais le passé.
+  _ValeursFigees? _figees;
+
   JourTravail(this.nomJour, {this.pauseMatin = true, this.diner = true});
 
   bool get estAucun => chantier?.id == '_aucun';
 
+  int? get _debutMinutes =>
+      heureDebut == null ? null : heureDebut!.hour * 60 + heureDebut!.minute;
+  int? get _finMinutes =>
+      heureFin == null ? null : heureFin!.hour * 60 + heureFin!.minute;
+
+  /// Garde les valeurs enregistrées (heures payées et voyagement payé) pour la
+  /// saisie actuelle de la journée.
+  void figer({required double? heures, required double voyagementPaye}) {
+    _figees = _ValeursFigees(
+      debut: _debutMinutes,
+      fin: _finMinutes,
+      pauseMatin: pauseMatin,
+      diner: diner,
+      voyagementMinutes: tempsVoyagement?.inMinutes,
+      heures: heures,
+      voyagementPaye: voyagementPaye,
+    );
+  }
+
+  /// Les valeurs gardées valent encore : la saisie n'a pas été modifiée.
+  _ValeursFigees? get _figeesValides {
+    final f = _figees;
+    if (f == null) return null;
+    return f.debut == _debutMinutes &&
+            f.fin == _finMinutes &&
+            f.pauseMatin == pauseMatin &&
+            f.diner == diner &&
+            f.voyagementMinutes == tempsVoyagement?.inMinutes
+        ? f
+        : null;
+  }
+
   /// Heures payées de la journée selon les règles de la compagnie (pauses).
   double? get heuresTravaillees {
     if (estAucun) return null;
+    final figees = _figeesValides;
+    if (figees != null) return figees.heures;
     final minutes = AppSession.reglesPaie.value.minutesTravaillees(
       debutMinutes: heureDebut == null
           ? null
@@ -49,14 +109,17 @@ class JourTravail {
     return minutes == null ? null : minutes / 60;
   }
 
-  /// Voyagement payé de la journée (heures) : seuil et pourcentage de la
-  /// compagnie.
-  double get heuresVoyagementPayees => estAucun
-      ? 0
-      : AppSession.reglesPaie.value.minutesVoyagementPayees(
-              tempsVoyagement?.inMinutes,
-            ) /
-            60;
+  /// Voyagement payé de la journée (heures) : le temps au-delà du seuil de la
+  /// compagnie, au pourcentage choisi.
+  double get heuresVoyagementPayees {
+    if (estAucun) return 0;
+    final figees = _figeesValides;
+    if (figees != null) return figees.voyagementPaye;
+    return AppSession.reglesPaie.value.minutesVoyagementPayees(
+          tempsVoyagement?.inMinutes,
+        ) /
+        60;
+  }
 
   /// Quelque chose a été saisi (même si la journée est incomplète).
   bool get aDesDonnees =>
@@ -259,6 +322,15 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           if (jd['verrouille'] == true) {
             _jours[i].verrouilleLocalement = true;
           }
+          // Semaine antérieure : on garde les valeurs d'origine ; les règles de
+          // paie actuelles ne s'y appliquent pas.
+          if (_semaineAnterieure) {
+            _jours[i].figer(
+              heures: (jd['heuresTravaillees'] as num?)?.toDouble(),
+              voyagementPaye:
+                  (jd['voyagementPayeHeures'] as num?)?.toDouble() ?? 0,
+            );
+          }
         }
       }
       _erreurFeuille = false;
@@ -277,6 +349,11 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   }
 
   String _formatDateCourte(DateTime d) => '${d.day}/${d.month}';
+
+  /// Semaine antérieure à la semaine courante : ses valeurs enregistrées ne
+  /// suivent pas les changements de règles de paie.
+  bool get _semaineAnterieure =>
+      _lundiDeLaSemaine.isBefore(_trouverLundi(DateTime.now()));
 
   bool get _semaineVerrouillee {
     final mardiSuivant = _lundiDeLaSemaine.add(const Duration(days: 8));
@@ -410,8 +487,12 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
 
   ReglesPaie get _regles => AppSession.reglesPaie.value;
 
-  /// Voyagement payé par l'employeur (jamais pour un particulier).
-  bool get _voyagementPaye => !_estIndividuel && _regles.voyagementActif;
+  /// Voyagement payé par l'employeur (jamais pour un particulier). Une semaine
+  /// antérieure garde son voyagement payé même si l'employeur ne le paie plus.
+  bool get _voyagementPaye =>
+      !_estIndividuel &&
+      (_regles.voyagementActif ||
+          _jours.any((j) => j.heuresVoyagementPayees > 0));
 
   /// Le particulier note son voyagement pour lui-même ; en compagnie, le
   /// champ disparaît si l'employeur ne paie pas le voyagement.
@@ -769,7 +850,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                       child: const Padding(
                         padding: EdgeInsets.all(12),
                         child: Text(
-                          'Aucun chantier n\'a été créé pour votre compagnie. Un administrateur peut en ajouter dans Admin → Gérer les chantiers.',
+                          'Aucun chantier n\'a été créé pour votre compagnie. Un administrateur peut en ajouter dans Admin → Chantiers.',
                           style: TextStyle(fontSize: 13),
                         ),
                       ),

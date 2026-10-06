@@ -81,12 +81,39 @@ describe('Voyagement payé', () => {
     assert.equal(r.jours[0].tempsVoyagementMinutes, null);
   });
 
-  test('sous le seuil : rien ; au seuil : pourcentage de tout', () => {
+  test('jusqu\'au seuil : rien ; au-delà : seulement l\'excédent, au pourcentage', () => {
     assert.equal(calcul([jour({ tempsVoyagementMinutes: 59 })], avec()).totalVoyagementPaye, 0);
-    assert.equal(calcul([jour({ tempsVoyagementMinutes: 60 })], avec()).totalVoyagementPaye, 0.5);
+    assert.equal(calcul([jour({ tempsVoyagementMinutes: 60 })], avec()).totalVoyagementPaye, 0);
+    // 90 min, seuil 60 : 30 min payées à 50 % = 15 min.
     const r = calcul([jour({ tempsVoyagementMinutes: 90 })], avec());
-    assert.equal(r.jours[0].voyagementPayeHeures, 0.75);
-    assert.equal(r.totalHeures, 7.75 + 0.75);
+    assert.equal(r.jours[0].voyagementPayeHeures, 0.25);
+    assert.equal(r.totalHeures, 7.75 + 0.25);
+  });
+
+  test('exemples de l\'entrepreneur : 2 h de voyagement', () => {
+    // À partir de 60 min : 1 h payée au pourcentage choisi.
+    const a = calcul([jour({ tempsVoyagementMinutes: 120 })], avec({ voyagementPourcentage: 100 }));
+    assert.equal(a.jours[0].voyagementPayeHeures, 1);
+    const a50 = calcul([jour({ tempsVoyagementMinutes: 120 })], avec({ voyagementPourcentage: 50 }));
+    assert.equal(a50.jours[0].voyagementPayeHeures, 0.5);
+    // À partir de 30 min : 1 h 30 payée au pourcentage choisi.
+    const b = calcul([jour({ tempsVoyagementMinutes: 120 })], avec({ voyagementSeuilMinutes: 30, voyagementPourcentage: 100 }));
+    assert.equal(b.jours[0].voyagementPayeHeures, 1.5);
+    const b50 = calcul([jour({ tempsVoyagementMinutes: 120 })], avec({ voyagementSeuilMinutes: 30, voyagementPourcentage: 50 }));
+    assert.equal(b50.jours[0].voyagementPayeHeures, 0.75);
+    assert.equal(ft.minutesVoyagementPayees(avec({ voyagementPourcentage: 100 }), 120), 60);
+    assert.equal(ft.minutesVoyagementPayees(avec({ voyagementSeuilMinutes: 30, voyagementPourcentage: 100 }), 120), 90);
+  });
+
+  test('seuil à 0 : tout le voyagement est payé au pourcentage', () => {
+    assert.equal(ft.minutesVoyagementPayees(avec({ voyagementSeuilMinutes: 0, voyagementPourcentage: 50 }), 120), 60);
+    assert.equal(ft.minutesVoyagementPayees(avec({ voyagementSeuilMinutes: 0 }), 0), 0);
+    assert.equal(ft.minutesVoyagementPayees(avec({ voyagementSeuilMinutes: 0 }), null), 0);
+  });
+
+  test('pourcentage à 0 : rien de payé ; désactivé : rien de payé', () => {
+    assert.equal(ft.minutesVoyagementPayees(avec({ voyagementPourcentage: 0 }), 300), 0);
+    assert.equal(ft.minutesVoyagementPayees(ft.reglesPaieDepuis({ voyagementActif: false }), 300), 0);
   });
 
   test('le seuil s\'applique par jour', () => {
@@ -95,8 +122,16 @@ describe('Voyagement payé', () => {
   });
 
   test('seuil et pourcentage configurables', () => {
-    const r = calcul([jour({ tempsVoyagementMinutes: 30 })], avec({ voyagementSeuilMinutes: 30, voyagementPourcentage: 100 }));
-    assert.equal(r.totalVoyagementPaye, 0.5);
+    const regles = avec({ voyagementSeuilMinutes: 30, voyagementPourcentage: 100 });
+    assert.equal(calcul([jour({ tempsVoyagementMinutes: 30 })], regles).totalVoyagementPaye, 0);
+    assert.equal(calcul([jour({ tempsVoyagementMinutes: 90 })], regles).totalVoyagementPaye, 1);
+  });
+
+  test('le voyagement de la semaine : chaque jour à part, puis additionné', () => {
+    // Lundi 2 h et mardi 45 min, seuil 60 min à 100 % : 60 min + 0.
+    const r = calcul([jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 45 })],
+      avec({ voyagementPourcentage: 100 }));
+    assert.equal(r.totalVoyagementPaye, 1);
   });
 });
 
@@ -183,8 +218,8 @@ describe('Une journée vide n\'efface jamais une journée enregistrée', () => {
     const regles = ft.reglesPaieDepuis({ voyagementActif: true });
     const avant = calcul([jour({ tempsVoyagementMinutes: 90 })], regles);
     const r = calcul([{ estAucun: false }, jour()], regles, { jours: avant.jours });
-    assert.equal(r.totalVoyagementPaye, 0.75);
-    assert.equal(r.totalHeures, 7.75 + 0.75 + 7.75);
+    assert.equal(r.totalVoyagementPaye, 0.25);
+    assert.equal(r.totalHeures, 7.75 + 0.25 + 7.75);
   });
 
   test('journées enregistrées au-delà de celles reçues : conservées', () => {
@@ -251,5 +286,140 @@ describe('Échéance (mardi suivant, 18 h à Montréal)', () => {
     assert.equal(ft.lundiCourant(utc('2026-01-05T01:00:00Z')), '2025-12-29');
     assert.equal(ft.lundiCourant(utc('2026-01-05T06:00:00Z')), '2026-01-05');
     assert.equal(ft.lundiCourant(utc('2026-01-11T12:00:00Z')), '2026-01-05');
+  });
+});
+
+// Changement des règles de paie : la semaine courante s'ajuste, jamais les semaines passées.
+describe('Semaines précédentes : jamais modifiées par un changement de règles', () => {
+  const anciennes = ft.reglesPaieDepuis({ voyagementActif: true, voyagementSeuilMinutes: 60, voyagementPourcentage: 50 });
+  const nouvelles = ft.reglesPaieDepuis({ voyagementActif: true, voyagementSeuilMinutes: 30, voyagementPourcentage: 100 });
+  const avecFigee = (jours, regles, existante, semaineFigee) => ft.calculerFeuille({
+    jours: ft.lireJours(jours), nomsChantiers: NOMS, regles, existante, semaineFigee,
+    maintenantIso: '2026-01-06T12:00:00.000Z',
+  });
+  const semainePassee = () => avecFigee(
+    [jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 90 })], anciennes, undefined, true);
+
+  test('les valeurs de départ (anciennes règles)', () => {
+    const r = semainePassee();
+    assert.equal(r.jours[0].voyagementPayeHeures, 0.5); // 60 min à 50 %
+    assert.equal(r.jours[1].voyagementPayeHeures, 0.25); // 30 min à 50 %
+  });
+
+  test('semaine passée renvoyée telle quelle avec de nouvelles règles : rien ne change', () => {
+    const avant = semainePassee();
+    const r = avecFigee([jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 90 })],
+      nouvelles, { jours: avant.jours }, true);
+    assert.deepEqual(r.jours, avant.jours);
+    assert.equal(r.totalVoyagementPaye, avant.totalVoyagementPaye);
+    assert.equal(r.totalHeures, avant.totalHeures);
+    assert.equal(r.joursRecalcules, 0);
+  });
+
+  test('semaine passée : seule la journée modifiée est recalculée, les autres gardent leurs valeurs', () => {
+    const avant = semainePassee();
+    const r = avecFigee([jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 150 })],
+      nouvelles, { jours: avant.jours }, true);
+    assert.deepEqual(r.jours[0], avant.jours[0]); // inchangée : 0.5 h d'origine
+    assert.equal(r.jours[0].voyagementPayeHeures, 0.5);
+    assert.equal(r.jours[1].voyagementPayeHeures, 2); // modifiée : 120 min à 100 %
+    assert.equal(r.joursRecalcules, 1);
+    assert.equal(r.totalVoyagementPaye, 2.5);
+  });
+
+  test('semaine passée, voyagement plus payé aujourd\'hui : les journées inchangées gardent le leur', () => {
+    const avant = semainePassee();
+    const sans = ft.reglesPaieDepuis({ voyagementActif: false });
+    // L'appareil n'offre plus le champ : il envoie le voyagement vide.
+    const r = avecFigee([jour(), jour()], sans, { jours: avant.jours }, true);
+    assert.deepEqual(r.jours, avant.jours);
+    assert.equal(r.totalVoyagementPaye, avant.totalVoyagementPaye);
+  });
+
+  test('semaine courante (non figée) : tout est recalculé avec les nouvelles règles', () => {
+    const avant = semainePassee();
+    const r = avecFigee([jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 90 })],
+      nouvelles, { jours: avant.jours }, false);
+    assert.equal(r.jours[0].voyagementPayeHeures, 1.5);
+    assert.equal(r.jours[1].voyagementPayeHeures, 1);
+  });
+
+  test('journée « non travaillée » d\'une semaine passée : conservée', () => {
+    const avant = avecFigee([jour({ estAucun: true })], anciennes, undefined, true);
+    const r = avecFigee([jour({ estAucun: true })], nouvelles, { jours: avant.jours }, true);
+    assert.deepEqual(r.jours, avant.jours);
+  });
+});
+
+describe('recalculerFeuille : semaine courante après un changement de règles', () => {
+  const anciennes = ft.reglesPaieDepuis({ voyagementActif: true, voyagementSeuilMinutes: 60, voyagementPourcentage: 50 });
+  const feuilleStockee = (regles = anciennes) => {
+    const c = calcul([
+      jour({ tempsVoyagementMinutes: 120 }), jour({ tempsVoyagementMinutes: 90, diner: false }),
+      jour({ estAucun: true }), { estAucun: false },
+    ], regles);
+    return {
+      jours: c.jours, totalHeures: c.totalHeures, totalHeuresTravaillees: c.totalHeuresTravaillees,
+      totalVoyagementPaye: c.totalVoyagementPaye, reglesPaie: regles, companyId: 'A', lundiDate: '2026-01-05',
+    };
+  };
+  const maj = (f, regles) => ft.recalculerFeuille(f, regles, '2026-01-07T09:00:00.000Z');
+
+  test('mêmes règles : rien à écrire', () => {
+    assert.equal(maj(feuilleStockee(), anciennes), null);
+  });
+
+  test('seuil 60 → 30 min, 100 % : heures de voyagement et totaux ajustés', () => {
+    const f = feuilleStockee();
+    const nouvelles = ft.reglesPaieDepuis({ voyagementActif: true, voyagementSeuilMinutes: 30, voyagementPourcentage: 100 });
+    const r = maj(f, nouvelles);
+    assert.equal(r.jours[0].voyagementPayeHeures, 1.5); // 120 − 30 = 90 min à 100 %
+    assert.equal(r.jours[1].voyagementPayeHeures, 1); // 90 − 30 = 60 min
+    assert.equal(r.totalVoyagementPaye, 2.5);
+    assert.equal(r.totalHeuresTravaillees, f.totalHeuresTravaillees);
+    assert.equal(r.totalHeures, f.totalHeuresTravaillees + 2.5);
+    assert.deepEqual(r.reglesPaie, nouvelles);
+    assert.equal(r.recalculeLe, '2026-01-07T09:00:00.000Z');
+  });
+
+  test('la saisie et les journées non travaillées ou vides restent intactes', () => {
+    const f = feuilleStockee();
+    const r = maj(f, ft.reglesPaieDepuis({ voyagementActif: true, voyagementPourcentage: 100 }));
+    for (const [i, j] of r.jours.entries()) {
+      for (const cle of ['nomJour', 'chantierId', 'chantierNom', 'estAucun', 'heureDebutMinutes', 'heureFinMinutes',
+        'pauseMatin', 'diner', 'tempsVoyagementMinutes', 'verrouille']) {
+        assert.deepEqual(j[cle], f.jours[i][cle], `jour ${i} ${cle}`);
+      }
+    }
+    assert.equal(r.jours[2].estAucun, true);
+    assert.equal(r.jours[3].heuresTravaillees, null);
+  });
+
+  test('voyagement désactivé : voyagement payé à 0, la saisie est gardée', () => {
+    const f = feuilleStockee();
+    const r = maj(f, ft.reglesPaieDepuis({ voyagementActif: false }));
+    assert.equal(r.totalVoyagementPaye, 0);
+    assert.equal(r.jours[0].voyagementPayeHeures, 0);
+    assert.equal(r.jours[0].tempsVoyagementMinutes, 120);
+    assert.equal(r.totalHeures, r.totalHeuresTravaillees);
+  });
+
+  test('règles de pause : les heures payées sont recalculées aussi', () => {
+    const f = feuilleStockee();
+    const r = maj(f, ft.reglesPaieDepuis({ voyagementActif: true, dinerPaye: false }));
+    assert.equal(r.jours[0].heuresTravaillees, 7.25); // 8 h − pause 15 − dîner 30 (non payé)
+  });
+
+  test('aucune journée enregistrée ou feuille absente : rien', () => {
+    assert.equal(maj({ jours: [], totalHeures: 0, totalHeuresTravaillees: 0, totalVoyagementPaye: 0, reglesPaie: anciennes }, anciennes), null);
+    assert.equal(maj(undefined, anciennes), null);
+    assert.equal(maj({}, anciennes), null);
+  });
+
+  test('ne modifie jamais la feuille reçue', () => {
+    const f = feuilleStockee();
+    const copie = JSON.parse(JSON.stringify(f));
+    maj(f, ft.reglesPaieDepuis({ voyagementActif: true, voyagementPourcentage: 100 }));
+    assert.deepEqual(JSON.parse(JSON.stringify(f)), copie);
   });
 });

@@ -63,11 +63,16 @@ function minutesTravaillees(regles, {debut, fin, pauseMatin, diner}) {
   return Math.max(total, 0);
 }
 
-/** Minutes de voyagement payées : rien sous le seuil, sinon le pourcentage du tout. */
+/**
+ * Minutes de voyagement payées : seul le temps AU-DELÀ du seuil est payé, au
+ * pourcentage choisi. Seuil de 60 min : 2 h de voyagement = 1 h payée à x % ;
+ * seuil de 30 min : 2 h = 1 h 30 payée à x %. Rien jusqu'au seuil.
+ */
 function minutesVoyagementPayees(regles, minutes) {
   const v = minutes ?? 0;
-  if (!regles.voyagementActif || v <= 0 || v < regles.voyagementSeuilMinutes) return 0;
-  return v * regles.voyagementPourcentage / 100;
+  const audela = v - regles.voyagementSeuilMinutes;
+  if (!regles.voyagementActif || v <= 0 || audela <= 0) return 0;
+  return audela * regles.voyagementPourcentage / 100;
 }
 
 const arrondir = (x) => Math.round(x * 10000) / 10000;
@@ -204,10 +209,18 @@ function lireJours(jours) {
  * Calcule la feuille à enregistrer à partir des jours lus, des noms de chantier
  * (résolus côté serveur), des règles de la compagnie et de la feuille déjà
  * enregistrée (pour dater les modifications après verrouillage).
+ *
+ * `semaineFigee` : semaine antérieure à la semaine courante. Une journée dont la
+ * saisie n'a pas changé garde ses valeurs calculées à l'époque : un changement
+ * des règles de paie ne réécrit jamais le passé, même si la feuille est
+ * renvoyée en entier. Une journée modifiée est recalculée avec les règles
+ * actuelles.
  */
-function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, existante, maintenantIso}) {
+function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, existante, maintenantIso,
+  semaineFigee = false}) {
   let minutesTravail = 0;
   let minutesVoyage = 0;
+  let joursRecalcules = 0;
   // Journées conservées telles quelles (valeurs calculées à leur saisie).
   let heuresConservees = 0;
   let voyageConserve = 0;
@@ -222,6 +235,12 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
       voyageConserve += anciens[i].voyagementPayeHeures ?? 0;
       return anciens[i];
     }
+    // Semaine passée : une journée inchangée garde ses valeurs d'origine.
+    if (semaineFigee && !j.vide && jourEnregistre(anciens[i]) && memeSaisie(anciens[i], j, regles)) {
+      heuresConservees += anciens[i].heuresTravaillees ?? 0;
+      voyageConserve += anciens[i].voyagementPayeHeures ?? 0;
+      return anciens[i];
+    }
     // Un chantier archivé ne se choisit plus ; une journée déjà enregistrée
     // avec ce chantier peut encore être renvoyée telle quelle.
     if (!j.estAucun && !j.vide && archives.has(j.chantierId) &&
@@ -232,6 +251,7 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
     let voyPaye = 0;
     let voyagement = null;
     if (!j.estAucun && !j.vide) {
+      joursRecalcules++;
       const minutes = minutesTravaillees(regles, j);
       minutesTravail += minutes ?? 0;
       heures = minutes === null ? null : arrondir(minutes / 60);
@@ -279,6 +299,69 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
     totalHeuresTravaillees: arrondir(travail),
     totalVoyagementPaye: arrondir(voyage),
     totalHeures: arrondir(travail + voyage),
+    joursRecalcules,
+  };
+}
+
+/**
+ * Même saisie qu'à l'enregistrement ? Le voyagement ne compte que si la
+ * compagnie le paie encore (sinon le champ n'est plus offert et l'appareil
+ * l'envoie vide : ce n'est pas une modification).
+ */
+function memeSaisie(ancien, j, regles) {
+  const egal = (a, b) => (a ?? null) === (b ?? null);
+  return (ancien.estAucun === true) === j.estAucun &&
+    egal(ancien.chantierId, j.chantierId) &&
+    egal(ancien.heureDebutMinutes, j.debut) &&
+    egal(ancien.heureFinMinutes, j.fin) &&
+    (ancien.pauseMatin ?? true) === j.pauseMatin &&
+    (ancien.diner ?? true) === j.diner &&
+    (!regles.voyagementActif || egal(ancien.tempsVoyagementMinutes, j.voyagement));
+}
+
+/**
+ * Recalcule une feuille déjà enregistrée avec de nouvelles règles de paie, à
+ * partir de la saisie conservée (heures, pauses, voyagement). Sert à ajuster la
+ * SEMAINE COURANTE quand l'employeur change ses règles ; l'appelant ne doit
+ * jamais l'utiliser pour une semaine antérieure. Retourne les champs à écrire,
+ * ou null si rien ne change.
+ */
+function recalculerFeuille(feuille, regles, maintenantIso) {
+  const jours = Array.isArray(feuille?.jours) ? feuille.jours : [];
+  // Aucune journée de travail enregistrée : rien à ajuster.
+  if (!jours.some((j) => jourEnregistre(j) && j.estAucun !== true)) return null;
+  let travail = 0;
+  let voyage = 0;
+  const sortie = jours.map((j) => {
+    if (!jourEnregistre(j) || j.estAucun === true) return j;
+    const minutes = minutesTravaillees(regles, {
+      debut: j.heureDebutMinutes ?? null,
+      fin: j.heureFinMinutes ?? null,
+      pauseMatin: (j.pauseMatin ?? true) === true,
+      diner: (j.diner ?? true) === true,
+    });
+    const heures = minutes === null ? null : arrondir(minutes / 60);
+    const voyPaye = regles.voyagementActif ?
+      arrondir(minutesVoyagementPayees(regles, j.tempsVoyagementMinutes ?? null) / 60) : 0;
+    travail += heures ?? 0;
+    voyage += voyPaye;
+    return {...j, heuresTravaillees: heures, voyagementPayeHeures: voyPaye};
+  });
+  // Les journées non enregistrées (ou « non travaillées ») ne comptent pour rien.
+  const totalHeuresTravaillees = arrondir(travail);
+  const totalVoyagementPaye = arrondir(voyage);
+  const totalHeures = arrondir(travail + voyage);
+  const inchange = sortie.every((j, i) => j === jours[i] ||
+      (j.heuresTravaillees === jours[i].heuresTravaillees &&
+        j.voyagementPayeHeures === jours[i].voyagementPayeHeures)) &&
+    totalHeuresTravaillees === feuille.totalHeuresTravaillees &&
+    totalVoyagementPaye === feuille.totalVoyagementPaye &&
+    totalHeures === feuille.totalHeures &&
+    JSON.stringify(feuille.reglesPaie ?? null) === JSON.stringify(regles);
+  if (inchange) return null;
+  return {
+    jours: sortie, totalHeures, totalHeuresTravaillees, totalVoyagementPaye,
+    reglesPaie: regles, recalculeLe: maintenantIso,
   };
 }
 
@@ -300,5 +383,5 @@ module.exports = {
   FUSEAU_ECHEANCE, NOMS_JOURS, REGLES_DEFAUT,
   reglesPaieDepuis, minutesTravaillees, minutesVoyagementPayees,
   analyserLundi, echeanceSemaine, lundiCourant,
-  lireJour, lireJours, calculerFeuille,
+  lireJour, lireJours, calculerFeuille, recalculerFeuille,
 };

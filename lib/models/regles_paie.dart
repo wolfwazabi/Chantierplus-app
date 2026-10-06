@@ -90,13 +90,15 @@ class ReglesPaie {
     return 0;
   }
 
-  /// Minutes de voyagement payées pour une journée : rien si le voyagement
-  /// n'est pas payé ou s'il est sous le seuil ; sinon le pourcentage de tout
-  /// le voyagement du jour.
+  /// Minutes de voyagement payées pour une journée : seul le temps AU-DELÀ du
+  /// seuil est payé, au pourcentage choisi. Seuil de 60 min : 2 h de voyagement =
+  /// 1 h payée à x % ; seuil de 30 min : 2 h = 1 h 30 payée à x %. Rien jusqu'au
+  /// seuil ni si le voyagement n'est pas payé.
   double minutesVoyagementPayees(int? minutesVoyagement) {
     final v = minutesVoyagement ?? 0;
-    if (!voyagementActif || v <= 0 || v < voyagementSeuilMinutes) return 0;
-    return v * voyagementPourcentage / 100;
+    final audela = v - voyagementSeuilMinutes;
+    if (!voyagementActif || v <= 0 || audela <= 0) return 0;
+    return audela * voyagementPourcentage / 100;
   }
 
   @override

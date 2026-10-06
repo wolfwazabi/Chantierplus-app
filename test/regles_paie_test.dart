@@ -82,15 +82,17 @@ void main() {
       expect(r.minutesVoyagementPayees(120), 0);
     });
 
-    test('sous le seuil de 60 min : rien', () {
+    test('jusqu\'au seuil de 60 min : rien', () {
       expect(actif.minutesVoyagementPayees(59), 0);
+      expect(actif.minutesVoyagementPayees(60), 0);
       expect(actif.minutesVoyagementPayees(0), 0);
       expect(actif.minutesVoyagementPayees(null), 0);
     });
 
-    test('à partir du seuil : 50 % de tout le voyagement', () {
-      expect(actif.minutesVoyagementPayees(60), 30);
-      expect(actif.minutesVoyagementPayees(90), 45);
+    test('au-delà du seuil : seulement l\'excédent, à 50 %', () {
+      expect(actif.minutesVoyagementPayees(61), 0.5);
+      expect(actif.minutesVoyagementPayees(90), 15); // 30 min au-delà, à 50 %
+      expect(actif.minutesVoyagementPayees(120), 30);
     });
 
     test('seuil et pourcentage au choix de l\'employeur', () {
@@ -99,8 +101,42 @@ void main() {
         voyagementSeuilMinutes: 30,
         voyagementPourcentage: 100,
       );
-      expect(x.minutesVoyagementPayees(29), 0);
-      expect(x.minutesVoyagementPayees(45), 45);
+      expect(x.minutesVoyagementPayees(30), 0);
+      expect(x.minutesVoyagementPayees(45), 15);
+    });
+
+    test('exemples de l\'entrepreneur : 2 h de voyagement', () {
+      const aPartirDe60 = ReglesPaie(
+        voyagementActif: true,
+        voyagementSeuilMinutes: 60,
+        voyagementPourcentage: 100,
+      );
+      const aPartirDe30 = ReglesPaie(
+        voyagementActif: true,
+        voyagementSeuilMinutes: 30,
+        voyagementPourcentage: 100,
+      );
+      expect(aPartirDe60.minutesVoyagementPayees(120), 60); // 1 h payée
+      expect(aPartirDe30.minutesVoyagementPayees(120), 90); // 1 h 30 payée
+      // Au pourcentage choisi : 1 h à 50 % = 30 min ; 1 h 30 à 75 % = 67,5 min.
+      expect(actif.minutesVoyagementPayees(120), 30);
+      const x = ReglesPaie(
+        voyagementActif: true,
+        voyagementSeuilMinutes: 30,
+        voyagementPourcentage: 75,
+      );
+      expect(x.minutesVoyagementPayees(120), 67.5);
+    });
+
+    test('seuil à 0 : tout le voyagement, au pourcentage', () {
+      const x = ReglesPaie(voyagementActif: true, voyagementSeuilMinutes: 0);
+      expect(x.minutesVoyagementPayees(90), 45);
+      expect(x.minutesVoyagementPayees(0), 0);
+    });
+
+    test('pourcentage à 0 : rien', () {
+      const x = ReglesPaie(voyagementActif: true, voyagementPourcentage: 0);
+      expect(x.minutesVoyagementPayees(300), 0);
     });
   });
 

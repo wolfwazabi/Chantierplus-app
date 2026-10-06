@@ -38,17 +38,77 @@ void main() {
     await tester.pump();
     expect(texte(tester, 'voyagement_seuil_valeur'), '60 min / jour');
     expect(texte(tester, 'voyagement_pourcentage_valeur'), '50 %');
-    // 90 min à 50 % = 45 min.
-    expect(texte(tester, 'exemple_voyagement'), contains('0 h 45'));
+    // 2 h de voyagement, seuil 60 min : 1 h au-delà du seuil, payée à 50 %.
+    expect(
+      texte(tester, 'exemple_voyagement'),
+      'Exemple : 2 h de voyagement → 1 h au-delà du seuil, payées à 50 % = 0 h 30.',
+    );
+    expect(
+      find.byKey(const ValueKey('explication_voyagement')),
+      findsOneWidget,
+    );
 
     await tester.tap(find.byKey(const ValueKey('voyagement_pourcentage_plus')));
     await tester.pump();
     expect(texte(tester, 'voyagement_pourcentage_valeur'), '55 %');
+    expect(texte(tester, 'exemple_voyagement'), contains('55 % = 0 h 33'));
 
     final bouton = tester.widget<ButtonStyleButton>(
       find.byKey(const ValueKey('enregistrer_regles')),
     );
     expect(bouton.onPressed, isNotNull);
+  });
+
+  testWidgets('seuil de 30 min : 1 h 30 payée sur 2 h de voyagement', (
+    tester,
+  ) async {
+    AppSession.reglesPaie.value = const ReglesPaie(
+      voyagementActif: true,
+      voyagementSeuilMinutes: 30,
+      voyagementPourcentage: 100,
+    );
+    await ouvrir(tester);
+    expect(
+      texte(tester, 'exemple_voyagement'),
+      'Exemple : 2 h de voyagement → 1 h 30 au-delà du seuil, payées à 100 % = 1 h 30.',
+    );
+  });
+
+  testWidgets('seuil de 2 h ou plus : l\'exemple dit « rien »', (tester) async {
+    AppSession.reglesPaie.value = const ReglesPaie(
+      voyagementActif: true,
+      voyagementSeuilMinutes: 120,
+    );
+    await ouvrir(tester);
+    expect(texte(tester, 'exemple_voyagement'), contains('rien'));
+  });
+
+  testWidgets(
+    'semaines : la semaine courante s\'ajuste, les précédentes ne changent jamais',
+    (tester) async {
+      await ouvrir(tester);
+      expect(
+        texte(tester, 'texte_semaines'),
+        contains('les semaines précédentes ne changent jamais'),
+      );
+      expect(texte(tester, 'aide_recalcul'), contains('ne sont jamais modifiées'));
+      // Rien de modifié et pas de session admin : le bouton existe, aucun appel.
+      expect(find.byKey(const ValueKey('recalculer_semaine')), findsOneWidget);
+    },
+  );
+
+  testWidgets('recalcul : désactivé tant que les règles ne sont pas enregistrées', (
+    tester,
+  ) async {
+    await ouvrir(tester);
+    OutlinedButton recalcul() => tester.widget<OutlinedButton>(
+      find.byKey(const ValueKey('recalculer_semaine')),
+    );
+    expect(recalcul().onPressed, isNotNull);
+    await tester.tap(find.byKey(const ValueKey('voyagement_actif')));
+    await tester.pump();
+    // Règles modifiées mais pas enregistrées : on enregistre d'abord.
+    expect(recalcul().onPressed, isNull);
   });
 
   testWidgets('pause payée : la journée compte 8 h', (tester) async {

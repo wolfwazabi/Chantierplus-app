@@ -14,7 +14,7 @@ const {
 const {RESEND_API_KEY, envoyerCourriel, courrielConfigure, NOM_APP} = require("./src/courriel");
 const {hacherJeton, creerInvitation} = require("./src/invitation");
 const {
-  reglesPaieDepuis, analyserLundi, echeanceSemaine, lundiCourant, lireJours, calculerFeuille,
+  reglesPaieDepuis, analyserLundi, echeanceSemaine, lundiCourant, lireJours, calculerFeuille, recalculerFeuille,
 } = require("./src/feuille_temps");
 const {getStorage} = require("firebase-admin/storage");
 const {logger} = require("firebase-functions");
@@ -501,10 +501,13 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
   const regles = reglesPaieDepuis(ctx.compagnie.reglesPaie);
   const ref = db.collection("feuilles_temps").doc(`${ctx.employeeId}_${lundiDate}`);
 
+  // Semaine antérieure à la semaine courante : les journées inchangées gardent
+  // leurs valeurs d'origine (un changement de règles ne réécrit pas le passé).
+  const semaineFigee = lundiDate < lundiCourant(maintenant);
   const resultat = await db.runTransaction(async (t) => {
     const existante = (await t.get(ref)).data();
     const calcul = calculerFeuille({
-      jours, nomsChantiers, archives, regles, existante,
+      jours, nomsChantiers, archives, regles, existante, semaineFigee,
       maintenantIso: new Date(maintenant).toISOString(),
     });
     t.set(ref, {
@@ -518,7 +521,9 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
       totalHeuresTravaillees: calcul.totalHeuresTravaillees,
       totalVoyagementPaye: calcul.totalVoyagementPaye,
       // Copie des règles appliquées : un changement futur ne réécrit pas le passé.
-      reglesPaie: regles,
+      // Semaine passée sans journée recalculée : les règles d'origine restent.
+      reglesPaie: semaineFigee && calcul.joursRecalcules === 0 && existante?.reglesPaie ?
+        existante.reglesPaie : regles,
       dateModification: FieldValue.serverTimestamp(),
     });
     return calcul;
@@ -533,6 +538,43 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
       voyagementPayeHeures: j.voyagementPayeHeures,
     })),
   };
+});
+
+/**
+ * Applique les règles de paie actuelles aux feuilles de la SEMAINE COURANTE de la
+ * compagnie (heures payées, voyagement payé, totaux), à partir de la saisie
+ * conservée. Appelée après chaque changement des règles. Les semaines
+ * précédentes ne sont jamais touchées : leurs heures restent celles d'origine.
+ */
+exports.recalculerSemaineCourante = onCall(async (request) => {
+  verifierAppCheck(request, "recalculerSemaineCourante");
+  const ctx = await contexteAdmin(request);
+  const limite = limiteur(`recalcul_${ctx.employeeId}`, 30, HEURE);
+  await limite.verifier();
+  await limite.compter();
+
+  const maintenant = Date.now();
+  const lundi = lundiCourant(maintenant);
+  const regles = reglesPaieDepuis(ctx.compagnie.reglesPaie);
+  const snap = await db.collection("feuilles_temps")
+      .where("companyId", "==", ctx.companyId).where("lundiDate", "==", lundi).get();
+
+  let modifiees = 0;
+  for (const d of snap.docs) {
+    if (d.data().estIndividuel === true) continue;
+    // Chaque feuille dans sa transaction : une sauvegarde de l'employé en même
+    // temps n'est pas écrasée par une lecture périmée.
+    const changee = await db.runTransaction(async (t) => {
+      const f = (await t.get(d.ref)).data();
+      if (!f || f.estIndividuel === true || f.companyId !== ctx.companyId || f.lundiDate !== lundi) return false;
+      const maj = recalculerFeuille(f, regles, new Date(maintenant).toISOString());
+      if (!maj) return false;
+      t.update(d.ref, maj);
+      return true;
+    });
+    if (changee) modifiees++;
+  }
+  return {semaine: lundi, feuilles: snap.size, modifiees};
 });
 
 // =============================================================================
