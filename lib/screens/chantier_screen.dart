@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../models/chantier.dart';
 import '../models/employee.dart';
+import '../models/materiel_general.dart';
 import '../services/app_session.dart';
 import 'documents/documents_chantier.dart';
 import 'materiaux/calcul_chantier.dart';
@@ -20,7 +21,39 @@ import 'extras/extras_tab.dart';
 import '../services/theme_compagnie.dart';
 
 class ChantierScreen extends StatefulWidget {
-  const ChantierScreen({super.key});
+  /// Tests : remplace la lecture des chantiers dans Firestore.
+  @visibleForTesting
+  final Stream<List<Chantier>>? fluxChantiers;
+
+  /// Tests : remplace le contenu d'un onglet ('photos', 'travaux', 'extras',
+  /// 'materiel', 'documents' ou 'calcul') pour le chantier [chantierId] ; null =
+  /// le vrai onglet.
+  @visibleForTesting
+  final Widget? Function(String onglet, String chantierId)? contenuOnglet;
+
+  /// Tests : demandes de matériel affichées (identifiant → données), et les
+  /// écritures (ajout, modification) à la place de Firestore.
+  @visibleForTesting
+  final Stream<List<MapEntry<String, Map<String, dynamic>>>>? fluxMateriel;
+  @visibleForTesting
+  final Future<void> Function(String collection, Map<String, dynamic> data)?
+  ajouterEntree;
+  @visibleForTesting
+  final Future<void> Function(
+    String collection,
+    String id,
+    Map<String, dynamic> data,
+  )?
+  modifierEntree;
+
+  const ChantierScreen({
+    super.key,
+    this.fluxChantiers,
+    this.contenuOnglet,
+    this.fluxMateriel,
+    this.ajouterEntree,
+    this.modifierEntree,
+  });
 
   @override
   State<ChantierScreen> createState() => _ChantierScreenState();
@@ -28,6 +61,36 @@ class ChantierScreen extends StatefulWidget {
 
 class _ChantierScreenState extends State<ChantierScreen> {
   Chantier? _chantierSelectionne;
+
+  /// Contenu d'un onglet : celui des tests s'il y en a un.
+  Widget _onglet(String nom, String chantierId, Widget Function() reel) =>
+      widget.contenuOnglet?.call(nom, chantierId) ?? reel();
+
+  /// Liste du matériel manquant du chantier (ou de Général).
+  Widget _materiel(
+    String chantierId,
+    String companyId,
+    bool connecte, {
+    bool general = false,
+  }) => _onglet(
+    'materiel',
+    chantierId,
+    () => _ListeTab(
+      chantierId: chantierId,
+      companyId: companyId,
+      connecte: connecte,
+      collection: 'chantier_materiel',
+      libelleChampAjout: 'Décrire le matériel manquant',
+      libelleComplete: 'Marquer comme obtenu',
+      libelleActif: 'Remettre comme manquant',
+      icone: Icons.shopping_cart,
+      avecQuantite: true,
+      general: general,
+      flux: widget.fluxMateriel,
+      ajouter: widget.ajouterEntree,
+      modifier: widget.modifierEntree,
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -49,11 +112,19 @@ class _ChantierScreenState extends State<ChantierScreen> {
           );
         }
 
-        return StreamBuilder<QuerySnapshot>(
-          stream: FirebaseFirestore.instance
-              .collection('chantiers')
-              .where('companyId', isEqualTo: companyId)
-              .snapshots(),
+        return StreamBuilder<List<Chantier>>(
+          stream:
+              widget.fluxChantiers ??
+              FirebaseFirestore.instance
+                  .collection('chantiers')
+                  .where('companyId', isEqualTo: companyId)
+                  .snapshots()
+                  .map(
+                    (s) => [
+                      for (final d in s.docs)
+                        Chantier.fromFirestore(d.id, d.data()),
+                    ],
+                  ),
           builder: (context, snapshot) {
             if (snapshot.hasError) {
               return Center(child: Text('Erreur : ${snapshot.error}'));
@@ -62,17 +133,9 @@ class _ChantierScreenState extends State<ChantierScreen> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final chantiers =
-                snapshot.data!.docs
-                    .map(
-                      (d) => Chantier.fromFirestore(
-                        d.id,
-                        d.data() as Map<String, dynamic>,
-                      ),
-                    )
-                    .where((c) => !c.archive)
-                    .toList()
-                  ..sort((a, b) => a.nom.compareTo(b.nom));
+            final chantiers = [
+              ...snapshot.data!.where((c) => !c.archive),
+            ]..sort((a, b) => a.nom.compareTo(b.nom));
 
             if (chantiers.isEmpty) {
               return const Center(
@@ -86,56 +149,112 @@ class _ChantierScreenState extends State<ChantierScreen> {
               );
             }
 
+            // « Général » n'est pas un chantier de la liste : il reste choisi.
             if (_chantierSelectionne == null ||
-                !chantiers.any((c) => c.id == _chantierSelectionne!.id)) {
+                (_chantierSelectionne!.id != idChantierGeneral &&
+                    !chantiers.any((c) => c.id == _chantierSelectionne!.id))) {
               _chantierSelectionne = chantiers.first;
             }
+            final general = _chantierSelectionne!.id == idChantierGeneral;
 
-            return DefaultTabController(
-              length: 6,
-              child: Column(
+            final selecteur = Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<Chantier>(
-                            // La clé suit la valeur : la liste affiche aussi
-                            // un chantier choisi par la recherche « … ».
-                            key: ValueKey(
-                              'chantier_${_chantierSelectionne?.id}',
-                            ),
-                            initialValue: _chantierSelectionne,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Chantier',
-                              border: OutlineInputBorder(),
-                              prefixIcon: Icon(Icons.construction),
-                            ),
-                            items: chantiers.map((c) {
-                              return DropdownMenuItem(
-                                value: c,
-                                child: Text(
-                                  c.nom,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              );
-                            }).toList(),
-                            onChanged: (valeur) {
-                              setState(() => _chantierSelectionne = valeur);
-                            },
+                  Expanded(
+                    child: DropdownButtonFormField<Chantier>(
+                      // La clé suit la valeur : la liste affiche aussi
+                      // un chantier choisi par la recherche « … ».
+                      key: ValueKey('chantier_${_chantierSelectionne?.id}'),
+                      initialValue: _chantierSelectionne,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        labelText: 'Chantier',
+                        border: const OutlineInputBorder(),
+                        prefixIcon: Icon(
+                          general
+                              ? Icons.local_shipping_outlined
+                              : Icons.construction,
+                        ),
+                      ),
+                      items: [
+                        // Seulement pour le matériel (remorque, sans chantier).
+                        DropdownMenuItem(
+                          key: const ValueKey('choix_general'),
+                          value: chantierGeneral,
+                          child: Text(
+                            chantierGeneral.nom,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
                         ),
+                        for (final c in chantiers)
+                          DropdownMenuItem(
+                            value: c,
+                            child: Text(c.nom, overflow: TextOverflow.ellipsis),
+                          ),
+                      ],
+                      onChanged: (valeur) {
+                        setState(() => _chantierSelectionne = valeur);
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  BoutonRechercheChantier(
+                    // Général reste premier dans la recherche aussi.
+                    chantiers: [chantierGeneral, ...chantiers],
+                    onChoisi: (c) => setState(() => _chantierSelectionne = c),
+                  ),
+                ],
+              ),
+            );
+
+            // Général : seulement la liste de matériel (les photos, travaux,
+            // extras, documents et calculs appartiennent à un vrai chantier).
+            if (general) {
+              return Column(
+                children: [
+                  selecteur,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.local_shipping_outlined,
+                          size: 16,
+                          color: Colors.black54,
+                        ),
                         const SizedBox(width: 6),
-                        BoutonRechercheChantier(
-                          chantiers: chantiers,
-                          onChoisi: (c) =>
-                              setState(() => _chantierSelectionne = c),
+                        const Expanded(
+                          child: Text(
+                            'Général : le matériel dont vous avez besoin pour la '
+                            'remorque ou sans chantier précis.',
+                            key: ValueKey('aide_general'),
+                            style: TextStyle(fontSize: 12, color: Colors.black54),
+                          ),
                         ),
                       ],
                     ),
                   ),
+                  const Divider(height: 1),
+                  Expanded(
+                    child: _materiel(
+                      idChantierGeneral,
+                      companyId,
+                      connecte,
+                      general: true,
+                    ),
+                  ),
+                ],
+              );
+            }
+
+            final chantierId = _chantierSelectionne!.id;
+            return DefaultTabController(
+              length: 6,
+              child: Column(
+                children: [
+                  selecteur,
                   TabBar(
                     labelColor: ThemeCompagnie.accentDe(context),
                     indicatorColor: ThemeCompagnie.accentDe(context),
@@ -156,52 +275,62 @@ class _ChantierScreenState extends State<ChantierScreen> {
                   Expanded(
                     child: TabBarView(
                       children: [
-                        _PhotosTab(
-                          chantierId: _chantierSelectionne!.id,
-                          companyId: companyId,
-                          connecte: connecte,
+                        _onglet(
+                          'photos',
+                          chantierId,
+                          () => _PhotosTab(
+                            chantierId: chantierId,
+                            companyId: companyId,
+                            connecte: connecte,
+                          ),
                         ),
-                        _ListeTab(
-                          chantierId: _chantierSelectionne!.id,
-                          companyId: companyId,
-                          connecte: connecte,
-                          collection: 'chantier_travaux',
-                          libelleChampAjout: 'Décrire le travail à compléter',
-                          libelleComplete: 'Marquer comme complété',
-                          libelleActif: 'Remettre en travaux',
-                          icone: Icons.assignment,
-                          avecQuantite: false,
+                        _onglet(
+                          'travaux',
+                          chantierId,
+                          () => _ListeTab(
+                            chantierId: chantierId,
+                            companyId: companyId,
+                            connecte: connecte,
+                            collection: 'chantier_travaux',
+                            libelleChampAjout: 'Décrire le travail à compléter',
+                            libelleComplete: 'Marquer comme complété',
+                            libelleActif: 'Remettre en travaux',
+                            icone: Icons.assignment,
+                            avecQuantite: false,
+                          ),
                         ),
-                        ExtrasTab(
-                          key: ValueKey('extras_${_chantierSelectionne!.id}'),
-                          chantierId: _chantierSelectionne!.id,
-                          companyId: companyId,
-                          connecte: connecte,
+                        _onglet(
+                          'extras',
+                          chantierId,
+                          () => ExtrasTab(
+                            key: ValueKey('extras_$chantierId'),
+                            chantierId: chantierId,
+                            companyId: companyId,
+                            connecte: connecte,
+                          ),
                         ),
-                        _ListeTab(
-                          chantierId: _chantierSelectionne!.id,
-                          companyId: companyId,
-                          connecte: connecte,
-                          collection: 'chantier_materiel',
-                          libelleChampAjout: 'Décrire le matériel manquant',
-                          libelleComplete: 'Marquer comme obtenu',
-                          libelleActif: 'Remettre comme manquant',
-                          icone: Icons.shopping_cart,
-                          avecQuantite: true,
-                        ),
+                        _materiel(chantierId, companyId, connecte),
                         // Consultation seulement : le dépôt se fait dans Admin → Chantiers → Documents.
-                        DocumentsChantier(
-                          key: ValueKey('docs_${_chantierSelectionne!.id}'),
-                          companyId: companyId,
-                          chantierId: _chantierSelectionne!.id,
-                          peutGerer: false,
+                        _onglet(
+                          'documents',
+                          chantierId,
+                          () => DocumentsChantier(
+                            key: ValueKey('docs_$chantierId'),
+                            companyId: companyId,
+                            chantierId: chantierId,
+                            peutGerer: false,
+                          ),
                         ),
                         // Calcul de feuilles et de charpente (plancher, murs, 3D, commande).
-                        CalculChantier(
-                          key: ValueKey('calcul_${_chantierSelectionne!.id}'),
-                          companyId: companyId,
-                          chantierId: _chantierSelectionne!.id,
-                          connecte: connecte,
+                        _onglet(
+                          'calcul',
+                          chantierId,
+                          () => CalculChantier(
+                            key: ValueKey('calcul_$chantierId'),
+                            companyId: companyId,
+                            chantierId: chantierId,
+                            connecte: connecte,
+                          ),
                         ),
                       ],
                     ),
@@ -441,6 +570,21 @@ class _ListeTab extends StatefulWidget {
   final IconData icone;
   final bool avecQuantite;
 
+  /// Liste « Général » (remorque, sans chantier) : chaque entrée porte son auteur
+  /// et la liste se filtre par personne.
+  final bool general;
+
+  /// Tests : remplacent la lecture et les écritures Firestore.
+  final Stream<List<MapEntry<String, Map<String, dynamic>>>>? flux;
+  final Future<void> Function(String collection, Map<String, dynamic> data)?
+  ajouter;
+  final Future<void> Function(
+    String collection,
+    String id,
+    Map<String, dynamic> data,
+  )?
+  modifier;
+
   const _ListeTab({
     required this.chantierId,
     required this.companyId,
@@ -451,6 +595,10 @@ class _ListeTab extends StatefulWidget {
     required this.libelleActif,
     required this.icone,
     required this.avecQuantite,
+    this.general = false,
+    this.flux,
+    this.ajouter,
+    this.modifier,
   });
 
   @override
@@ -464,6 +612,15 @@ class _ListeTabState extends State<_ListeTab> {
   Uint8List? _photoApercu;
   bool _envoiEnCours = false;
   bool _afficherHistorique = false;
+
+  /// Général : l'auteur affiché (par défaut moi-même ; null = tout le monde).
+  String? _filtreAuteur;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.general) _filtreAuteur = AppSession.current?.id;
+  }
 
   Future<void> _choisirPhoto({
     required void Function(XFile, Uint8List) onChoisie,
@@ -529,29 +686,54 @@ class _ListeTabState extends State<_ListeTab> {
 
     setState(() => _envoiEnCours = true);
 
-    String? photoUrl;
-    if (_photoChoisie != null) {
-      photoUrl = await _uploaderPhoto(_photoChoisie!);
-    }
-
-    final data = <String, dynamic>{
-      'companyId': widget.companyId,
-      'chantierId': widget.chantierId,
-      'texte': texte,
-      'complete': false,
-      'dateAjout': FieldValue.serverTimestamp(),
-      if (photoUrl != null) 'photoUrl': photoUrl,
-    };
-
-    if (widget.avecQuantite) {
-      final quantite = _controleurQuantite.text.trim();
-      if (quantite.isNotEmpty) {
-        data['quantite'] = quantite;
+    final avaitPhoto = _photoChoisie != null;
+    try {
+      String? photoUrl;
+      if (_photoChoisie != null) {
+        photoUrl = await _uploaderPhoto(_photoChoisie!);
       }
+
+      // Général : l'entrée porte son auteur (id et nom de l'employé connecté).
+      final data = donneesNouvelleEntree(
+        companyId: widget.companyId,
+        chantierId: widget.chantierId,
+        texte: texte,
+        quantite: widget.avecQuantite ? _controleurQuantite.text.trim() : null,
+        photoUrl: photoUrl,
+        auteur: widget.general ? AppSession.current : null,
+      );
+      final ajouter = widget.ajouter;
+      if (ajouter != null) {
+        await ajouter(widget.collection, data);
+      } else {
+        await FirebaseFirestore.instance
+            .collection(widget.collection)
+            .add(data);
+      }
+    } catch (e) {
+      // Le texte reste à l'écran pour réessayer ; la copie temporaire de la
+      // photo est déjà supprimée, il faut la choisir de nouveau.
+      if (!mounted) return;
+      setState(() {
+        _envoiEnCours = false;
+        if (avaitPhoto) {
+          _photoChoisie = null;
+          _photoApercu = null;
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'L\'entrée n\'a pas pu être ajoutée (${detailErreurFirebase(e)}). '
+            'Réessayez${avaitPhoto ? ' et rajoutez la photo' : ''}.',
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
     }
 
-    await FirebaseFirestore.instance.collection(widget.collection).add(data);
-
+    if (!mounted) return;
     _controleurTexte.clear();
     _controleurQuantite.clear();
     setState(() {
@@ -561,17 +743,24 @@ class _ListeTabState extends State<_ListeTab> {
     });
   }
 
-  Future<void> _marquerComplete(String docId, bool complete) async {
-    await FirebaseFirestore.instance
+  Future<void> _ecrireModification(String docId, Map<String, dynamic> data) {
+    final modifier = widget.modifier;
+    if (modifier != null) return modifier(widget.collection, docId, data);
+    return FirebaseFirestore.instance
         .collection(widget.collection)
         .doc(docId)
-        .update({
-          'complete': complete,
-          'dateComplete': complete
-              ? FieldValue.serverTimestamp()
-              : FieldValue.delete(),
-        });
+        .update(data);
   }
+
+  Future<void> _marquerComplete(String docId, bool complete) =>
+      _ecrireModification(
+        docId,
+        donneesCompletion(
+          complete: complete,
+          general: widget.general,
+          modifieParId: AppSession.current?.id,
+        ),
+      );
 
   Future<void> _supprimerEntree(String docId) async {
     await FirebaseFirestore.instance
@@ -700,21 +889,22 @@ class _ListeTabState extends State<_ListeTab> {
                     width: double.infinity,
                     child: FilledButton(
                       onPressed: () async {
-                        final updateData = <String, dynamic>{
-                          'texte': texteCtrl.text.trim(),
-                        };
-                        if (widget.avecQuantite) {
-                          updateData['quantite'] = quantiteCtrl.text.trim();
-                        }
+                        String? photoUrl;
                         if (nouvellePhoto != null) {
-                          updateData['photoUrl'] = await _uploaderPhoto(
-                            nouvellePhoto!,
-                          );
+                          photoUrl = await _uploaderPhoto(nouvellePhoto!);
                         }
-                        await FirebaseFirestore.instance
-                            .collection(widget.collection)
-                            .doc(docId)
-                            .update(updateData);
+                        await _ecrireModification(
+                          docId,
+                          donneesModification(
+                            texte: texteCtrl.text.trim(),
+                            quantite: widget.avecQuantite
+                                ? quantiteCtrl.text.trim()
+                                : null,
+                            photoUrl: photoUrl,
+                            general: widget.general,
+                            modifieParId: AppSession.current?.id,
+                          ),
+                        );
                         if (ctx.mounted) Navigator.pop(ctx);
                       },
                       child: const Text('Enregistrer'),
@@ -911,13 +1101,20 @@ class _ListeTabState extends State<_ListeTab> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
-                .collection(widget.collection)
-                .where('companyId', isEqualTo: widget.companyId)
-                .where('chantierId', isEqualTo: widget.chantierId)
-                .orderBy('dateAjout', descending: true)
-                .snapshots(),
+          child: StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
+            stream:
+                widget.flux ??
+                FirebaseFirestore.instance
+                    .collection(widget.collection)
+                    .where('companyId', isEqualTo: widget.companyId)
+                    .where('chantierId', isEqualTo: widget.chantierId)
+                    .orderBy('dateAjout', descending: true)
+                    .snapshots()
+                    .map(
+                      (s) => [
+                        for (final d in s.docs) MapEntry(d.id, d.data()),
+                      ],
+                    ),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Center(child: Text('Erreur : ${snapshot.error}'));
@@ -925,27 +1122,47 @@ class _ListeTabState extends State<_ListeTab> {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final docs = snapshot.data!.docs.where((doc) {
-                final data = doc.data() as Map<String, dynamic>;
-                final complete = data['complete'] == true;
-                return complete == _afficherHistorique;
-              }).toList();
+              final toutes = snapshot.data!;
+              var docs = toutes
+                  .where(
+                    (doc) =>
+                        (doc.value['complete'] == true) == _afficherHistorique,
+                  )
+                  .toList();
+              // Général : seulement les ajouts de la personne choisie.
+              if (widget.general && _filtreAuteur != null) {
+                docs = docs
+                    .where((doc) => doc.value['ajoutePar'] == _filtreAuteur)
+                    .toList();
+              }
 
               if (docs.isEmpty) {
-                return Center(
-                  child: Text(
-                    _afficherHistorique
-                        ? 'Aucun historique pour ce chantier.'
-                        : 'Aucune entrée active pour ce chantier.',
-                    style: TextStyle(color: Colors.grey.shade600),
+                return _avecFiltres(
+                  toutes,
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        widget.general
+                            ? _texteVideGeneral()
+                            : (_afficherHistorique
+                                  ? 'Aucun historique pour ce chantier.'
+                                  : 'Aucune entrée active pour ce chantier.'),
+                        key: const ValueKey('liste_vide'),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
+                    ),
                   ),
                 );
               }
-              return ListView.builder(
+              return _avecFiltres(
+                toutes,
+                ListView.builder(
                 itemCount: docs.length,
                 itemBuilder: (context, index) {
                   final doc = docs[index];
-                  final data = doc.data() as Map<String, dynamic>;
+                  final data = doc.value;
                   final complete = data['complete'] == true;
                   final photoUrl = data['photoUrl'] as String?;
                   final quantite = data['quantite'] as String?;
@@ -985,6 +1202,14 @@ class _ListeTabState extends State<_ListeTab> {
                       children: [
                         if (quantite != null && quantite.isNotEmpty)
                           Text('Quantité : $quantite'),
+                        if (widget.general &&
+                            _filtreAuteur == null &&
+                            (data['ajouteParNom'] ?? '').toString().isNotEmpty)
+                          Text(
+                            'Par ${data['ajouteParNom']}',
+                            key: ValueKey('auteur_${doc.key}'),
+                            style: const TextStyle(fontSize: 12),
+                          ),
                         if (complete && dateComplete != null)
                           Text(
                             'Réglé le ${_formatDate(dateComplete)}',
@@ -1003,11 +1228,11 @@ class _ListeTabState extends State<_ListeTab> {
                           icon: const Icon(Icons.more_vert),
                           onSelected: (valeur) {
                             if (valeur == 'modifier') {
-                              _ouvrirEdition(doc.id, data);
+                              _ouvrirEdition(doc.key, data);
                             } else if (valeur == 'complete') {
-                              _marquerComplete(doc.id, true);
+                              _marquerComplete(doc.key, true);
                             } else if (valeur == 'actif') {
-                              _marquerComplete(doc.id, false);
+                              _marquerComplete(doc.key, false);
                             }
                           },
                           itemBuilder: (ctx) => [
@@ -1033,17 +1258,74 @@ class _ListeTabState extends State<_ListeTab> {
                             color: Colors.red,
                           ),
                           onPressed: connecte
-                              ? () => _confirmerSuppression(doc.id)
+                              ? () => _confirmerSuppression(doc.key)
                               : null,
                         ),
                       ],
                     ),
                   );
                 },
+                ),
               );
             },
           ),
         ),
+      ],
+    );
+  }
+
+  /// Message de la liste vide de Général, selon la personne affichée.
+  String _texteVideGeneral() {
+    if (_afficherHistorique) return 'Aucun historique dans Général.';
+    if (_filtreAuteur == null) return 'Aucun matériel actif dans Général.';
+    if (_filtreAuteur == AppSession.current?.id) {
+      return 'Aucun matériel de votre part dans Général. Touchez « Tous » '
+          'pour voir celui des autres.';
+    }
+    return 'Aucun matériel actif de cette personne.';
+  }
+
+  /// Général : choisir qui on voit — mes ajouts, tout le monde, ou une autre
+  /// personne (contremaître ou admin) qui a déjà ajouté du matériel.
+  Widget _avecFiltres(
+    List<MapEntry<String, Map<String, dynamic>>> toutes,
+    Widget contenu,
+  ) {
+    if (!widget.general) return contenu;
+    final moi = AppSession.current;
+    final autres = <String, String>{};
+    for (final e in toutes) {
+      final id = e.value['ajoutePar'];
+      final nom = e.value['ajouteParNom'];
+      if (id is String && id.isNotEmpty && id != moi?.id && nom is String) {
+        autres[id] ??= nom;
+      }
+    }
+    final ordonnes = autres.entries.toList()
+      ..sort((a, b) => a.value.toLowerCase().compareTo(b.value.toLowerCase()));
+    Widget puce(String cle, String libelle, String? auteur) => Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        key: ValueKey('filtre_$cle'),
+        label: Text(libelle),
+        selected: _filtreAuteur == auteur,
+        onSelected: (_) => setState(() => _filtreAuteur = auteur),
+      ),
+    );
+    return Column(
+      children: [
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Row(
+            children: [
+              if (moi != null) puce('moi', 'Mes ajouts', moi.id),
+              puce('tous', 'Tous', null),
+              for (final a in ordonnes) puce(a.key, a.value, a.key),
+            ],
+          ),
+        ),
+        Expanded(child: contenu),
       ],
     );
   }

@@ -112,9 +112,15 @@ class _RechercheChantierState extends State<_RechercheChantier> {
 
   @override
   Widget build(BuildContext context) {
+    // « Général » (matériel de la remorque), quand il est proposé, reste premier.
     final resultats =
         widget.chantiers.where((c) => chantierCorrespond(c, _requete)).toList()
-          ..sort((a, b) => a.nom.compareTo(b.nom));
+          ..sort((a, b) {
+            final ga = a.id == idChantierGeneral;
+            final gb = b.id == idChantierGeneral;
+            if (ga != gb) return ga ? -1 : 1;
+            return a.nom.compareTo(b.nom);
+          });
 
     return Padding(
       // Remonte au-dessus du clavier.
@@ -167,7 +173,11 @@ class _RechercheChantierState extends State<_RechercheChantier> {
                       itemBuilder: (context, i) {
                         final c = resultats[i];
                         return ListTile(
-                          leading: const Icon(Icons.construction),
+                          leading: Icon(
+                            c.id == idChantierGeneral
+                                ? Icons.local_shipping_outlined
+                                : Icons.construction,
+                          ),
                           title: Text(
                             c.nom,
                             style: const TextStyle(fontWeight: FontWeight.w600),

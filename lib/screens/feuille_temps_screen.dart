@@ -244,9 +244,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           .collection('chantiers')
           .where('companyId', isEqualTo: companyId)
           .get();
-      final liste =
-          snap.docs.map((d) => Chantier.fromFirestore(d.id, d.data())).toList()
-            ..sort((a, b) => a.nom.compareTo(b.nom));
+      // « Général » (matériel de la remorque) n'est jamais un chantier d'heures.
+      final liste = sansGeneral(
+        snap.docs.map((d) => Chantier.fromFirestore(d.id, d.data())),
+      )..sort((a, b) => a.nom.compareTo(b.nom));
       if (mounted) {
         setState(() {
           _tousChantiers = liste;

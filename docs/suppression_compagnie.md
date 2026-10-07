@@ -8,8 +8,9 @@ sous chaque compagnie (quel que soit son statut : en attente, approuvée, refus�
 
 - les employés de la compagnie : super-admin, admins, contremaîtres, employés, avec
   leurs sessions, liens de création de NIP, codes de réinitialisation et compteurs ;
-- les chantiers, photos, documents, travaux, matériel, extras, commandes de
-  charpente et feuilles de temps ;
+- les chantiers, photos, documents, travaux, matériel (dont la liste « Général » de la
+  remorque et le registre « déjà vu » de chaque admin, `materiel_general_vus`), extras,
+  commandes de charpente et feuilles de temps ;
 - les fichiers du Storage (`chantiers/<compagnie>/` et `exports/<compagnie>/`) ;
 - les données privées de la compagnie (`companies_prive`) et sa fiche.
 

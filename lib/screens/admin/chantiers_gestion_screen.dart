@@ -3,10 +3,12 @@ import 'package:flutter/material.dart';
 
 import '../../models/chantier.dart';
 import '../../services/app_session.dart';
+import '../../services/materiel_general_source.dart';
 import '../../services/theme_compagnie.dart';
 import '../../widgets/recherche_chantier.dart';
 import 'chantier_admin_actions.dart';
 import 'dossier_chantier_screen.dart';
+import 'materiel_general_screen.dart';
 
 /// Filtre de la liste des chantiers.
 enum FiltreChantiers { actifs, archives, tous }
@@ -30,7 +32,8 @@ List<Chantier> filtrerChantiers(
 /// Section Admin « Chantiers » : tout ce qui touche un chantier au même endroit.
 /// La liste (recherche, actifs / archivés) mène à la page du chantier : résumé des
 /// heures, photos, documents (dépôt et suppression), export, modification et
-/// archivage.
+/// archivage. « Général » (matériel de la remorque, sans chantier) reste toujours
+/// en tête de la liste.
 class ChantiersGestionScreen extends StatefulWidget {
   /// Remplace la lecture des chantiers dans Firestore (tests).
   @visibleForTesting
@@ -40,10 +43,15 @@ class ChantiersGestionScreen extends StatefulWidget {
   @visibleForTesting
   final Widget Function(Chantier chantier)? pageChantier;
 
+  /// Remplace Firestore pour le matériel Général et sa pastille (tests).
+  @visibleForTesting
+  final SourceMaterielGeneral? sourceMateriel;
+
   const ChantiersGestionScreen({
     super.key,
     this.fluxChantiers,
     this.pageChantier,
+    this.sourceMateriel,
   });
 
   @override
@@ -132,6 +140,10 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                             setState(() => _filtre = s.first),
                       ),
                     ),
+                    // Général : toujours premier (jamais archivé, jamais dans les heures).
+                    if (_filtre != FiltreChantiers.archives &&
+                        chantierCorrespond(chantierGeneral, _requete))
+                      _TuileGeneral(source: widget.sourceMateriel),
                     Expanded(
                       child: visibles.isEmpty
                           ? Center(
@@ -167,6 +179,56 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
               icon: const Icon(Icons.add),
               label: const Text('Ajouter'),
             ),
+    );
+  }
+}
+
+/// « Général » : le matériel de la remorque, séparé par contremaître et admin.
+/// La pastille de couleur compte les changements que l'admin n'a pas vus.
+class _TuileGeneral extends StatelessWidget {
+  final SourceMaterielGeneral? source;
+  const _TuileGeneral({this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        NonVusGeneral(
+          source: source,
+          builder: (context, nonVus) => ListTile(
+            key: const ValueKey('chantier_general'),
+            tileColor: ThemeCompagnie.teintePale(
+              Theme.of(context).colorScheme.primary,
+              0.12,
+            ),
+            leading: Icon(
+              Icons.local_shipping_outlined,
+              color: ThemeCompagnie.accentDe(context),
+            ),
+            title: Text(
+              chantierGeneral.nom,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            subtitle: const Text(
+              'Matériel de la remorque, séparé par contremaître et admin',
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                PastilleNonVus(nonVus, key: const ValueKey('pastille_general')),
+                const SizedBox(width: 4),
+                const Icon(Icons.chevron_right),
+              ],
+            ),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => MaterielGeneralScreen(source: source),
+              ),
+            ),
+          ),
+        ),
+        const Divider(height: 1),
+      ],
     );
   }
 }

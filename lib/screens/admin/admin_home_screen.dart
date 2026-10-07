@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../../services/materiel_general_source.dart';
 import '../../services/theme_compagnie.dart';
 import 'couleur_compagnie_screen.dart';
+import 'materiel_general_screen.dart';
 import 'regles_paie_screen.dart';
 import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
 import 'chantiers_gestion_screen.dart';
 
 class AdminHomeScreen extends StatelessWidget {
-  const AdminHomeScreen({super.key});
+  /// Remplace Firestore pour la pastille du matériel Général (tests).
+  @visibleForTesting
+  final SourceMaterielGeneral? sourceMateriel;
+
+  const AdminHomeScreen({super.key, this.sourceMateriel});
 
   @override
   Widget build(BuildContext context) {
@@ -56,10 +62,27 @@ class AdminHomeScreen extends StatelessWidget {
             subtitle: const Text(
               'Ajouter, modifier, archiver · photos, documents, heures et export',
             ),
-            trailing: const Icon(Icons.chevron_right),
+            // Pastille : du matériel Général a changé depuis votre dernière visite.
+            trailing: NonVusGeneral(
+              source: sourceMateriel,
+              builder: (context, nonVus) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PastilleNonVus(
+                    nonVus,
+                    key: const ValueKey('pastille_chantiers'),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
             onTap: () {
               Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ChantiersGestionScreen()),
+                MaterialPageRoute(
+                  builder: (_) =>
+                      ChantiersGestionScreen(sourceMateriel: sourceMateriel),
+                ),
               );
             },
           ),

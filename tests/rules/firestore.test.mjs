@@ -354,6 +354,181 @@ describe('Travaux / matériel (admin et contremaître seulement)', () => {
 });
 
 // =============================================================================
+describe('Matériel « Général » (remorque, sans chantier) : matériel seulement', () => {
+  // Chaque entrée porte son auteur : ids et noms de la graine (plusA, adminA).
+  const AUTEURS = {
+    'uid-plusA': { ajoutePar: 'plusA', ajouteParNom: 'Plus A' },
+    'uid-adminA': { ajoutePar: 'adminA', ajouteParNom: 'Admin A' },
+    'uid-adminB': { ajoutePar: 'adminB', ajouteParNom: 'Admin B' },
+  };
+  const general = (uid, over = {}) => ({
+    companyId: 'A', chantierId: '_general', texte: 'Sangles à cliquet', quantite: '4',
+    complete: false, dateAjout: serverTimestamp(), ...AUTEURS[uid], ...over,
+  });
+  const materiel = (uid) => collection(ctxDe(uid), 'chantier_materiel');
+  const generalDe = (uid, companyId = 'A') => query(collection(ctxDe(uid), 'chantier_materiel'),
+    where('companyId', '==', companyId), where('chantierId', '==', '_general'));
+
+  test('contremaître et admin : ajoutent, lisent, complètent, modifient, suppriment', async () => {
+    for (const uid of ['uid-plusA', 'uid-adminA']) {
+      const ref = await assertSucceeds(addDoc(materiel(uid), general(uid)));
+      await assertSucceeds(getDocs(generalDe(uid)));
+      await assertSucceeds(updateDoc(ref, { complete: true, dateComplete: serverTimestamp() }));
+      await assertSucceeds(updateDoc(ref, { texte: 'Sangles 2 po', quantite: '6' }));
+      await assertSucceeds(updateDoc(ref, { complete: false, dateComplete: deleteField() }));
+      await assertSucceeds(deleteDoc(ref));
+    }
+  });
+
+  test('avec photo : même chose qu\'un chantier', async () => {
+    await assertSucceeds(addDoc(materiel('uid-plusA'), general('uid-plusA', {
+      photoUrl: 'https://firebasestorage.googleapis.com/v0/b/x/o/m.jpg',
+    })));
+  });
+
+  test('l\'auteur est obligatoire et ne peut pas être celui d\'un autre', async () => {
+    const col = materiel('uid-plusA');
+    const sans = general('uid-plusA'); delete sans.ajoutePar; delete sans.ajouteParNom;
+    await assertFails(addDoc(col, sans));
+    await assertFails(addDoc(col, general('uid-plusA', { ajoutePar: 'adminA', ajouteParNom: 'Admin A' })));
+    await assertFails(addDoc(col, general('uid-plusA', { ajouteParNom: 'Quelqu\'un d\'autre' })));
+    await assertFails(addDoc(col, general('uid-plusA', { ajoutePar: 'plusA', ajouteParNom: 'Admin A' })));
+    // Bon nom, mauvais identifiant : pas moyen de passer pour quelqu'un d'autre.
+    await assertFails(addDoc(col, general('uid-plusA', { ajoutePar: 'adminA', ajouteParNom: 'Plus A' })));
+    await assertFails(addDoc(col, general('uid-plusA', { ajoutePar: '', ajouteParNom: 'Plus A' })));
+  });
+
+  test('employé : refusé (comme pour un chantier)', async () => {
+    await assertFails(addDoc(materiel('uid-empA'),
+      general('uid-plusA', { ajoutePar: 'empA', ajouteParNom: 'Emp A' })));
+    await assertFails(getDocs(generalDe('uid-empA')));
+  });
+
+  test('chaque compagnie a son Général : pas de lecture ni d\'écriture croisée', async () => {
+    await assertSucceeds(addDoc(materiel('uid-plusA'), general('uid-plusA')));
+    await assertSucceeds(addDoc(materiel('uid-adminB'), general('uid-adminB', { companyId: 'B' })));
+    await assertFails(addDoc(materiel('uid-plusA'), general('uid-plusA', { companyId: 'B' })));
+    await assertFails(getDocs(generalDe('uid-plusA', 'B')));
+    await assertFails(getDocs(generalDe('uid-adminB', 'A')));
+  });
+
+  test('toujours les mêmes contrôles : texte vide, déjà complété, champ inconnu, date falsifiée', async () => {
+    const col = materiel('uid-plusA');
+    await assertFails(addDoc(col, general('uid-plusA', { texte: '' })));
+    await assertFails(addDoc(col, general('uid-plusA', { complete: true })));
+    await assertFails(addDoc(col, general('uid-plusA', { admin: true })));
+    await assertFails(addDoc(col, general('uid-plusA', { dateAjout: new Date('2020-01-01') })));
+  });
+
+  test('un autre identifiant inventé reste refusé (seul « _general » est permis)', async () => {
+    for (const id of ['general', '_General', '_autre', '', 'chB']) {
+      await assertFails(addDoc(materiel('uid-plusA'), general('uid-plusA', { chantierId: id })));
+    }
+  });
+
+  test('pas un chantier : refusé pour travaux, extras et photos', async () => {
+    await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'chantier_travaux'), general('uid-plusA')));
+    await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'chantier_extras'), {
+      companyId: 'A', chantierId: '_general', description: 'x', mainOeuvre: '1 gars',
+      dateTravaux: '2026-10-01', ajoutePar: 'plusA', ajouteParNom: 'Plus A', dateAjout: serverTimestamp(),
+    }));
+    await assertFails(addDoc(collection(ctxDe('uid-plusA'), 'chantier_photos'), {
+      companyId: 'A', chantierId: '_general',
+      url: 'https://firebasestorage.googleapis.com/v0/b/x/o/p.jpg',
+      cheminStorage: 'chantiers/A/_general/photos/p.jpg', dateAjout: serverTimestamp(),
+    }));
+  });
+
+  test('un chantier ordinaire ne prend pas les champs « auteur » (inchangé)', async () => {
+    const entree = { companyId: 'A', chantierId: 'chA', texte: 'Clous', complete: false, dateAjout: serverTimestamp() };
+    await assertSucceeds(addDoc(materiel('uid-plusA'), entree));
+    await assertFails(addDoc(materiel('uid-plusA'), { ...entree, ...AUTEURS['uid-plusA'] }));
+  });
+
+  describe('qui a changé quoi, et quand (dateModif, modifiePar)', () => {
+    const creer = async () => addDoc(materiel('uid-plusA'), general('uid-plusA'));
+
+    test('chaque personne signe sa modification avec l\'heure du serveur', async () => {
+      const ref = await assertSucceeds(creer());
+      // L'admin marque « obtenu » (acheté) la demande du contremaître.
+      const refAdmin = doc(ctxDe('uid-adminA'), ref.path);
+      await assertSucceeds(updateDoc(refAdmin, {
+        complete: true, dateComplete: serverTimestamp(), dateModif: serverTimestamp(), modifiePar: 'adminA',
+      }));
+      // Le contremaître modifie ensuite : modifiePar change, dateModif aussi.
+      await assertSucceeds(updateDoc(doc(ctxDe('uid-plusA'), ref.path), {
+        texte: 'Sangles 2 po', dateModif: serverTimestamp(), modifiePar: 'plusA',
+      }));
+    });
+
+    test('refusé : signer au nom d\'un autre, fausse date, modifiePar seul', async () => {
+      const ref = await assertSucceeds(creer());
+      const r = doc(ctxDe('uid-plusA'), ref.path);
+      await assertFails(updateDoc(r, { texte: 'x', dateModif: serverTimestamp(), modifiePar: 'adminA' }));
+      await assertFails(updateDoc(r, { texte: 'x', dateModif: new Date('2020-01-01'), modifiePar: 'plusA' }));
+      await assertFails(updateDoc(r, { texte: 'x', modifiePar: 'plusA' }));
+      await assertFails(updateDoc(r, { texte: 'x', dateModif: serverTimestamp() }));
+    });
+
+    test('refusé : changer l\'auteur ou le chantier d\'une entrée existante', async () => {
+      const ref = await assertSucceeds(creer());
+      const r = doc(ctxDe('uid-adminA'), ref.path);
+      await assertFails(updateDoc(r, { ajoutePar: 'adminA', ajouteParNom: 'Admin A' }));
+      await assertFails(updateDoc(r, { chantierId: 'chA' }));
+    });
+
+    test('refusé ailleurs : un chantier ordinaire ou un travail ne porte pas dateModif', async () => {
+      const r = doc(ctxDe('uid-plusA'), 'chantier_travaux/tA');
+      await assertFails(updateDoc(r, { texte: 'x', dateModif: serverTimestamp(), modifiePar: 'plusA' }));
+    });
+  });
+
+  test('« _general » ne peut pas devenir un vrai chantier (il paraîtrait dans les heures)', async () => {
+    const admin = ctxDe('uid-adminA');
+    await assertFails(setDoc(doc(admin, 'chantiers/_general'),
+      { companyId: 'A', nom: 'Général', adresse: '' }));
+    // Un chantier ordinaire se crée toujours.
+    await assertSucceeds(setDoc(doc(admin, 'chantiers/nouveauA'),
+      { companyId: 'A', nom: 'Chalet', adresse: '' }));
+  });
+});
+
+// =============================================================================
+describe('Matériel Général : ce que chaque admin a déjà vu (pastille)', () => {
+  const vus = (over = {}) => ({ companyId: 'A', vus: { plusA: serverTimestamp() }, ...over });
+  const ref = (uid, id) => doc(ctxDe(uid), `materiel_general_vus/${id}`);
+
+  test('un admin lit et écrit SON document (même s\'il n\'existe pas encore)', async () => {
+    await assertSucceeds(getDoc(ref('uid-adminA', 'adminA')));
+    await assertSucceeds(setDoc(ref('uid-adminA', 'adminA'), vus(), { merge: true }));
+    await assertSucceeds(setDoc(ref('uid-adminA', 'adminA'),
+      { companyId: 'A', vus: { adminA: serverTimestamp() } }, { merge: true }));
+    await assertSucceeds(getDoc(ref('uid-adminA', 'adminA')));
+  });
+
+  test('pas celui d\'un autre admin, ni d\'une autre compagnie', async () => {
+    await assertFails(getDoc(ref('uid-adminA', 'superA')));
+    await assertFails(setDoc(ref('uid-adminA', 'superA'), vus()));
+    await assertFails(setDoc(ref('uid-adminA', 'adminA'), vus({ companyId: 'B' })));
+    await assertFails(setDoc(ref('uid-adminB', 'adminA'), vus({ companyId: 'B' })));
+  });
+
+  test('contremaître et employé : aucun accès (c\'est une vue d\'admin)', async () => {
+    await assertFails(getDoc(ref('uid-plusA', 'plusA')));
+    await assertFails(setDoc(ref('uid-plusA', 'plusA'), vus()));
+    await assertFails(getDoc(ref('uid-empA', 'empA')));
+    await assertFails(setDoc(ref('uid-empA', 'empA'), vus()));
+  });
+
+  test('forme imposée : champs connus, « vus » est une table, jamais supprimé', async () => {
+    await assertFails(setDoc(ref('uid-adminA', 'adminA'), vus({ extra: 1 })));
+    await assertFails(setDoc(ref('uid-adminA', 'adminA'), vus({ vus: 'oui' })));
+    await assertSucceeds(setDoc(ref('uid-adminA', 'adminA'), vus()));
+    await assertFails(deleteDoc(ref('uid-adminA', 'adminA')));
+  });
+});
+
+// =============================================================================
 describe('Extras (saisie : admin et contremaître ; suppression : admin)', () => {
   const extra = (over = {}) => ({
     companyId: 'A', chantierId: 'chA', description: 'Ajout d\'une cloison',

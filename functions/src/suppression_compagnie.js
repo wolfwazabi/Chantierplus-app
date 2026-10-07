@@ -17,7 +17,7 @@ const FORMAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
 // Collections dont chaque document porte le champ companyId, les chantiers en dernier.
 const COLLECTIONS_PAR_COMPAGNIE = [
   "chantier_photos", "chantier_travaux", "chantier_materiel", "chantier_extras",
-  "chantier_commandes", "chantier_documents", "feuilles_temps", "chantiers",
+  "chantier_commandes", "chantier_documents", "materiel_general_vus", "feuilles_temps", "chantiers",
 ];
 
 // Compteurs anti-abus (limites_connexion) liés à un employé ou à une compagnie.

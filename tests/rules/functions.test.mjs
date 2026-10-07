@@ -589,6 +589,12 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     await rejette(envoyer(emp, [jour({ chantierId: 'fantome' })]), 'invalid-argument');
   });
 
+  test('« Général » (matériel de la remorque) ne sert jamais pour les heures', async () => {
+    await rejette(envoyer(emp, [jour({ chantierId: '_general' })]), 'invalid-argument');
+    // Pour un admin aussi.
+    await rejette(envoyer(adm, [jour({ chantierId: '_general' })]), 'invalid-argument');
+  });
+
   test('saisie invalide : refusée (heures inversées, hors plage, jour incomplet, semaine qui n\'est pas un lundi)', async () => {
     await rejette(envoyer(emp, [jour({ heureFinMinutes: 6 * 60 })]), 'invalid-argument');
     await rejette(envoyer(emp, [jour({ heureFinMinutes: 24 * 60 })]), 'invalid-argument');
@@ -1183,7 +1189,7 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
   const NUM_CIBLE = '770001'; const NUM_TEMOIN = '770002';
   const bucket = () => getAdminStorage(adminApp).bucket(BUCKET);
   const COLLECTIONS = ['chantiers', 'chantier_photos', 'chantier_travaux', 'chantier_materiel',
-    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'feuilles_temps'];
+    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'materiel_general_vus', 'feuilles_temps'];
 
   const existe = async (chemin) => (await adminDb.doc(chemin).get()).exists;
   const compter = async (collection, cid) =>

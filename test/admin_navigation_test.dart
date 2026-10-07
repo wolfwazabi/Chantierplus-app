@@ -11,6 +11,8 @@ import 'package:construction_app/services/app_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'doubles/source_materiel_vide.dart';
+
 const _chalet = Chantier(
   id: 'c1',
   companyId: 'A',
@@ -83,6 +85,7 @@ void main() {
         MaterialApp(
           home: ChantiersGestionScreen(
             fluxChantiers: Stream.value(chantiers),
+            sourceMateriel: SourceMaterielGeneralVide(),
             pageChantier: page,
           ),
         ),

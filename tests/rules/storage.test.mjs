@@ -94,6 +94,16 @@ describe('Storage — photos de chantier', () => {
     await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/chantier_extras/4.jpg'), IMAGE, JPEG));
   });
 
+  test("matériel Général (_general) : photo permise au contremaître et à l'admin, pas à l'employé ni à l'autre compagnie", async () => {
+    await assertSucceeds(uploadBytes(ref(st(employe(env, 'uid-plusA')), 'chantiers/A/_general/chantier_materiel/g1.jpg'), IMAGE, JPEG));
+    await assertSucceeds(uploadBytes(ref(st(employe(env, 'uid-adminA')), 'chantiers/A/_general/chantier_materiel/g2.jpg'), IMAGE, JPEG));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-empA')), 'chantiers/A/_general/chantier_materiel/g3.jpg'), IMAGE, JPEG));
+    await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/_general/chantier_materiel/g4.jpg'), IMAGE, JPEG));
+    // Lecture par un gestionnaire de la compagnie.
+    await assertSucceeds(getBytes(ref(st(employe(env, 'uid-plusA')), 'chantiers/A/_general/chantier_materiel/g1.jpg')));
+    await assertFails(getBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/_general/chantier_materiel/g1.jpg')));
+  });
+
   test('photos d\'extras : employé et autre compagnie refusés, pas de non-image', async () => {
     await assertFails(uploadBytes(ref(st(employe(env, 'uid-empA')), 'chantiers/A/chA/chantier_extras/x.jpg'), IMAGE, JPEG));
     await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/chantier_extras/x.jpg'), IMAGE, JPEG));

@@ -1,3 +1,24 @@
+/// Identifiant réservé du « chantier » Général : le matériel dont un contremaître
+/// a besoin pour sa remorque, sans chantier précis. Jamais un vrai chantier (les
+/// identifiants Firestore ne commencent pas par « _ ») : il n'existe pas dans la
+/// collection `chantiers`, donc il n'est jamais proposé pour les heures. Les
+/// règles Firestore l'acceptent seulement pour `chantier_materiel`.
+const String idChantierGeneral = '_general';
+
+/// Le choix « Général » de la liste de matériel (écran Chantiers).
+const Chantier chantierGeneral = Chantier(
+  id: idChantierGeneral,
+  companyId: '',
+  nom: 'Général',
+  adresse: 'Remorque, matériel sans chantier',
+);
+
+/// Les vrais chantiers seulement : « Général » n'est jamais un chantier où
+/// inscrire des heures. (Il n'est pas dans Firestore ; ce filtre est une garde de
+/// plus pour la feuille de temps.)
+List<Chantier> sansGeneral(Iterable<Chantier> chantiers) =>
+    chantiers.where((c) => c.id != idChantierGeneral).toList();
+
 class Chantier {
   final String id;
   final String companyId;

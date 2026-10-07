@@ -263,7 +263,9 @@ service cloud.firestore {
     match /chantiers/{chantierId} {
       allow read: if membreDe(resource.data.companyId);
 
+      // « _general » est réservé à la liste de matériel Général (pas un chantier).
       allow create: if adminDe(request.resource.data.companyId)
+        && chantierId != '_general'
         && champsPermis(request.resource.data, ['companyId', 'nom', 'adresse'])
         && texte(request.resource.data.nom, 1, 200)
         && texteOptionnel(request.resource.data, 'adresse', 300);
@@ -302,19 +304,40 @@ service cloud.firestore {
 
     // ------------------------------- Travaux / Matériel (admin et contremaître)
 
-    function entreeValideCreation(d) {
-      return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
-                              'dateAjout', 'photoUrl', 'quantite'])
-        && chantierDe(d.chantierId, d.companyId)
-        && texte(d.texte, 1, 2000)
+    // Champs communs à toute nouvelle entrée de travaux ou de matériel.
+    function entreeCommuneValide(d) {
+      return texte(d.texte, 1, 2000)
         && d.complete == false
         && d.dateAjout == request.time
         && (!d.keys().hasAny(['photoUrl']) || urlStorage(d.photoUrl))
         && texteOptionnel(d, 'quantite', 100);
     }
 
+    function entreeValideCreation(d) {
+      return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
+                              'dateAjout', 'photoUrl', 'quantite'])
+        && chantierDe(d.chantierId, d.companyId)
+        && entreeCommuneValide(d);
+    }
+
+    // « _general » : liste de matériel « Général » (remorque, sans chantier). Ce
+    // n'est pas un chantier : il n'existe pas dans « chantiers », donc il ne se
+    // choisit jamais pour les heures. Matériel seulement. Chaque entrée porte son
+    // auteur (contremaître ou admin) : la liste se sépare par personne et un admin
+    // voit ce qui a changé depuis sa dernière visite.
+    function entreeGeneralValideCreation(d) {
+      return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
+                              'dateAjout', 'photoUrl', 'quantite',
+                              'ajoutePar', 'ajouteParNom'])
+        && d.chantierId == '_general'
+        && d.ajoutePar == session().employeeId
+        && d.ajouteParNom == moi().nom
+        && entreeCommuneValide(d);
+    }
+
     function entreeValideModification(d) {
-      return champsModifiesPermis(['texte', 'quantite', 'photoUrl', 'complete', 'dateComplete'])
+      return champsModifiesPermis(['texte', 'quantite', 'photoUrl', 'complete', 'dateComplete',
+                                   'dateModif', 'modifiePar'])
         && texte(d.texte, 1, 2000)
         && d.complete is bool
         && (!d.keys().hasAny(['photoUrl']) || urlStorage(d.photoUrl))
@@ -323,7 +346,12 @@ service cloud.firestore {
         && (d.complete == true
               ? (!d.diff(resource.data).affectedKeys().hasAny(['dateComplete'])
                  || d.dateComplete == request.time)
-              : !d.keys().hasAny(['dateComplete']));
+              : !d.keys().hasAny(['dateComplete']))
+        // dateModif + modifiePar : seulement pour Général (qui a changé quoi, quand).
+        && (!d.diff(resource.data).affectedKeys().hasAny(['dateModif', 'modifiePar'])
+            || (resource.data.chantierId == '_general'
+                && d.dateModif == request.time
+                && d.modifiePar == session().employeeId));
     }
 
     match /chantier_travaux/{entreeId} {
@@ -338,10 +366,28 @@ service cloud.firestore {
     match /chantier_materiel/{entreeId} {
       allow read: if gestionnaireDe(resource.data.companyId);
       allow create: if gestionnaireDe(request.resource.data.companyId)
-        && entreeValideCreation(request.resource.data);
+        && (entreeValideCreation(request.resource.data)
+            || entreeGeneralValideCreation(request.resource.data));
       allow update: if gestionnaireDe(resource.data.companyId)
         && entreeValideModification(request.resource.data);
       allow delete: if gestionnaireDe(resource.data.companyId);
+    }
+
+    // Matériel Général : ce que chaque admin a déjà vu, pour la pastille « changement
+    // non vu » (un document par admin, lisible et modifiable par lui seul).
+    // vus : { idDeLAuteur: horodatage de la dernière visite }.
+    match /materiel_general_vus/{employeId} {
+      allow read: if estEmployeActif() && moi().role == 'admin'
+        && employeId == session().employeeId;
+
+      allow create, update: if estEmployeActif() && moi().role == 'admin'
+        && employeId == session().employeeId
+        && champsPermis(request.resource.data, ['companyId', 'vus'])
+        && request.resource.data.companyId == maCompagnie()
+        && request.resource.data.vus is map
+        && request.resource.data.vus.size() <= 200;
+
+      allow delete: if false;
     }
 
     // ---------------------------------------------------------------- Extras
