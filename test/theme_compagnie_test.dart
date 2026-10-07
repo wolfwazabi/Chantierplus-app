@@ -90,7 +90,43 @@ void main() {
           greaterThanOrEqualTo(3.0),
         );
       });
+
+      test('$nom : onglets dans la barre du haut lisibles (≥ 4,5:1)', () {
+        final o = ThemeCompagnie.ongletsSurBarre(c);
+        expect(contrasteTest(c, o.actif), greaterThanOrEqualTo(4.5));
+        expect(contrasteTest(c, o.inactif), greaterThanOrEqualTo(4.5));
+        // L'onglet choisi se distingue des autres.
+        expect(o.actif, isNot(o.inactif));
+      });
     }
+
+    test('onglets dans la barre : toutes les teintes, claires et foncées', () {
+      for (var h = 0; h < 360; h += 5) {
+        for (final (s, l) in [(1.0, 0.5), (1.0, 0.85), (0.6, 0.2), (0.3, 0.5)]) {
+          final c = HSLColor.fromAHSL(1, h.toDouble(), s, l).toColor();
+          final o = ThemeCompagnie.ongletsSurBarre(c);
+          expect(
+            contrasteTest(c, o.actif),
+            greaterThanOrEqualTo(4.5),
+            reason: 'actif ${ThemeCompagnie.versHex(c)}',
+          );
+          expect(
+            contrasteTest(c, o.inactif),
+            greaterThanOrEqualTo(4.5),
+            reason: 'inactif ${ThemeCompagnie.versHex(c)}',
+          );
+        }
+      }
+    });
+
+    test('vert par défaut : onglet choisi ≠ couleur de la barre (vert sur vert)', () {
+      final o = ThemeCompagnie.ongletsSurBarre(ThemeCompagnie.couleurParDefaut);
+      expect(o.actif, isNot(ThemeCompagnie.couleurParDefaut));
+      expect(
+        contrasteTest(ThemeCompagnie.couleurParDefaut, o.actif),
+        greaterThan(6),
+      );
+    });
   });
 
   test('appliquer : valeur invalide ou absente → vert par défaut', () {

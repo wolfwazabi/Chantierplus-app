@@ -57,11 +57,17 @@ class DocumentsChantier extends StatefulWidget {
   final String chantierId;
   final bool peutGerer;
 
+  /// Tests : remplace la lecture des documents dans Firestore (identifiant de la
+  /// fiche → ses données).
+  @visibleForTesting
+  final Stream<List<MapEntry<String, Map<String, dynamic>>>>? fluxDocuments;
+
   const DocumentsChantier({
     super.key,
     required this.companyId,
     required this.chantierId,
     required this.peutGerer,
+    this.fluxDocuments,
   });
 
   @override
@@ -333,12 +339,19 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
             ),
           ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-            stream: _collection
-                .where('companyId', isEqualTo: widget.companyId)
-                .where('chantierId', isEqualTo: widget.chantierId)
-                .orderBy('dateAjout', descending: true)
-                .snapshots(),
+          child: StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
+            stream:
+                widget.fluxDocuments ??
+                _collection
+                    .where('companyId', isEqualTo: widget.companyId)
+                    .where('chantierId', isEqualTo: widget.chantierId)
+                    .orderBy('dateAjout', descending: true)
+                    .snapshots()
+                    .map(
+                      (s) => [
+                        for (final d in s.docs) MapEntry(d.id, d.data()),
+                      ],
+                    ),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return const Center(
@@ -348,7 +361,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final docs = snapshot.data!.docs;
+              final docs = snapshot.data!;
               if (docs.isEmpty) {
                 return Center(
                   child: Padding(
@@ -367,7 +380,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, i) {
                   final doc = docs[i];
-                  final data = doc.data();
+                  final data = doc.value;
                   final nom = data['nom'] as String? ?? '';
                   return ListTile(
                     leading: Icon(
@@ -383,7 +396,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                         ? IconButton(
                             icon: const Icon(Icons.delete_outline),
                             tooltip: 'Supprimer',
-                            onPressed: () => _supprimer(doc.id, data),
+                            onPressed: () => _supprimer(doc.key, data),
                           )
                         : const Icon(Icons.open_in_new, size: 20),
                   );

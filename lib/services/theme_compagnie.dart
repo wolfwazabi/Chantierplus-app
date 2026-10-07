@@ -70,6 +70,21 @@ class ThemeCompagnie {
     return contraste(fond, _blanc) >= contraste(fond, _noir) ? _blanc : _noir;
   }
 
+  /// Couleurs d'une barre d'onglets placée dans la barre du haut (AppBar) de
+  /// couleur [barre] : l'onglet choisi en pleine couleur de texte, les autres un
+  /// peu atténués mais toujours lisibles (≥ 4,5:1). Sans cela, l'onglet choisi
+  /// prend la couleur principale, donc la même que la barre (vert sur vert).
+  static ({Color actif, Color inactif}) ongletsSurBarre(Color barre) {
+    final actif = texteSur(barre);
+    var force = 0.72;
+    var inactif = Color.alphaBlend(actif.withValues(alpha: force), barre);
+    while (contraste(inactif, barre) < 4.5 && force < 1.0) {
+      force = min(1.0, force + 0.04);
+      inactif = Color.alphaBlend(actif.withValues(alpha: force), barre);
+    }
+    return (actif: actif, inactif: inactif);
+  }
+
   /// Variante plus claire pour les touches de fonction de la calculatrice.
   static Color variante(Color c) {
     final hsl = HSLColor.fromColor(c);

@@ -279,6 +279,10 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
               }),
       builder: (context, snap) {
         final c = snap.data ?? widget.chantier;
+        final theme = Theme.of(context);
+        final couleursOnglets = ThemeCompagnie.ongletsSurBarre(
+          theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary,
+        );
         return DefaultTabController(
           length: 3,
           child: Scaffold(
@@ -317,9 +321,13 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                   ],
                 ),
               ],
-              bottom: const TabBar(
-                key: ValueKey('onglets_chantier'),
-                tabs: [
+              bottom: TabBar(
+                key: const ValueKey('onglets_chantier'),
+                // Lisibles sur la barre de la compagnie (pas vert sur vert).
+                labelColor: couleursOnglets.actif,
+                unselectedLabelColor: couleursOnglets.inactif,
+                indicatorColor: couleursOnglets.actif,
+                tabs: const [
                   Tab(icon: Icon(Icons.assessment_outlined), text: 'Résumé'),
                   Tab(icon: Icon(Icons.photo_library_outlined), text: 'Photos'),
                   Tab(icon: Icon(Icons.description_outlined), text: 'Documents'),
