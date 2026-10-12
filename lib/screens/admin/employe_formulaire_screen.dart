@@ -12,10 +12,19 @@ class EmployeFormulaireScreen extends StatefulWidget {
   final String? docId;
   final Map<String, dynamic>? donneesExistantes;
 
+  /// Tests : remplace l'appel à la Cloud Function.
+  @visibleForTesting
+  final Future<Map<String, dynamic>> Function(
+    String nom,
+    Map<String, dynamic> donnees,
+  )?
+  appelerFonction;
+
   const EmployeFormulaireScreen({
     super.key,
     this.docId,
     this.donneesExistantes,
+    this.appelerFonction,
   });
 
   @override
@@ -41,6 +50,9 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
   bool get _estProprietaireExistant =>
       widget.donneesExistantes?['estProprietaire'] == true;
 
+  /// Pas encore de NIP : l'employé n'a pas utilisé son lien d'invitation.
+  bool get _nipPasCree => widget.donneesExistantes?['pinHash'] == null;
+
   @override
   void initState() {
     super.initState();
@@ -57,7 +69,10 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
     super.dispose();
   }
 
-  Future<void> _enregistrer({bool reinitialiserNip = false}) async {
+  Future<void> _enregistrer({
+    bool reinitialiserNip = false,
+    bool renvoiInvitation = false,
+  }) async {
     final nom = _nomCtrl.text.trim();
     final courriel = _courrielCtrl.text.trim();
 
@@ -82,13 +97,20 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
     // Validation, unicité du courriel, lien d'invitation, protection du
     // super-admin : côté serveur (Cloud Function enregistrerEmploye).
     try {
-      final resultat = await Fonctions.appeler('enregistrerEmploye', {
+      final donnees = <String, dynamic>{
         'employeeId': widget.docId,
         'nom': nom,
         'courriel': courriel,
         'role': _estProprietaireExistant ? 'admin' : _role,
         'reinitialiserNip': reinitialiserNip,
-      });
+        // Renvoi : rien n'est effacé (ni NIP ni sessions) ; refusé par le
+        // serveur si l'employé a déjà créé son NIP.
+        if (renvoiInvitation) 'renvoiInvitation': true,
+      };
+      final resultat = await (widget.appelerFonction ?? Fonctions.appeler)(
+        'enregistrerEmploye',
+        donnees,
+      );
       if (!mounted) return;
 
       final lien = resultat['lienInvitation'] as String?;
@@ -98,7 +120,9 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Courriel envoyé à $courriel : numéro de compagnie et lien pour créer son NIP.',
+              renvoiInvitation
+                  ? 'Invitation renvoyée à $courriel.'
+                  : 'Courriel envoyé à $courriel : numéro de compagnie et lien pour créer son NIP.',
             ),
             backgroundColor: Colors.green,
           ),
@@ -284,11 +308,23 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: _enCours ? null : _confirmerReinitialisation,
-                  icon: const Icon(Icons.send_outlined),
-                  label: const Text('Réinitialiser le NIP'),
-                ),
+                // Sans NIP : on renvoie l'invitation (rien n'est effacé).
+                // Avec un NIP : on peut le réinitialiser.
+                child: _nipPasCree
+                    ? OutlinedButton.icon(
+                        key: const ValueKey('employe_renvoyer_invitation'),
+                        onPressed: _enCours
+                            ? null
+                            : () => _enregistrer(renvoiInvitation: true),
+                        icon: const Icon(Icons.forward_to_inbox_outlined),
+                        label: const Text('Renvoyer l\'invitation'),
+                      )
+                    : OutlinedButton.icon(
+                        key: const ValueKey('employe_reinitialiser_nip'),
+                        onPressed: _enCours ? null : _confirmerReinitialisation,
+                        icon: const Icon(Icons.send_outlined),
+                        label: const Text('Réinitialiser le NIP'),
+                      ),
               ),
             ],
           ],

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import {
@@ -85,6 +86,55 @@ describe('Sessions', () => {
       await assertFails(getDocs(query(collection(ctxDe(uid), 'chantiers'), where('companyId', '==', 'A'))));
       await assertFails(getDoc(doc(ctxDe(uid), 'companies/A')));
     }
+  });
+
+  describe("expiration (sessions de l'espace web : expireLe)", () => {
+    const sessionAvec = (uid, expireLe, extra = {}) => env.withSecurityRulesDisabled((c) =>
+      setDoc(doc(c.firestore(), `sessions/${uid}`),
+        { employeeId: 'adminA', companyId: 'A', canal: 'web', expireLe, ...extra }));
+    const heures = (h) => new Date(Date.now() + h * 3600 * 1000);
+    const accede = async (uid) => {
+      await assertSucceeds(getDocs(query(collection(ctxDe(uid), 'chantiers'), where('companyId', '==', 'A'))));
+      await assertSucceeds(getDoc(doc(ctxDe(uid), 'companies/A')));
+    };
+    const refuse = async (uid) => {
+      await assertFails(getDocs(query(collection(ctxDe(uid), 'chantiers'), where('companyId', '==', 'A'))));
+      await assertFails(getDoc(doc(ctxDe(uid), 'companies/A')));
+      await assertFails(addDoc(collection(ctxDe(uid), 'chantier_travaux'),
+        { companyId: 'A', chantierId: 'chA', texte: 'Coffrage', complete: false, dateAjout: serverTimestamp() }));
+    };
+
+    test('expireLe dans le futur → accès normal (lecture et écriture)', async () => {
+      await sessionAvec('uid-web', heures(11));
+      await accede('uid-web');
+      await assertSucceeds(addDoc(collection(ctxDe('uid-web'), 'chantier_travaux'),
+        { companyId: 'A', chantierId: 'chA', texte: 'Coffrage', complete: false, dateAjout: serverTimestamp() }));
+    });
+
+    test('expireLe dépassé → plus aucun accès (lecture, liste, écriture)', async () => {
+      await sessionAvec('uid-web', heures(-0.01));
+      await refuse('uid-web');
+      await sessionAvec('uid-web2', heures(-12));
+      await refuse('uid-web2');
+    });
+
+    test('expireLe illisible (texte, nombre, null) → refusé, jamais « sans limite »', async () => {
+      for (const [uid, v] of [['uid-w1', 'demain'], ['uid-w2', 12], ['uid-w3', null]]) {
+        await sessionAvec(uid, v);
+        await refuse(uid);
+      }
+    });
+
+    test("session de l'application (sans expireLe) → reste valide, comme avant", async () => {
+      await accede('uid-adminA');
+    });
+
+    test("l'expiration coupe aussi le Proprio de l'app et ses accès particuliers", async () => {
+      await sessionAvec('uid-webproprio', heures(-1), { employeeId: 'superA' });
+      await assertFails(getDocs(collection(ctxDe('uid-webproprio'), 'companies')));
+      await sessionAvec('uid-webproprio2', heures(2), { employeeId: 'superA' });
+      await assertSucceeds(getDocs(collection(ctxDe('uid-webproprio2'), 'companies')));
+    });
   });
 
   test('compte courriel (particulier) avec une session → ignorée', async () => {
@@ -366,13 +416,15 @@ describe('Matériel « Général » (remorque, sans chantier) : matériel seulem
     complete: false, dateAjout: serverTimestamp(), ...AUTEURS[uid], ...over,
   });
   const materiel = (uid) => collection(ctxDe(uid), 'chantier_materiel');
-  const generalDe = (uid, companyId = 'A') => query(collection(ctxDe(uid), 'chantier_materiel'),
-    where('companyId', '==', companyId), where('chantierId', '==', '_general'));
+  // Un contremaître doit demander SA liste (where ajoutePar == lui) ; un admin, tout.
+  const generalDe = (uid, companyId = 'A', auteur = null) => query(collection(ctxDe(uid), 'chantier_materiel'),
+    where('companyId', '==', companyId), where('chantierId', '==', '_general'),
+    ...(auteur ? [where('ajoutePar', '==', auteur)] : []));
 
   test('contremaître et admin : ajoutent, lisent, complètent, modifient, suppriment', async () => {
     for (const uid of ['uid-plusA', 'uid-adminA']) {
       const ref = await assertSucceeds(addDoc(materiel(uid), general(uid)));
-      await assertSucceeds(getDocs(generalDe(uid)));
+      await assertSucceeds(getDocs(generalDe(uid, 'A', uid === 'uid-plusA' ? 'plusA' : null)));
       await assertSucceeds(updateDoc(ref, { complete: true, dateComplete: serverTimestamp() }));
       await assertSucceeds(updateDoc(ref, { texte: 'Sangles 2 po', quantite: '6' }));
       await assertSucceeds(updateDoc(ref, { complete: false, dateComplete: deleteField() }));
@@ -529,6 +581,349 @@ describe('Matériel Général : ce que chaque admin a déjà vu (pastille)', () 
 });
 
 // =============================================================================
+describe('Matériel Général : un contremaître ne voit que SA liste', () => {
+  const entree = (auteur, nom, over = {}) => ({
+    companyId: 'A', chantierId: '_general', texte: 'Demande de ' + nom, complete: false,
+    ajoutePar: auteur, ajouteParNom: nom, dateAjout: new Date('2026-10-05'), ...over,
+  });
+  const semerGeneral = async () => env.withSecurityRulesDisabled(async (c) => {
+    const d = c.firestore();
+    await setDoc(doc(d, 'chantier_materiel/gPlus'), entree('plusA', 'Plus A'));
+    await setDoc(doc(d, 'chantier_materiel/gAdmin'), entree('adminA', 'Admin A'));
+    await setDoc(doc(d, 'chantier_materiel/gB'), entree('adminB', 'Admin B', { companyId: 'B' }));
+    await setDoc(doc(d, 'chantier_materiel/mChantier'),
+      { companyId: 'A', chantierId: 'chA', texte: 'Clous', complete: false, dateAjout: new Date('2026-10-05') });
+  });
+  beforeEach(semerGeneral);
+  const requete = (uid, ...contraintes) => query(collection(ctxDe(uid), 'chantier_materiel'),
+    where('companyId', '==', 'A'), where('chantierId', '==', '_general'), ...contraintes);
+
+  test('contremaître : sa propre liste seulement', async () => {
+    await assertSucceeds(getDocs(requete('uid-plusA', where('ajoutePar', '==', 'plusA'))));
+    await assertSucceeds(getDoc(doc(ctxDe('uid-plusA'), 'chantier_materiel/gPlus')));
+  });
+
+  test('contremaître : refusé s\'il demande toute la liste ou celle d\'un autre', async () => {
+    await assertFails(getDocs(requete('uid-plusA')));
+    await assertFails(getDocs(requete('uid-plusA', where('ajoutePar', '==', 'adminA'))));
+    await assertFails(getDoc(doc(ctxDe('uid-plusA'), 'chantier_materiel/gAdmin')));
+  });
+
+  test('contremaître : ne modifie ni ne supprime la demande d\'un autre, mais gère la sienne', async () => {
+    const d = ctxDe('uid-plusA');
+    await assertFails(updateDoc(doc(d, 'chantier_materiel/gAdmin'), { texte: 'Piraté' }));
+    await assertFails(updateDoc(doc(d, 'chantier_materiel/gAdmin'),
+      { complete: true, dateComplete: serverTimestamp() }));
+    await assertFails(deleteDoc(doc(d, 'chantier_materiel/gAdmin')));
+    await assertSucceeds(updateDoc(doc(d, 'chantier_materiel/gPlus'),
+      { texte: 'Corrigé', dateModif: serverTimestamp(), modifiePar: 'plusA' }));
+    await assertSucceeds(deleteDoc(doc(d, 'chantier_materiel/gPlus')));
+  });
+
+  test('admin : voit tout le monde, modifie et supprime n\'importe quelle demande', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertSucceeds(getDocs(requete('uid-adminA')));
+    await assertSucceeds(getDoc(doc(d, 'chantier_materiel/gPlus')));
+    await assertSucceeds(updateDoc(doc(d, 'chantier_materiel/gPlus'),
+      { complete: true, dateComplete: serverTimestamp(), dateModif: serverTimestamp(), modifiePar: 'adminA' }));
+    await assertSucceeds(deleteDoc(doc(d, 'chantier_materiel/gPlus')));
+  });
+
+  test('autre compagnie : aucune liste Général de A, même pour un admin', async () => {
+    await assertFails(getDocs(requete('uid-adminB')));
+    await assertFails(getDoc(doc(ctxDe('uid-adminB'), 'chantier_materiel/gPlus')));
+    await assertFails(deleteDoc(doc(ctxDe('uid-adminB'), 'chantier_materiel/gPlus')));
+  });
+
+  test('un chantier ordinaire : le contremaître lit toujours tout (inchangé)', async () => {
+    const d = ctxDe('uid-plusA');
+    await assertSucceeds(getDocs(query(collection(d, 'chantier_materiel'),
+      where('companyId', '==', 'A'), where('chantierId', '==', 'chA'))));
+    await assertSucceeds(getDoc(doc(d, 'chantier_materiel/mChantier')));
+    await assertSucceeds(updateDoc(doc(d, 'chantier_materiel/mChantier'), { texte: 'Clous 3 po' }));
+    await assertSucceeds(deleteDoc(doc(d, 'chantier_materiel/mChantier')));
+  });
+});
+
+// =============================================================================
+describe('Matériel Général : transfert à la Liste d\'achats (la demande reste visible)', () => {
+  const entree = (auteur, nom, over = {}) => ({
+    companyId: 'A', chantierId: '_general', texte: 'Demande de ' + nom, complete: false,
+    ajoutePar: auteur, ajouteParNom: nom, dateAjout: new Date('2026-10-05'), ...over,
+  });
+  const marque = (over = {}) => ({
+    transfere: true, transfereParNom: 'Admin A', dateModif: serverTimestamp(), modifiePar: 'adminA', ...over,
+  });
+  beforeEach(async () => {
+    await env.withSecurityRulesDisabled(async (c) => {
+      const d = c.firestore();
+      await setDoc(doc(d, 'chantier_materiel/gPlus'), entree('plusA', 'Plus A'));
+      await setDoc(doc(d, 'chantier_materiel/gPlusT'), entree('plusA', 'Plus A', { transfere: true, transfereParNom: 'Admin A' }));
+      await setDoc(doc(d, 'chantier_materiel/mChantier'),
+        { companyId: 'A', chantierId: 'chA', texte: 'Clous', complete: false, dateAjout: new Date('2026-10-05') });
+    });
+  });
+  const admin = () => ctxDe('uid-adminA');
+  const plus = () => ctxDe('uid-plusA');
+
+  test('un admin transfère : la demande est marquée (nom + signature)', async () => {
+    await assertSucceeds(updateDoc(doc(admin(), 'chantier_materiel/gPlus'), marque()));
+  });
+
+  test('refusé : nom d\'un autre, valeur fausse, un seul des deux champs, signature d\'un autre', async () => {
+    const r = doc(admin(), 'chantier_materiel/gPlus');
+    await assertFails(updateDoc(r, marque({ transfereParNom: 'Quelqu\'un d\'autre' })));
+    await assertFails(updateDoc(r, marque({ transfere: false })));
+    await assertFails(updateDoc(r, marque({ transfere: 'oui' })));
+    await assertFails(updateDoc(r, { transfere: true, dateModif: serverTimestamp(), modifiePar: 'adminA' }));
+    await assertFails(updateDoc(r, { transfereParNom: 'Admin A', dateModif: serverTimestamp(), modifiePar: 'adminA' }));
+    await assertFails(updateDoc(r, marque({ modifiePar: 'plusA' })));
+  });
+
+  test('un contremaître ne peut pas transférer, même sa propre demande', async () => {
+    await assertFails(updateDoc(doc(plus(), 'chantier_materiel/gPlus'),
+      marque({ transfereParNom: 'Plus A', modifiePar: 'plusA' })));
+  });
+
+  test('pas pour un chantier ordinaire (Général seulement)', async () => {
+    await assertFails(updateDoc(doc(admin(), 'chantier_materiel/mChantier'), marque()));
+  });
+
+  test('la demande transférée reste visible pour son auteur', async () => {
+    await assertSucceeds(getDoc(doc(plus(), 'chantier_materiel/gPlusT')));
+    await assertSucceeds(getDocs(query(collection(plus(), 'chantier_materiel'),
+      where('companyId', '==', 'A'), where('chantierId', '==', '_general'), where('ajoutePar', '==', 'plusA'))));
+  });
+
+  test('mais le contremaître ne la modifie, ne la marque faite ni ne la supprime plus', async () => {
+    const r = doc(plus(), 'chantier_materiel/gPlusT');
+    await assertFails(updateDoc(r, { texte: 'Autre chose', dateModif: serverTimestamp(), modifiePar: 'plusA' }));
+    await assertFails(updateDoc(r, { complete: true, dateComplete: serverTimestamp(), dateModif: serverTimestamp(), modifiePar: 'plusA' }));
+    await assertFails(deleteDoc(r));
+    // Sa demande non transférée reste entièrement à lui.
+    await assertSucceeds(updateDoc(doc(plus(), 'chantier_materiel/gPlus'),
+      { texte: 'Corrigé', dateModif: serverTimestamp(), modifiePar: 'plusA' }));
+    await assertSucceeds(deleteDoc(doc(plus(), 'chantier_materiel/gPlus')));
+  });
+
+  test('l\'admin marque la demande transférée faite (achetée), la modifie ou la supprime', async () => {
+    const r = doc(admin(), 'chantier_materiel/gPlusT');
+    await assertSucceeds(updateDoc(r, {
+      complete: true, dateComplete: serverTimestamp(), dateModif: serverTimestamp(), modifiePar: 'adminA',
+    }));
+    await assertSucceeds(updateDoc(r, { complete: false, dateComplete: deleteField(), dateModif: serverTimestamp(), modifiePar: 'adminA' }));
+    await assertSucceeds(deleteDoc(r));
+  });
+
+  test('l\'admin retire le transfert (les deux champs ensemble)', async () => {
+    const r = doc(admin(), 'chantier_materiel/gPlusT');
+    await assertFails(updateDoc(r, { transfere: deleteField(), dateModif: serverTimestamp(), modifiePar: 'adminA' }));
+    await assertFails(updateDoc(r, { transfereParNom: deleteField(), dateModif: serverTimestamp(), modifiePar: 'adminA' }));
+    await assertSucceeds(updateDoc(r, {
+      transfere: deleteField(), transfereParNom: deleteField(), dateModif: serverTimestamp(), modifiePar: 'adminA',
+    }));
+    // Redevenue ordinaire : son auteur la gère de nouveau.
+    await assertSucceeds(updateDoc(doc(plus(), 'chantier_materiel/gPlusT'),
+      { texte: 'Repris', dateModif: serverTimestamp(), modifiePar: 'plusA' }));
+  });
+
+  test('un contremaître ne peut pas retirer lui-même le transfert', async () => {
+    await assertFails(updateDoc(doc(plus(), 'chantier_materiel/gPlusT'), {
+      transfere: deleteField(), transfereParNom: deleteField(), dateModif: serverTimestamp(), modifiePar: 'plusA',
+    }));
+  });
+
+  test('Liste d\'achats : le lien vers la demande d\'origine est accepté, valide seulement', async () => {
+    const article = (over = {}) => ({
+      companyId: 'A', texte: 'Demande de Plus A', demandeParId: 'plusA', demandeParNom: 'Plus A',
+      transfereParId: 'adminA', transfereParNom: 'Admin A', origine: 'general', complete: false,
+      dateAjout: serverTimestamp(), ...over,
+    });
+    const col = collection(admin(), 'liste_achats');
+    await assertSucceeds(addDoc(col, article({ origineId: 'gPlus' })));
+    await assertSucceeds(addDoc(col, article()));
+    await assertFails(addDoc(col, article({ origineId: '' })));
+    await assertFails(addDoc(col, article({ origineId: 12 })));
+    await assertFails(addDoc(col, article({ origineId: 'x'.repeat(129) })));
+  });
+});
+
+// =============================================================================
+describe('Matériel Général : demandes marquées « non lu » (nonLus)', () => {
+  const ref = (uid, id) => doc(ctxDe(uid), `materiel_general_vus/${id}`);
+
+  test('l\'admin garde ses drapeaux dans son document', async () => {
+    await assertSucceeds(setDoc(ref('uid-adminA', 'adminA'),
+      { companyId: 'A', nonLus: { demande1: true, demande2: true } }, { merge: true }));
+    await assertSucceeds(setDoc(ref('uid-adminA', 'adminA'),
+      { companyId: 'A', vus: { plusA: serverTimestamp() }, nonLus: { demande1: deleteField() } }, { merge: true }));
+    const lu = (await getDoc(ref('uid-adminA', 'adminA'))).data();
+    assert.deepEqual(lu.nonLus, { demande2: true });
+  });
+
+  test('forme imposée : « nonLus » est une table', async () => {
+    await assertFails(setDoc(ref('uid-adminA', 'adminA'), { companyId: 'A', nonLus: 'oui' }));
+    await assertFails(setDoc(ref('uid-adminA', 'adminA'), { companyId: 'A', nonLus: ['a'] }));
+  });
+
+  test('pas pour un contremaître, ni dans le document d\'un autre admin', async () => {
+    await assertFails(setDoc(ref('uid-plusA', 'plusA'), { companyId: 'A', nonLus: { x: true } }));
+    await assertFails(setDoc(ref('uid-adminA', 'superA'), { companyId: 'A', nonLus: { x: true } }));
+  });
+});
+
+// =============================================================================
+describe('Liste d\'achats (admin seulement)', () => {
+  const article = (over = {}) => ({
+    companyId: 'A', texte: 'Sangles à cliquet', quantite: '4', demandeParId: 'plusA', demandeParNom: 'Plus A',
+    transfereParId: 'adminA', transfereParNom: 'Admin A', origine: 'general', complete: false,
+    dateAjout: serverTimestamp(), ...over,
+  });
+  const col = (uid) => collection(ctxDe(uid), 'liste_achats');
+  const semerArticle = async (id = 'art1', over = {}) => env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), 'liste_achats', id), { ...article(), dateAjout: new Date('2026-10-05'), ...over }));
+
+  test('admin : crée (avec photo), lit, marque acheté, remet à acheter, supprime', async () => {
+    const ref = await assertSucceeds(addDoc(col('uid-adminA'), article({
+      photoUrl: 'https://firebasestorage.googleapis.com/v0/b/x/o/m.jpg',
+    })));
+    await assertSucceeds(getDocs(query(col('uid-adminA'), where('companyId', '==', 'A'))));
+    await assertSucceeds(getDoc(ref));
+    await assertSucceeds(updateDoc(ref, { complete: true, dateComplete: serverTimestamp() }));
+    await assertSucceeds(updateDoc(ref, { complete: false, dateComplete: deleteField() }));
+    await assertSucceeds(deleteDoc(ref));
+  });
+
+  test('contremaître et employé : aucun accès', async () => {
+    await semerArticle();
+    for (const uid of ['uid-plusA', 'uid-empA']) {
+      // Signé correctement : seul le rôle l'empêche.
+      const moi = uid === 'uid-plusA' ? { transfereParId: 'plusA', transfereParNom: 'Plus A' } : { transfereParId: 'empA', transfereParNom: 'Emp A' };
+      await assertFails(addDoc(col(uid), article(moi)));
+      await assertFails(getDocs(query(col(uid), where('companyId', '==', 'A'))));
+      await assertFails(getDoc(doc(ctxDe(uid), 'liste_achats/art1')));
+      await assertFails(updateDoc(doc(ctxDe(uid), 'liste_achats/art1'), { complete: true, dateComplete: serverTimestamp() }));
+      await assertFails(deleteDoc(doc(ctxDe(uid), 'liste_achats/art1')));
+    }
+  });
+
+  test('autre compagnie : refusé (lecture, écriture, suppression)', async () => {
+    await semerArticle();
+    await assertFails(getDocs(query(col('uid-adminB'), where('companyId', '==', 'A'))));
+    await assertFails(getDoc(doc(ctxDe('uid-adminB'), 'liste_achats/art1')));
+    await assertFails(addDoc(col('uid-adminB'), article({ companyId: 'A', transfereParId: 'adminB', transfereParNom: 'Admin B' })));
+    await assertFails(deleteDoc(doc(ctxDe('uid-adminB'), 'liste_achats/art1')));
+  });
+
+  test('création refusée : signature d\'un autre, déjà acheté, date falsifiée, champ inconnu, texte vide, origine inconnue', async () => {
+    const c = col('uid-adminA');
+    await assertFails(addDoc(c, article({ transfereParId: 'superA' })));
+    await assertFails(addDoc(c, article({ transfereParNom: 'Autre' })));
+    await assertFails(addDoc(c, article({ complete: true })));
+    await assertFails(addDoc(c, article({ dateAjout: new Date('2020-01-01') })));
+    await assertFails(addDoc(c, article({ admin: true })));
+    await assertFails(addDoc(c, article({ texte: '' })));
+    await assertFails(addDoc(c, article({ origine: 'ailleurs' })));
+    await assertFails(addDoc(c, article({ photoUrl: 'http://evil.example/x.jpg' })));
+    await assertFails(addDoc(c, article({ demandeParId: 12 })));
+  });
+
+  test('modification : seulement acheté / pas acheté (pas le texte, pas la compagnie)', async () => {
+    await semerArticle();
+    const r = doc(ctxDe('uid-adminA'), 'liste_achats/art1');
+    await assertFails(updateDoc(r, { texte: 'Autre chose' }));
+    await assertFails(updateDoc(r, { companyId: 'B' }));
+    await assertFails(updateDoc(r, { complete: true, dateComplete: new Date('2020-01-01') }));
+    await assertFails(updateDoc(r, { complete: 'oui' }));
+    await assertSucceeds(updateDoc(r, { complete: true, dateComplete: serverTimestamp() }));
+  });
+});
+
+// =============================================================================
+describe('Plusieurs photos par demande (travaux, matériel, Général, Liste d\'achats)', () => {
+  const u = (n) => `https://firebasestorage.googleapis.com/v0/b/x/o/photo${n}.jpg`;
+  const lot = (n) => Array.from({ length: n }, (_, k) => u(k + 1));
+  const avecPhotos = (urls) => ({ photoUrl: urls[0], photoUrls: urls });
+  const entree = (over = {}) => ({
+    companyId: 'A', chantierId: 'chA', texte: 'Clous', complete: false, dateAjout: serverTimestamp(), ...over,
+  });
+  const general = (uid, over = {}) => ({
+    companyId: 'A', chantierId: '_general', texte: 'Sangles', complete: false, dateAjout: serverTimestamp(),
+    ajoutePar: uid === 'uid-plusA' ? 'plusA' : 'adminA', ajouteParNom: uid === 'uid-plusA' ? 'Plus A' : 'Admin A', ...over,
+  });
+  const col = (uid, nom = 'chantier_materiel') => collection(ctxDe(uid), nom);
+
+  test('1 à 6 photos acceptées (matériel d\'un chantier, travaux et Général)', async () => {
+    for (const n of [1, 2, 3, 6]) {
+      await assertSucceeds(addDoc(col('uid-plusA'), entree(avecPhotos(lot(n)))));
+      await assertSucceeds(addDoc(col('uid-plusA', 'chantier_travaux'), entree(avecPhotos(lot(n)))));
+      await assertSucceeds(addDoc(col('uid-plusA'), general('uid-plusA', avecPhotos(lot(n)))));
+    }
+  });
+
+  test('l\'ancien format (photoUrl seule) reste accepté', async () => {
+    await assertSucceeds(addDoc(col('uid-plusA'), entree({ photoUrl: u(1) })));
+    await assertSucceeds(addDoc(col('uid-plusA'), general('uid-plusA', { photoUrl: u(1) })));
+  });
+
+  test('refusé : 7 photos, liste vide, pas une liste', async () => {
+    await assertFails(addDoc(col('uid-plusA'), entree(avecPhotos(lot(7)))));
+    await assertFails(addDoc(col('uid-plusA'), entree({ photoUrl: u(1), photoUrls: [] })));
+    await assertFails(addDoc(col('uid-plusA'), entree({ photoUrl: u(1), photoUrls: u(1) })));
+    await assertFails(addDoc(col('uid-plusA'), entree({ photoUrl: u(1), photoUrls: 'oui' })));
+  });
+
+  test('refusé : photoUrls sans photoUrl, ou photoUrl qui n\'est pas la première', async () => {
+    await assertFails(addDoc(col('uid-plusA'), entree({ photoUrls: lot(2) })));
+    await assertFails(addDoc(col('uid-plusA'), entree({ photoUrl: u(9), photoUrls: lot(2) })));
+  });
+
+  test('refusé : un lien qui n\'est pas Firebase Storage, à n\'importe quelle position', async () => {
+    for (let k = 0; k < 6; k++) {
+      const urls = lot(6);
+      urls[k] = 'https://evil.example/x.jpg';
+      await assertFails(addDoc(col('uid-plusA'), entree(avecPhotos(urls))), 'position ' + k);
+    }
+  });
+
+  test('employé : refusé comme avant', async () => {
+    await assertFails(addDoc(col('uid-empA'), entree(avecPhotos(lot(2)))));
+  });
+
+  test('modification : ajouter, retirer, tout retirer', async () => {
+    const ref = await assertSucceeds(addDoc(col('uid-plusA'), entree(avecPhotos(lot(2)))));
+    const r = doc(ctxDe('uid-plusA'), ref.path);
+    await assertSucceeds(updateDoc(r, avecPhotos(lot(5))));
+    await assertSucceeds(updateDoc(r, avecPhotos([u(2), u(4)])));
+    await assertSucceeds(updateDoc(r, { photoUrl: deleteField(), photoUrls: deleteField() }));
+    await assertFails(updateDoc(r, avecPhotos(lot(7))));
+    await assertFails(updateDoc(r, { photoUrls: lot(2) }));
+    await assertFails(updateDoc(r, { photoUrl: u(9), photoUrls: lot(3) }));
+  });
+
+  test('Général : modification signée avec plusieurs photos', async () => {
+    const ref = await assertSucceeds(addDoc(col('uid-plusA'), general('uid-plusA', avecPhotos(lot(2)))));
+    await assertSucceeds(updateDoc(doc(ctxDe('uid-plusA'), ref.path), {
+      ...avecPhotos(lot(4)), dateModif: serverTimestamp(), modifiePar: 'plusA',
+    }));
+  });
+
+  test('Liste d\'achats : les photos de la demande suivent (6 au plus, liens valides)', async () => {
+    const article = (over = {}) => ({
+      companyId: 'A', texte: 'Sangles', demandeParId: 'plusA', demandeParNom: 'Plus A',
+      transfereParId: 'adminA', transfereParNom: 'Admin A', origine: 'general', complete: false,
+      dateAjout: serverTimestamp(), ...over,
+    });
+    const c = collection(ctxDe('uid-adminA'), 'liste_achats');
+    await assertSucceeds(addDoc(c, article(avecPhotos(lot(3)))));
+    await assertSucceeds(addDoc(c, article({ photoUrl: u(1) })));
+    await assertFails(addDoc(c, article(avecPhotos(lot(7)))));
+    await assertFails(addDoc(c, article({ photoUrl: u(1), photoUrls: [u(1), 'http://evil.example/x.jpg'] })));
+    await assertFails(addDoc(c, article({ photoUrls: lot(2) })));
+  });
+});
+
+// =============================================================================
 describe('Extras (saisie : admin et contremaître ; suppression : admin)', () => {
   const extra = (over = {}) => ({
     companyId: 'A', chantierId: 'chA', description: 'Ajout d\'une cloison',
@@ -614,6 +1009,91 @@ describe('Extras (saisie : admin et contremaître ; suppression : admin)', () =>
     await assertFails(deleteDoc(ref('uid-empA')));
     await assertFails(deleteDoc(ref('uid-adminB')));
     await assertSucceeds(deleteDoc(ref('uid-adminA')));
+  });
+});
+
+// =============================================================================
+describe('Extras : plusieurs photos (6 au plus), avec leurs chemins', () => {
+  const lien = (n) => `https://firebasestorage.googleapis.com/v0/b/chantierplus-mtl/o/e${n}.jpg`;
+  const chemin = (n) => `chantiers/A/chA/chantier_extras/${n}_e.jpg`;
+  const liens = (n) => Array.from({ length: n }, (_, k) => lien(k + 1));
+  const chemins = (n) => Array.from({ length: n }, (_, k) => chemin(k + 1));
+  const photos = (n) => ({ photoUrl: lien(1), cheminPhoto: chemin(1), photoUrls: liens(n), cheminsPhotos: chemins(n) });
+  const extra = (over = {}) => ({
+    companyId: 'A', chantierId: 'chA', description: 'Cloison', mainOeuvre: '3 gars — 4 h',
+    dateTravaux: '2026-10-01', ajoutePar: 'plusA', ajouteParNom: 'Plus A', dateAjout: serverTimestamp(), ...over,
+  });
+  const col = (uid = 'uid-plusA') => collection(ctxDe(uid), 'chantier_extras');
+
+  test('1 à 6 photos acceptées (admin et contremaître)', async () => {
+    for (const n of [1, 2, 4, 6]) {
+      await assertSucceeds(addDoc(col(), extra(photos(n))));
+    }
+    await assertSucceeds(addDoc(col('uid-adminA'), extra({ ...photos(3), ajoutePar: 'adminA', ajouteParNom: 'Admin A' })));
+  });
+
+  test('l\'ancien format (une photo : photoUrl + cheminPhoto) reste accepté, et sans photo aussi', async () => {
+    await assertSucceeds(addDoc(col(), extra({ photoUrl: lien(1), cheminPhoto: chemin(1) })));
+    await assertSucceeds(addDoc(col(), extra()));
+  });
+
+  test('refusé : 7 photos, tailles différentes, listes vides, pas des listes', async () => {
+    await assertFails(addDoc(col(), extra(photos(7))));
+    await assertFails(addDoc(col(), extra({ ...photos(3), cheminsPhotos: chemins(2) })));
+    await assertFails(addDoc(col(), extra({ ...photos(1), photoUrls: [], cheminsPhotos: [] })));
+    await assertFails(addDoc(col(), extra({ ...photos(2), photoUrls: 'oui', cheminsPhotos: 'oui' })));
+  });
+
+  test('refusé : une liste sans l\'autre, ou première photo qui ne correspond pas', async () => {
+    const sansChemins = photos(2); delete sansChemins.cheminsPhotos;
+    await assertFails(addDoc(col(), extra(sansChemins)));
+    await assertFails(addDoc(col(), extra({ ...photos(2), photoUrl: lien(9) })));
+    await assertFails(addDoc(col(), extra({ ...photos(2), cheminPhoto: chemin(9) })));
+  });
+
+  test('refusé : la liste de chemins seule, ou plus longue que celle des liens (chemins non vérifiés)', async () => {
+    // Chemins seuls : photoUrl + cheminPhoto (ancien format) mais une liste de chemins en plus.
+    await assertFails(addDoc(col(), extra({
+      photoUrl: lien(1), cheminPhoto: chemin(1), cheminsPhotos: ['chantiers/B/chB/chantier_extras/x.jpg'],
+    })));
+    await assertFails(addDoc(col(), extra({ photoUrl: lien(1), cheminPhoto: chemin(1), cheminsPhotos: chemins(1) })));
+    // Plus de chemins que de liens : le chemin en trop n'est pas vérifié par la règle.
+    const longue = [...chemins(2), 'chantiers/B/chB/chantier_extras/x.jpg'];
+    await assertFails(addDoc(col(), extra({ ...photos(2), cheminsPhotos: longue })));
+    await assertFails(addDoc(col(), extra({ ...photos(2), cheminsPhotos: chemins(3) })));
+    // Même chose à la modification.
+    const ref = await assertSucceeds(addDoc(col(), extra(photos(2))));
+    const r = doc(ctxDe('uid-plusA'), ref.path);
+    await assertFails(updateDoc(r, { cheminsPhotos: longue }));
+    await assertFails(updateDoc(r, { ...photos(2), cheminsPhotos: longue }));
+  });
+
+  test('refusé : un lien qui n\'est pas Firebase Storage, ou un chemin d\'une autre compagnie / d\'un autre dossier', async () => {
+    for (let k = 0; k < 6; k++) {
+      const u = liens(6); u[k] = 'https://evil.example/x.jpg';
+      await assertFails(addDoc(col(), extra({ ...photos(6), photoUrls: u, photoUrl: u[0] })));
+      const c = chemins(6); c[k] = 'chantiers/B/chB/chantier_extras/x.jpg';
+      await assertFails(addDoc(col(), extra({ ...photos(6), cheminsPhotos: c, cheminPhoto: c[0] })));
+      const d = chemins(6); d[k] = 'chantiers/A/chA/photos/x.jpg';
+      await assertFails(addDoc(col(), extra({ ...photos(6), cheminsPhotos: d, cheminPhoto: d[0] })));
+    }
+  });
+
+  test('employé et autre compagnie : refusés comme avant', async () => {
+    await assertFails(addDoc(col('uid-empA'), extra(photos(2))));
+    await assertFails(addDoc(col('uid-adminB'), extra(photos(2))));
+  });
+
+  test('modification : ajouter, retirer, tout retirer', async () => {
+    const ref = await assertSucceeds(addDoc(col(), extra(photos(2))));
+    const r = doc(ctxDe('uid-plusA'), ref.path);
+    await assertSucceeds(updateDoc(r, photos(5)));
+    await assertSucceeds(updateDoc(r, { photoUrl: lien(2), cheminPhoto: chemin(2), photoUrls: [lien(2), lien(4)], cheminsPhotos: [chemin(2), chemin(4)] }));
+    await assertFails(updateDoc(r, photos(7)));
+    await assertFails(updateDoc(r, { photoUrls: liens(2) }));
+    await assertSucceeds(updateDoc(r, {
+      photoUrl: deleteField(), cheminPhoto: deleteField(), photoUrls: deleteField(), cheminsPhotos: deleteField(),
+    }));
   });
 });
 
@@ -892,7 +1372,7 @@ describe('Collections serveur uniquement', () => {
     for (const uid of ['uid-adminA', 'uid-superA']) {
       const d = ctxDe(uid);
       for (const chemin of ['compteurs/companies', 'limites_connexion/x', 'companies_prive/A',
-        'reinitialisations_nip/empA', 'invitations_nip/empA', 'config/securite',
+        'reinitialisations_nip/empA', 'invitations_nip/empA', 'connexions_web/uid-adminA', 'config/securite',
         'journal_suppressions/A']) {
         await assertFails(getDoc(doc(d, chemin)));
         await assertFails(setDoc(doc(d, chemin), { a: 1 }));

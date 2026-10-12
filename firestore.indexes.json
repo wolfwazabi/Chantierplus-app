@@ -117,6 +117,12 @@
       "fieldPath": "expireLe",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "collectionGroup": "connexions_web",
+      "fieldPath": "expireLe",
+      "ttl": true,
+      "indexes": []
     }
   ]
 }

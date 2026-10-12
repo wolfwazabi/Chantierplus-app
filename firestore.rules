@@ -79,9 +79,12 @@ service cloud.firestore {
         && sessionEstValide(session());
     }
 
+    // expireLe : présent seulement sur les sessions de l'espace web (canal « web »,
+    // 12 h). Les sessions de l'application mobile n'en ont pas et restent valides.
     function sessionEstValide(s) {
       return s.employeeId is string
         && s.companyId is string
+        && (!('expireLe' in s) || s.expireLe > request.time)
         && exists(cheminEmploye(s.employeeId))
         && get(cheminEmploye(s.employeeId)).data.companyId == s.companyId
         && get(cheminCompagnie(s.companyId)).data.statut == 'approuvee';
@@ -165,6 +168,11 @@ service cloud.firestore {
 
     // Liens de création du NIP (empreintes des jetons) : serveur seulement.
     match /invitations_nip/{doc=**} {
+      allow read, write: if false;
+    }
+
+    // Codes de connexion de l'espace web (empreinte du code, essais) : serveur seulement.
+    match /connexions_web/{doc=**} {
       allow read, write: if false;
     }
 
@@ -304,18 +312,35 @@ service cloud.firestore {
 
     // ------------------------------- Travaux / Matériel (admin et contremaître)
 
+    // Photos d'une entrée : photoUrl (la première) et photoUrls (toutes, 6 au plus).
+    // photoUrls va avec photoUrl : la première des deux listes est la même.
+    function photosEntreeValides(d) {
+      return (!d.keys().hasAny(['photoUrl']) || urlStorage(d.photoUrl))
+        && (!d.keys().hasAny(['photoUrls'])
+            || (d.photoUrls is list
+                && d.photoUrls.size() >= 1 && d.photoUrls.size() <= 6
+                && d.keys().hasAny(['photoUrl'])
+                && d.photoUrl == d.photoUrls[0]
+                && urlStorage(d.photoUrls[0])
+                && (d.photoUrls.size() < 2 || urlStorage(d.photoUrls[1]))
+                && (d.photoUrls.size() < 3 || urlStorage(d.photoUrls[2]))
+                && (d.photoUrls.size() < 4 || urlStorage(d.photoUrls[3]))
+                && (d.photoUrls.size() < 5 || urlStorage(d.photoUrls[4]))
+                && (d.photoUrls.size() < 6 || urlStorage(d.photoUrls[5]))));
+    }
+
     // Champs communs à toute nouvelle entrée de travaux ou de matériel.
     function entreeCommuneValide(d) {
       return texte(d.texte, 1, 2000)
         && d.complete == false
         && d.dateAjout == request.time
-        && (!d.keys().hasAny(['photoUrl']) || urlStorage(d.photoUrl))
+        && photosEntreeValides(d)
         && texteOptionnel(d, 'quantite', 100);
     }
 
     function entreeValideCreation(d) {
       return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
-                              'dateAjout', 'photoUrl', 'quantite'])
+                              'dateAjout', 'photoUrl', 'photoUrls', 'quantite'])
         && chantierDe(d.chantierId, d.companyId)
         && entreeCommuneValide(d);
     }
@@ -327,7 +352,7 @@ service cloud.firestore {
     // voit ce qui a changé depuis sa dernière visite.
     function entreeGeneralValideCreation(d) {
       return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
-                              'dateAjout', 'photoUrl', 'quantite',
+                              'dateAjout', 'photoUrl', 'photoUrls', 'quantite',
                               'ajoutePar', 'ajouteParNom'])
         && d.chantierId == '_general'
         && d.ajoutePar == session().employeeId
@@ -336,11 +361,12 @@ service cloud.firestore {
     }
 
     function entreeValideModification(d) {
-      return champsModifiesPermis(['texte', 'quantite', 'photoUrl', 'complete', 'dateComplete',
-                                   'dateModif', 'modifiePar'])
+      return champsModifiesPermis(['texte', 'quantite', 'photoUrl', 'photoUrls', 'complete',
+                                   'dateComplete', 'dateModif', 'modifiePar',
+                                   'transfere', 'transfereParNom'])
         && texte(d.texte, 1, 2000)
         && d.complete is bool
-        && (!d.keys().hasAny(['photoUrl']) || urlStorage(d.photoUrl))
+        && photosEntreeValides(d)
         && texteOptionnel(d, 'quantite', 100)
         // dateComplete : horodatage serveur quand on complète, absent sinon.
         && (d.complete == true
@@ -351,7 +377,17 @@ service cloud.firestore {
         && (!d.diff(resource.data).affectedKeys().hasAny(['dateModif', 'modifiePar'])
             || (resource.data.chantierId == '_general'
                 && d.dateModif == request.time
-                && d.modifiePar == session().employeeId));
+                && d.modifiePar == session().employeeId))
+        // transfere + transfereParNom : un admin seulement, pour Général. Posés ensemble
+        // (transfere vrai, nom de l'admin) quand il transfère la demande à la Liste
+        // d'achats ; retirés ensemble quand l'article en est retiré.
+        && (!d.diff(resource.data).affectedKeys().hasAny(['transfere', 'transfereParNom'])
+            || (moi().role == 'admin'
+                && resource.data.chantierId == '_general'
+                && ((d.keys().hasAll(['transfere', 'transfereParNom'])
+                     && d.transfere == true
+                     && d.transfereParNom == moi().nom)
+                    || !d.keys().hasAny(['transfere', 'transfereParNom']))));
     }
 
     match /chantier_travaux/{entreeId} {
@@ -363,31 +399,97 @@ service cloud.firestore {
       allow delete: if gestionnaireDe(resource.data.companyId);
     }
 
+    // Général : un contremaître ne voit, ne modifie et ne supprime QUE ses propres
+    // demandes (les autres listes lui restent fermées) ; un admin voit tout. Pour un
+    // chantier ordinaire, rien ne change. Un contremaître doit donc demander sa liste
+    // avec where('ajoutePar', isEqualTo: son identifiant).
+    function entreeAccessible(r) {
+      return r.chantierId != '_general'
+        || moi().role == 'admin'
+        || r.ajoutePar == session().employeeId;
+    }
+
+    // Une demande transférée à la Liste d'achats reste visible pour son auteur, mais
+    // seul un admin la modifie, la marque faite ou la supprime.
+    function entreeModifiable(r) {
+      return entreeAccessible(r)
+        && (moi().role == 'admin' || r.get('transfere', false) != true);
+    }
+
     match /chantier_materiel/{entreeId} {
-      allow read: if gestionnaireDe(resource.data.companyId);
+      allow read: if gestionnaireDe(resource.data.companyId)
+        && entreeAccessible(resource.data);
       allow create: if gestionnaireDe(request.resource.data.companyId)
         && (entreeValideCreation(request.resource.data)
             || entreeGeneralValideCreation(request.resource.data));
       allow update: if gestionnaireDe(resource.data.companyId)
+        && entreeModifiable(resource.data)
         && entreeValideModification(request.resource.data);
-      allow delete: if gestionnaireDe(resource.data.companyId);
+      allow delete: if gestionnaireDe(resource.data.companyId)
+        && entreeModifiable(resource.data);
     }
 
     // Matériel Général : ce que chaque admin a déjà vu, pour la pastille « changement
     // non vu » (un document par admin, lisible et modifiable par lui seul).
     // vus : { idDeLAuteur: horodatage de la dernière visite }.
+    // nonLus : { idDeLaDemande: true } demandes que l'admin a marquées « non lu ».
     match /materiel_general_vus/{employeId} {
       allow read: if estEmployeActif() && moi().role == 'admin'
         && employeId == session().employeeId;
 
       allow create, update: if estEmployeActif() && moi().role == 'admin'
         && employeId == session().employeeId
-        && champsPermis(request.resource.data, ['companyId', 'vus'])
+        && champsPermis(request.resource.data, ['companyId', 'vus', 'nonLus'])
         && request.resource.data.companyId == maCompagnie()
-        && request.resource.data.vus is map
-        && request.resource.data.vus.size() <= 200;
+        && (!request.resource.data.keys().hasAny(['vus'])
+            || (request.resource.data.vus is map
+                && request.resource.data.vus.size() <= 200))
+        && (!request.resource.data.keys().hasAny(['nonLus'])
+            || (request.resource.data.nonLus is map
+                && request.resource.data.nonLus.size() <= 500));
 
       allow delete: if false;
+    }
+
+    // ------------------------------------------------------- Liste d'achats (admin)
+    // Demandes de matériel Général transférées par un admin pour être achetées.
+    // Admin seulement (lecture, création, « acheté », suppression). Le texte, la
+    // quantité et la photo viennent de la demande d'origine ; qui l'a demandée et
+    // qui l'a transférée sont conservés.
+
+    match /liste_achats/{articleId} {
+      allow read: if adminDe(resource.data.companyId);
+
+      allow create: if adminDe(request.resource.data.companyId)
+        && champsPermis(request.resource.data,
+             ['companyId', 'texte', 'quantite', 'photoUrl', 'photoUrls', 'demandeParId',
+              'demandeParNom', 'transfereParId', 'transfereParNom', 'origine',
+              'origineId', 'complete', 'dateAjout'])
+        && (!request.resource.data.keys().hasAny(['origineId'])
+            || (request.resource.data.origineId is string
+                && request.resource.data.origineId.size() >= 1
+                && request.resource.data.origineId.size() <= 128))
+        && texte(request.resource.data.texte, 1, 2000)
+        && texteOptionnel(request.resource.data, 'quantite', 100)
+        && photosEntreeValides(request.resource.data)
+        && request.resource.data.demandeParId is string
+        && request.resource.data.demandeParId.size() <= 128
+        && texte(request.resource.data.demandeParNom, 0, 200)
+        && request.resource.data.transfereParId == session().employeeId
+        && request.resource.data.transfereParNom == moi().nom
+        && request.resource.data.origine == 'general'
+        && request.resource.data.complete == false
+        && request.resource.data.dateAjout == request.time;
+
+      allow update: if adminDe(resource.data.companyId)
+        && champsModifiesPermis(['complete', 'dateComplete'])
+        && request.resource.data.complete is bool
+        && (request.resource.data.complete == true
+              ? (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['dateComplete'])
+                 || request.resource.data.dateComplete == request.time)
+              : !request.resource.data.keys().hasAny(['dateComplete']));
+
+      allow delete: if adminDe(resource.data.companyId);
     }
 
     // ---------------------------------------------------------------- Extras
@@ -411,11 +513,43 @@ service cloud.firestore {
                                          + '/chantier_extras/[^/]{1,250}')));
     }
 
+    function cheminExtraValide(c, companyId, chantierId) {
+      return c is string
+        && c.matches('chantiers/' + companyId + '/' + chantierId
+                     + '/chantier_extras/[^/]{1,250}');
+    }
+
+    // Plusieurs photos (6 au plus) : photoUrls et cheminsPhotos vont ensemble, de
+    // même taille ; la première de chaque liste est photoUrl / cheminPhoto.
+    function photoExtraNumero(d, i, companyId, chantierId) {
+      return d.photoUrls.size() <= i
+        || (urlStorage(d.photoUrls[i])
+            && cheminExtraValide(d.cheminsPhotos[i], companyId, chantierId));
+    }
+
+    function photosExtraMultiplesValides(d, companyId, chantierId) {
+      return d.keys().hasAny(['photoUrls']) == d.keys().hasAny(['cheminsPhotos'])
+        && (!d.keys().hasAny(['photoUrls'])
+            || (d.photoUrls is list && d.cheminsPhotos is list
+                && d.photoUrls.size() >= 1 && d.photoUrls.size() <= 6
+                && d.cheminsPhotos.size() == d.photoUrls.size()
+                && d.keys().hasAny(['photoUrl', 'cheminPhoto'])
+                && d.photoUrl == d.photoUrls[0]
+                && d.cheminPhoto == d.cheminsPhotos[0]
+                && photoExtraNumero(d, 0, companyId, chantierId)
+                && photoExtraNumero(d, 1, companyId, chantierId)
+                && photoExtraNumero(d, 2, companyId, chantierId)
+                && photoExtraNumero(d, 3, companyId, chantierId)
+                && photoExtraNumero(d, 4, companyId, chantierId)
+                && photoExtraNumero(d, 5, companyId, chantierId)));
+    }
+
     function contenuExtraValide(d, companyId, chantierId) {
       return texte(d.description, 1, 2000)
         && texte(d.mainOeuvre, 1, 300)
         && datePropre(d.dateTravaux)
-        && photoExtraValide(d, companyId, chantierId);
+        && photoExtraValide(d, companyId, chantierId)
+        && photosExtraMultiplesValides(d, companyId, chantierId);
     }
 
     match /chantier_extras/{extraId} {
@@ -424,8 +558,8 @@ service cloud.firestore {
       allow create: if gestionnaireDe(request.resource.data.companyId)
         && champsPermis(request.resource.data,
              ['companyId', 'chantierId', 'description', 'mainOeuvre',
-              'dateTravaux', 'photoUrl', 'cheminPhoto', 'ajoutePar', 'ajouteParNom',
-              'dateAjout'])
+              'dateTravaux', 'photoUrl', 'cheminPhoto', 'photoUrls', 'cheminsPhotos',
+              'ajoutePar', 'ajouteParNom', 'dateAjout'])
         && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
         && contenuExtraValide(request.resource.data, request.resource.data.companyId,
                               request.resource.data.chantierId)
@@ -435,7 +569,7 @@ service cloud.firestore {
 
       allow update: if gestionnaireDe(resource.data.companyId)
         && champsModifiesPermis(['description', 'mainOeuvre', 'dateTravaux',
-                                 'photoUrl', 'cheminPhoto'])
+                                 'photoUrl', 'cheminPhoto', 'photoUrls', 'cheminsPhotos'])
         && contenuExtraValide(request.resource.data, resource.data.companyId,
                               resource.data.chantierId);
 

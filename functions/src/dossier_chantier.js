@@ -174,6 +174,41 @@ function lienFichier(chemin, texte) {
 }
 
 /**
+ * Les photos d'une demande : tous les liens de `photoUrls`, sinon l'ancienne
+ * `photoUrl` seule, sinon rien.
+ */
+function photosDe(d) {
+  const liste = d?.photoUrls;
+  if (Array.isArray(liste)) {
+    const urls = liste.filter((u) => typeof u === "string" && u.length > 0);
+    if (urls.length > 0) return urls;
+  }
+  return typeof d?.photoUrl === "string" && d.photoUrl.length > 0 ? [d.photoUrl] : [];
+}
+
+/**
+ * Les photos d'un extra : [{url, chemin}] — `photoUrls` avec `cheminsPhotos` (même
+ * taille), sinon l'ancien couple `photoUrl` + `cheminPhoto`.
+ */
+function photosExtraDe(e) {
+  const urls = photosDe(e);
+  const chemins = Array.isArray(e?.cheminsPhotos) && e.cheminsPhotos.length === urls.length ?
+    e.cheminsPhotos : (typeof e?.cheminPhoto === "string" ? [e.cheminPhoto] : []);
+  return chemins.filter((c) => typeof c === "string" && c.length > 0).map((chemin, i) => ({url: urls[i], chemin}));
+}
+
+/**
+ * Liens vers les photos d'une ligne : `fichiersPhotos` (plusieurs) ou l'ancien
+ * `fichierPhoto` (un seul). « photo » s'il n'y en a qu'une, « photo 1 », « photo 2 »… sinon.
+ */
+function liensPhotos(ligne) {
+  const fichiers = Array.isArray(ligne?.fichiersPhotos) ? ligne.fichiersPhotos :
+    (ligne?.fichierPhoto ? [ligne.fichierPhoto] : []);
+  if (fichiers.length === 1) return lienFichier(fichiers[0], "photo");
+  return fichiers.map((f, i) => lienFichier(f, `photo ${i + 1}`)).join(" ");
+}
+
+/**
  * Résumé du dossier, lisible et imprimable dans n'importe quel navigateur.
  * `d` : {compagnie, chantier:{nom, adresse, archive}, dateExport (ISO),
  *        heures (résumé), extras, materiel, travaux, documents, photos (nombre
@@ -187,13 +222,13 @@ function htmlResume(d) {
     `<td class="n">${fr(e.voyagementPaye)}</td></tr>`).join("");
   const lignesExtras = d.extras.map((e) => `<tr><td>${esc(dateFr(e.dateTravaux))}</td>` +
     `<td>${esc(e.description)}</td><td>${esc(e.mainOeuvre)}</td><td>${esc(e.ajouteParNom)}</td>` +
-    `<td>${lienFichier(e.fichierPhoto, "photo")}</td></tr>`).join("");
+    `<td>${liensPhotos(e)}</td></tr>`).join("");
   const lignesMateriel = d.materiel.map((m) => `<tr><td>${esc(m.texte)}</td>` +
     `<td>${esc(m.quantite)}</td><td>${m.complete ? "Obtenu" : "À obtenir"}</td>` +
-    `<td>${esc(dateFr(m.dateAjout))}</td><td>${lienFichier(m.fichierPhoto, "photo")}</td></tr>`).join("");
+    `<td>${esc(dateFr(m.dateAjout))}</td><td>${liensPhotos(m)}</td></tr>`).join("");
   const lignesTravaux = (d.travaux ?? []).map((t) => `<tr><td>${esc(t.texte)}</td>` +
     `<td>${t.complete ? `Complété${t.dateComplete ? ` le ${esc(dateFr(t.dateComplete))}` : ""}` : "À compléter"}</td>` +
-    `<td>${esc(dateFr(t.dateAjout))}</td><td>${lienFichier(t.fichierPhoto, "photo")}</td></tr>`).join("");
+    `<td>${esc(dateFr(t.dateAjout))}</td><td>${liensPhotos(t)}</td></tr>`).join("");
   const lignesDocuments = (d.documents ?? []).map((x) => `<tr><td>${x.fichier ? lienFichier(x.fichier, x.nom) : esc(x.nom)}</td>` +
     `<td>${esc(tailleLisible(x.taille))}</td><td>${esc(dateFr(x.dateAjout))}</td>` +
     `<td>${x.fichier ? "Inclus" : "Non inclus"}</td></tr>`).join("");
@@ -239,4 +274,5 @@ ${(d.documents ?? []).length ? `<table><tr><th>Document</th><th>Taille</th><th>A
 module.exports = {
   detailHeures, resumerHeures, cheminDepuisUrl, cheminDuChantier, nomSur, nomFichierDocument,
   extension, tailleLisible, esc, htmlResume, dateFr, ajouterJours,
+  photosDe, photosExtraDe,
 };

@@ -1,6 +1,7 @@
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
+import { doc, setDoc } from 'firebase/firestore';
 import { creerEnvironnement, employe, individu, semer } from './helpers.mjs';
 
 let env;
@@ -158,5 +159,41 @@ describe('Storage — photos de chantier', () => {
     await assertFails(getBytes(ref(st(env.unauthenticatedContext()), 'chantiers/A/chA/photos/existante.jpg')));
     await assertFails(getBytes(ref(st(individu(env, 'uid-ind')), 'chantiers/A/chA/photos/existante.jpg')));
     await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminA')), 'autre/x.jpg'), IMAGE, JPEG));
+  });
+});
+
+describe("Storage — sessions de l'espace web (expireLe)", () => {
+  const sessionWeb = (uid, expireLe, employeeId = 'adminA') => env.withSecurityRulesDisabled((c) =>
+    setDoc(doc(c.firestore(), `sessions/${uid}`), { employeeId, companyId: 'A', canal: 'web', expireLe }));
+  const heures = (h) => new Date(Date.now() + h * 3600 * 1000);
+
+  test('expireLe dans le futur : lecture, dépôt et suppression permis', async () => {
+    await sessionWeb('uid-web', heures(11));
+    const s = st(employe(env, 'uid-web'));
+    await assertSucceeds(getBytes(ref(s, 'chantiers/A/chA/photos/existante.jpg')));
+    await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/photos/web.jpg'), IMAGE, JPEG));
+    await assertSucceeds(uploadBytes(ref(s, 'chantiers/A/chA/documents/web.pdf'), IMAGE, PDF));
+    await assertSucceeds(deleteObject(ref(s, 'chantiers/A/chA/documents/web.pdf')));
+  });
+
+  test('expireLe dépassé : plus aucun accès (lecture, dépôt, suppression)', async () => {
+    await sessionWeb('uid-web', heures(-0.01));
+    const s = st(employe(env, 'uid-web'));
+    await assertFails(getBytes(ref(s, 'chantiers/A/chA/photos/existante.jpg')));
+    await assertFails(getBytes(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
+    await assertFails(uploadBytes(ref(s, 'chantiers/A/chA/photos/web.jpg'), IMAGE, JPEG));
+    await assertFails(uploadBytes(ref(s, 'chantiers/A/chA/documents/web.pdf'), IMAGE, PDF));
+    await assertFails(deleteObject(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
+  });
+
+  test('expireLe illisible (texte, nombre, null) : refusé, jamais « sans limite »', async () => {
+    for (const [uid, v] of [['uid-w1', 'demain'], ['uid-w2', 12], ['uid-w3', null]]) {
+      await sessionWeb(uid, v);
+      await assertFails(getBytes(ref(st(employe(env, uid)), 'chantiers/A/chA/photos/existante.jpg')));
+    }
+  });
+
+  test("session de l'application (sans expireLe) : reste valide", async () => {
+    await assertSucceeds(getBytes(ref(st(employe(env, 'uid-adminA')), 'chantiers/A/chA/photos/existante.jpg')));
   });
 });

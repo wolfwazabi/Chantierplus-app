@@ -5,7 +5,7 @@ const {setGlobalOptions} = require("firebase-functions/v2");
 const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {
   db, FieldValue, Timestamp,
-  PIN_PEPPER, REGION, ROLES, FORMAT_NIP, FORMAT_NUMERO,
+  PIN_PEPPER, REGION, ROLES, ROLES_GESTION, FORMAT_NIP, FORMAT_NUMERO,
   texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire,
   empreinte, empreinteIp, verifierAppCheck, exigerAnonyme,
   proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp,
@@ -34,6 +34,9 @@ const SECRETS_NIP_COURRIEL = [PIN_PEPPER, RESEND_API_KEY];
 const MESSAGE_CONNEXION_INVALIDE = "Numéro de compagnie, courriel ou NIP invalide.";
 const MESSAGE_ADMINS_RESERVES = "Seul le super-admin de la compagnie peut nommer, modifier ou retirer un admin.";
 
+// Identifiant de document Firestore reçu d'un client : jamais de « / » (un chemin forgé).
+const FORMAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
+
 function compagniesApprouvees(numero) {
   return db.collection("companies")
       .where("numero", "==", numero)
@@ -46,8 +49,13 @@ function compagniesApprouvees(numero) {
 // Connexion employé : numéro de compagnie + courriel + NIP
 // =============================================================================
 
-exports.connexionEmploye = onCall({secrets: SECRETS_NIP}, async (request) => {
-  verifierAppCheck(request, "connexionEmploye");
+/**
+ * Numéro de compagnie + courriel + NIP : retrouve l'employé, ou échoue avec le
+ * message unique MESSAGE_CONNEXION_INVALIDE (limiteurs par adresse IP et par
+ * compagnie). Commun à connexionEmploye (application) et connexionWeb (espace
+ * web). Ne crée aucune session.
+ */
+async function identifierParNip(request) {
   const auth = exigerAnonyme(request);
   const d = request.data || {};
   const numero = texte(d.numeroCompagnie, "numéro de compagnie", {max: 10});
@@ -82,7 +90,28 @@ exports.connexionEmploye = onCall({secrets: SECRETS_NIP}, async (request) => {
     egalConstant(snap.docs[0].data().pinHash, hacherNip(compagnie.id, pin)) ? snap.docs[0] : null;
   if (!employe) await echouer(limiteCompagnie);
 
+  return {auth, employe, compagnie, limiteIp};
+}
+
+/** Réponse de connexion : identique pour l'application et l'espace web. */
+function profilConnexion(employe, compagnie, estProprioApp) {
   const data = employe.data();
+  return {
+    id: employe.id,
+    nom: data.nom || "",
+    courriel: data.courriel,
+    role: ROLES.includes(data.role) ? data.role : "employe",
+    estProprietaire: data.estProprietaire === true,
+    estProprioApp,
+    companyId: compagnie.id,
+    companyNom: compagnie.data().nomEntreprise || "",
+  };
+}
+
+exports.connexionEmploye = onCall({secrets: SECRETS_NIP}, async (request) => {
+  verifierAppCheck(request, "connexionEmploye");
+  const {auth, employe, compagnie, limiteIp} = await identifierParNip(request);
+
   const estProprioApp = (await proprioAppId()) === employe.id;
   await db.collection("sessions").doc(auth.uid).set({
     employeeId: employe.id,
@@ -94,16 +123,143 @@ exports.connexionEmploye = onCall({secrets: SECRETS_NIP}, async (request) => {
   });
   await limiteIp.reinitialiser();
 
-  return {
-    id: employe.id,
-    nom: data.nom || "",
-    courriel: data.courriel,
-    role: ROLES.includes(data.role) ? data.role : "employe",
-    estProprietaire: data.estProprietaire === true,
-    estProprioApp,
+  return profilConnexion(employe, compagnie, estProprioApp);
+});
+
+// =============================================================================
+// Connexion de l'espace web : NIP, puis code à usage unique reçu par courriel
+// =============================================================================
+
+const MESSAGE_WEB_RESERVE = "Cet espace est réservé aux super-admins, admins et contremaîtres.";
+const DUREE_CODE_WEB_MS = 10 * MINUTE;
+const DUREE_SESSION_WEB_MS = 12 * HEURE;
+const ESSAIS_CODE_WEB = 5;
+const FORMAT_CODE_WEB = /^\d{6}$/;
+
+/** « philippe@gmail.com » → « p***@gmail.com ». */
+function masquerCourriel(adresse) {
+  const [local, domaine] = adresse.split("@");
+  return `${local.slice(0, 1)}***@${domaine}`;
+}
+
+/**
+ * Première étape : numéro de compagnie + courriel + NIP, avec les mêmes
+ * vérifications et limites que connexionEmploye. Les employés sont refusés ici,
+ * côté serveur, sans session ni code. Pour un admin ou un contremaître, un code à
+ * 6 chiffres (10 minutes) est envoyé par courriel ; aucune session n'est créée
+ * avant validerConnexionWeb.
+ */
+exports.connexionWeb = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
+  verifierAppCheck(request, "connexionWeb");
+  const {auth, employe, compagnie, limiteIp} = await identifierParNip(request);
+  const data = employe.data();
+  if (!ROLES_GESTION.includes(data.role)) {
+    throw new HttpsError("permission-denied", MESSAGE_WEB_RESERVE);
+  }
+  exigerCourrielDisponible();
+
+  const limiteEnvoi = limiteur(`connweb_${employe.id}`, 5, HEURE);
+  await limiteEnvoi.verifier();
+  await limiteEnvoi.compter();
+
+  const code = nombreAleatoire(6);
+  const ref = db.collection("connexions_web").doc(auth.uid);
+  // Une nouvelle demande remplace la précédente (l'ancien code cesse de valoir).
+  await ref.set({
+    employeeId: employe.id,
     companyId: compagnie.id,
-    companyNom: compagnie.data().nomEntreprise || "",
-  };
+    codeHash: hacherCode(employe.id, code),
+    expireLe: Timestamp.fromMillis(Date.now() + DUREE_CODE_WEB_MS),
+    essais: 0,
+    creeLe: FieldValue.serverTimestamp(),
+  });
+  const envoye = await envoyerCourriel({
+    a: data.courriel,
+    sujet: `Code de connexion — ${NOM_APP}`,
+    lignes: [
+      `Bonjour ${data.nom || ""},`,
+      `Votre code de connexion : ${code}`,
+      "Ce code expire dans 10 minutes. Si vous n'avez pas essayé de vous connecter à l'espace web, " +
+        "ignorez ce message et avertissez votre employeur.",
+    ],
+  });
+  if (!envoye) {
+    await ref.delete();
+    throw new HttpsError("unavailable", "Le code n'a pas pu être envoyé. Réessayez dans un instant.");
+  }
+  await limiteIp.reinitialiser();
+
+  return {etape: "code", expireDans: DUREE_CODE_WEB_MS / 1000, courrielMasque: masquerCourriel(data.courriel)};
+});
+
+/**
+ * Seconde étape : le code reçu par courriel. 5 essais ratés → le code est
+ * supprimé et il faut recommencer la première étape. Le code ne sert qu'une
+ * fois. Succès : session de 12 h (canal « web ») et même réponse que
+ * connexionEmploye.
+ */
+exports.validerConnexionWeb = onCall({secrets: SECRETS_NIP}, async (request) => {
+  verifierAppCheck(request, "validerConnexionWeb");
+  const auth = exigerAnonyme(request);
+  const code = texte(request.data?.code, "code", {max: 10});
+  if (!FORMAT_CODE_WEB.test(code)) {
+    throw new HttpsError("invalid-argument", "Le code contient 6 chiffres.");
+  }
+
+  const ref = db.collection("connexions_web").doc(auth.uid);
+  const verdict = await db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists) return {etat: "expire"};
+    const c = snap.data();
+    if (!c.expireLe || typeof c.expireLe.toMillis !== "function" || c.expireLe.toMillis() <= Date.now()) {
+      t.delete(ref);
+      return {etat: "expire"};
+    }
+    if (egalConstant(c.codeHash, hacherCode(c.employeeId, code))) {
+      t.delete(ref);
+      return {etat: "ok", employeeId: c.employeeId, companyId: c.companyId};
+    }
+    const essais = (Number.isInteger(c.essais) ? c.essais : 0) + 1;
+    if (essais >= ESSAIS_CODE_WEB) {
+      t.delete(ref);
+      return {etat: "epuise"};
+    }
+    t.update(ref, {essais});
+    return {etat: "mauvais"};
+  });
+  if (verdict.etat === "expire") throw new HttpsError("failed-precondition", "Code expiré. Recommencez.");
+  if (verdict.etat === "epuise") {
+    throw new HttpsError("resource-exhausted", "Trop d'essais. Recommencez la connexion.");
+  }
+  if (verdict.etat === "mauvais") throw new HttpsError("permission-denied", "Code invalide.");
+
+  // Entre les deux étapes, l'employé a pu être retiré ou changer de rôle.
+  const [empSnap, compSnap, idProprio] = await Promise.all([
+    db.collection("employees").doc(verdict.employeeId).get(),
+    db.collection("companies").doc(verdict.companyId).get(),
+    proprioAppId(),
+  ]);
+  if (!empSnap.exists || empSnap.data().companyId !== verdict.companyId ||
+      !compSnap.exists || compSnap.data().statut !== "approuvee") {
+    throw new HttpsError("permission-denied", "Session invalide. Reconnectez-vous.");
+  }
+  if (!ROLES_GESTION.includes(empSnap.data().role)) {
+    throw new HttpsError("permission-denied", MESSAGE_WEB_RESERVE);
+  }
+
+  const estProprioApp = idProprio === empSnap.id;
+  await db.collection("sessions").doc(auth.uid).set({
+    employeeId: empSnap.id,
+    companyId: verdict.companyId,
+    proprioApp: estProprioApp,
+    creeLe: FieldValue.serverTimestamp(),
+    canal: "web",
+    // Les règles Firestore et Storage et contexteEmploye refusent la session
+    // une fois cette date passée.
+    expireLe: Timestamp.fromMillis(Date.now() + DUREE_SESSION_WEB_MS),
+  });
+
+  return profilConnexion(empSnap, compSnap, estProprioApp);
 });
 
 // =============================================================================
@@ -246,17 +402,31 @@ exports.supprimerCompagnie = onCall({timeoutSeconds: 540, memory: "512MiB"}, asy
 // Gestion des employés (admins de la compagnie)
 // =============================================================================
 
-async function envoyerInvitation(employe, lien, compagnie, nouveau) {
+// mode : « nouveau » (création de la fiche), « reinit » (NIP réinitialisé par l'admin)
+// ou « rappel » (même invitation renvoyée à qui n'a pas encore créé son NIP).
+const TEXTES_INVITATION = {
+  nouveau: (c) => ({
+    sujet: `Bienvenue chez ${c.nomEntreprise} — ${NOM_APP}`,
+    intro: `Votre inscription est confirmée : ${c.nomEntreprise} vous a créé un accès à ${NOM_APP}.`,
+  }),
+  reinit: (c) => ({
+    sujet: `Créez votre nouveau NIP — ${NOM_APP}`,
+    intro: `${c.nomEntreprise} a réinitialisé votre NIP. L'ancien ne fonctionne plus.`,
+  }),
+  rappel: (c) => ({
+    sujet: `Rappel : créez votre NIP — ${NOM_APP}`,
+    intro: `Voici de nouveau votre invitation à ${NOM_APP} de la part de ${c.nomEntreprise}.`,
+  }),
+};
+
+async function envoyerInvitation(employe, lien, compagnie, mode) {
+  const {sujet, intro} = TEXTES_INVITATION[mode](compagnie);
   return envoyerCourriel({
     a: employe.courriel,
-    sujet: nouveau ?
-      `Bienvenue chez ${compagnie.nomEntreprise} — ${NOM_APP}` :
-      `Créez votre nouveau NIP — ${NOM_APP}`,
+    sujet,
     lignes: [
       `Bonjour ${employe.nom},`,
-      nouveau ?
-        `Votre inscription est confirmée : ${compagnie.nomEntreprise} vous a créé un accès à ${NOM_APP}.` :
-        `${compagnie.nomEntreprise} a réinitialisé votre NIP. L'ancien ne fonctionne plus.`,
+      intro,
       `Numéro de compagnie : ${compagnie.numero}\nCourriel : ${employe.courriel}`,
       `Créez votre NIP en ouvrant ce lien (valide 7 jours, une seule fois) :\n${lien}`,
       "Vous pourrez ensuite vous connecter avec votre numéro de compagnie, votre courriel et votre NIP.",
@@ -272,6 +442,10 @@ async function envoyerInvitation(employe, lien, compagnie, nouveau) {
  * reinitialiserNip : l'ancien NIP est alors désactivé). Si le courriel ne
  * peut pas partir, le lien est retourné une seule fois à l'admin.
  *
+ * Mode renvoiInvitation (avec employeeId) : renvoie l'invitation à un employé
+ * qui n'a pas encore créé son NIP, sans rien désactiver (pinHash et sessions
+ * intacts). Refusé si le NIP existe déjà ; 3 envois par heure et par employé.
+ *
  * Seul le super-admin de la compagnie (estProprietaire) peut nommer un admin,
  * modifier un admin ou changer le rôle d'un admin. Un admin peut modifier sa
  * propre fiche (nom, courriel), mais pas son rôle.
@@ -284,12 +458,18 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
   const nom = texte(d.nom, "nom complet", {max: 100});
   const adresse = courriel(d.courriel);
   if (!ROLES.includes(d.role)) throw new HttpsError("invalid-argument", "Rôle invalide.");
-  const invitationDemandee = !employeeId || d.reinitialiserNip === true;
+  const renvoi = d.renvoiInvitation === true;
+  if (renvoi && (!employeeId || d.reinitialiserNip === true)) {
+    throw new HttpsError("invalid-argument", "Le renvoi d'invitation concerne un employé existant, sans réinitialisation.");
+  }
+  const invitationDemandee = !employeeId || d.reinitialiserNip === true || renvoi;
   const appelantSuperAdmin = ctx.employe.estProprietaire === true;
 
   const employes = db.collection("employees");
   const ref = employeeId ? employes.doc(employeeId) : employes.doc();
   const soiMeme = ref.id === ctx.employeeId;
+  const limiteRenvoi = renvoi ? limiteur(`renvoi_${ref.id}`, 3, HEURE) : null;
+  if (limiteRenvoi) await limiteRenvoi.verifier();
 
   const enregistre = await db.runTransaction(async (t) => {
     let existant = null;
@@ -316,10 +496,16 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
       throw new HttpsError("permission-denied", MESSAGE_ADMINS_RESERVES);
     }
 
+    // Renvoi : seul le serveur peut garantir, au moment de l'écriture, que le NIP
+    // n'a pas été créé entre-temps (il serait effacé par une réinitialisation).
+    if (renvoi && existant.pinHash != null) {
+      throw new HttpsError("failed-precondition", "Cet employé a déjà créé son NIP.");
+    }
+
     const maj = {nom, courriel: adresse, role};
     if (existant) {
       // Réinitialisation : l'ancien NIP cesse de fonctionner immédiatement.
-      t.update(ref, invitationDemandee ? {...maj, pinHash: FieldValue.delete()} : maj);
+      t.update(ref, invitationDemandee && !renvoi ? {...maj, pinHash: FieldValue.delete()} : maj);
     } else {
       // Pas de NIP tant que l'employé ne l'a pas créé avec son lien.
       t.set(ref, {...maj, companyId: ctx.companyId, estProprietaire: false});
@@ -328,9 +514,13 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
   });
 
   if (!invitationDemandee) return {id: ref.id};
-  if (employeeId) await supprimerSessionsDe(ref.id, soiMeme ? ctx.uid : null);
+  if (limiteRenvoi) await limiteRenvoi.compter();
+  // Réinitialisation : les sessions de l'employé sont coupées. Un simple renvoi
+  // ne touche à rien (l'employé n'a pas encore de NIP ni de session).
+  if (employeeId && !renvoi) await supprimerSessionsDe(ref.id, soiMeme ? ctx.uid : null);
   const lien = await creerInvitation(ref.id);
-  const envoye = await envoyerInvitation(enregistre, lien, ctx.compagnie, !employeeId);
+  const envoye = await envoyerInvitation(enregistre, lien, ctx.compagnie,
+    !employeeId ? "nouveau" : (renvoi ? "rappel" : "reinit"));
   return envoye ?
     {id: ref.id, courrielEnvoye: true} :
     {id: ref.id, courrielEnvoye: false, lienInvitation: lien};
@@ -472,17 +662,37 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
     throw new HttpsError("permission-denied",
         "Cette semaine est verrouillée. Contactez votre superviseur pour toute correction.");
   }
-  // Pas de saisie au-delà de la semaine prochaine.
-  const lundiMax = new Date(Date.parse(`${lundiCourant(maintenant)}T00:00:00Z`) + 7 * JOUR)
-      .toISOString().slice(0, 10);
-  if (lundiDate > lundiMax) {
-    throw new HttpsError("failed-precondition", "Cette semaine n'est pas encore ouverte.");
-  }
+  exigerSemaineOuverte(lundiDate, maintenant);
 
   const limite = limiteur(`feuille_${ctx.employeeId}`, 200, HEURE);
   await limite.verifier();
   await limite.compter();
 
+  return calculerEtEnregistrerFeuille({
+    ctx, cible: {id: ctx.employeeId, nom: ctx.employe.nom}, lundiDate, jours, maintenant,
+  });
+});
+
+/** Pas de saisie au-delà de la semaine prochaine. */
+function exigerSemaineOuverte(lundiDate, maintenant) {
+  const lundiMax = new Date(Date.parse(`${lundiCourant(maintenant)}T00:00:00Z`) + 7 * JOUR)
+      .toISOString().slice(0, 10);
+  if (lundiDate > lundiMax) {
+    throw new HttpsError("failed-precondition", "Cette semaine n'est pas encore ouverte.");
+  }
+}
+
+/**
+ * Corps commun à enregistrerFeuilleTemps et corrigerFeuilleTemps : valide les
+ * chantiers (de la compagnie, noms lus ici), calcule heures et voyagement payés
+ * avec les règles de paie, puis écrit la feuille de `cible` dans une transaction.
+ * Aucune valeur de paie ne vient du client.
+ *
+ * `reglesDeLaSemaine` : pour une semaine passée déjà enregistrée, les règles
+ * copiées dans la feuille (et non celles d'aujourd'hui) servent aux journées
+ * modifiées, et elles restent la copie conservée.
+ */
+async function calculerEtEnregistrerFeuille({ctx, cible, lundiDate, jours, maintenant, reglesDeLaSemaine = false}) {
   // Chantiers : doivent appartenir à la compagnie ; le nom vient du serveur.
   const ids = [...new Set(jours.filter((j) => j.chantierId).map((j) => j.chantierId))];
   const nomsChantiers = new Map();
@@ -498,14 +708,17 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
     }
   }
 
-  const regles = reglesPaieDepuis(ctx.compagnie.reglesPaie);
-  const ref = db.collection("feuilles_temps").doc(`${ctx.employeeId}_${lundiDate}`);
+  const reglesActuelles = reglesPaieDepuis(ctx.compagnie.reglesPaie);
+  const ref = db.collection("feuilles_temps").doc(`${cible.id}_${lundiDate}`);
 
   // Semaine antérieure à la semaine courante : les journées inchangées gardent
   // leurs valeurs d'origine (un changement de règles ne réécrit pas le passé).
   const semaineFigee = lundiDate < lundiCourant(maintenant);
   const resultat = await db.runTransaction(async (t) => {
     const existante = (await t.get(ref)).data();
+    const reglesConservees = reglesDeLaSemaine && semaineFigee && existante?.reglesPaie ?
+      existante.reglesPaie : null;
+    const regles = reglesConservees ? reglesPaieDepuis(reglesConservees) : reglesActuelles;
     const calcul = calculerFeuille({
       jours, nomsChantiers, archives, regles, existante, semaineFigee,
       maintenantIso: new Date(maintenant).toISOString(),
@@ -513,8 +726,8 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
     t.set(ref, {
       companyId: ctx.companyId,
       estIndividuel: false,
-      employeeId: ctx.employeeId,
-      employeeNom: ctx.employe.nom,
+      employeeId: cible.id,
+      employeeNom: cible.nom,
       lundiDate,
       jours: calcul.jours,
       totalHeures: calcul.totalHeures,
@@ -522,8 +735,9 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
       totalVoyagementPaye: calcul.totalVoyagementPaye,
       // Copie des règles appliquées : un changement futur ne réécrit pas le passé.
       // Semaine passée sans journée recalculée : les règles d'origine restent.
-      reglesPaie: semaineFigee && calcul.joursRecalcules === 0 && existante?.reglesPaie ?
-        existante.reglesPaie : regles,
+      reglesPaie: reglesConservees ||
+        (semaineFigee && calcul.joursRecalcules === 0 && existante?.reglesPaie ?
+          existante.reglesPaie : regles),
       dateModification: FieldValue.serverTimestamp(),
     });
     return calcul;
@@ -538,6 +752,42 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
       voyagementPayeHeures: j.voyagementPayeHeures,
     })),
   };
+}
+
+/**
+ * Un admin corrige la saisie d'un employé de sa compagnie (espace web), y
+ * compris pour une semaine verrouillée. Même calcul serveur que
+ * enregistrerFeuilleTemps. Une semaine passée garde les règles de paie copiées
+ * dans sa feuille : une correction ne réécrit pas le passé avec les règles
+ * d'aujourd'hui.
+ */
+exports.corrigerFeuilleTemps = onCall(async (request) => {
+  verifierAppCheck(request, "corrigerFeuilleTemps");
+  const ctx = await contexteAdmin(request);
+  const employeeId = request.data?.employeeId;
+  if (typeof employeeId !== "string" || !FORMAT_ID.test(employeeId)) {
+    throw new HttpsError("invalid-argument", "Employé invalide.");
+  }
+  const lundiDate = request.data?.lundiDate;
+  analyserLundi(lundiDate);
+  const jours = lireJours(request.data?.jours);
+
+  const maintenant = Date.now();
+  exigerSemaineOuverte(lundiDate, maintenant);
+
+  const limite = limiteur(`corrfeuille_${ctx.employeeId}`, 200, HEURE);
+  await limite.verifier();
+  await limite.compter();
+
+  const snap = await db.collection("employees").doc(employeeId).get();
+  if (!snap.exists || snap.data().companyId !== ctx.companyId) {
+    throw new HttpsError("not-found", "Employé introuvable.");
+  }
+
+  return calculerEtEnregistrerFeuille({
+    ctx, cible: {id: snap.id, nom: snap.data().nom || ""}, lundiDate, jours, maintenant,
+    reglesDeLaSemaine: true,
+  });
 });
 
 /**
@@ -735,18 +985,35 @@ exports.exporterChantier = onCall({memory: "1GiB", timeoutSeconds: 540}, async (
       if (await ajouter(chemin, nom)) nbPhotos += 1;
     }
     // Photos des extras, du matériel et des travaux à compléter.
+    // Chaque demande peut avoir jusqu'à 6 photos : la première garde le nom d'avant
+    // (extra_001.jpg), les suivantes prennent _2, _3… (extra_001_2.jpg) : seules les
+    // photos réellement incluses sont numérotées, sans trou.
+    const suffixe = (j) => (j === 0 ? "" : `_${j + 1}`);
     const extras = [];
     for (let i = 0; i < d.extras.length; i++) {
       const e = d.extras[i];
-      const nom = e.cheminPhoto ? `extras/extra_${numero(i)}.${dossier.extension(e.cheminPhoto)}` : null;
-      extras.push({...e, fichierPhoto: nom ? await ajouter(e.cheminPhoto, nom) : null});
+      const fichiers = [];
+      const photos = dossier.photosExtraDe(e);
+      for (let j = 0; j < photos.length; j++) {
+        const nom = `extras/extra_${numero(i)}${suffixe(fichiers.length)}.${dossier.extension(photos[j].chemin)}`;
+        const inclus = await ajouter(photos[j].chemin, nom);
+        if (inclus) fichiers.push(inclus);
+      }
+      extras.push({...e, fichiersPhotos: fichiers, fichierPhoto: fichiers.length > 0 ? fichiers.join("; ") : null});
     }
     const avecPhotoUrl = async (liste, dossierZip, prefixe) => {
       const sortie = [];
       for (let i = 0; i < liste.length; i++) {
-        const chemin = dossier.cheminDepuisUrl(liste[i].photoUrl);
-        const nom = chemin ? `${dossierZip}/${prefixe}_${numero(i)}.${dossier.extension(chemin)}` : null;
-        sortie.push({...liste[i], fichierPhoto: nom ? await ajouter(chemin, nom) : null});
+        const fichiers = [];
+        const urls = dossier.photosDe(liste[i]);
+        for (let j = 0; j < urls.length; j++) {
+          const chemin = dossier.cheminDepuisUrl(urls[j]);
+          if (!chemin) continue;
+          const nom = `${dossierZip}/${prefixe}_${numero(i)}${suffixe(fichiers.length)}.${dossier.extension(chemin)}`;
+          const inclus = await ajouter(chemin, nom);
+          if (inclus) fichiers.push(inclus);
+        }
+        sortie.push({...liste[i], fichiersPhotos: fichiers, fichierPhoto: fichiers.length > 0 ? fichiers.join("; ") : null});
       }
       return sortie;
     };
@@ -761,15 +1028,15 @@ exports.exporterChantier = onCall({memory: "1GiB", timeoutSeconds: 540}, async (
       heures: d.heures,
       extras: extras.map((e) => ({
         dateTravaux: e.dateTravaux ?? "", description: e.description ?? "", mainOeuvre: e.mainOeuvre ?? "",
-        ajouteParNom: e.ajouteParNom ?? "", fichierPhoto: e.fichierPhoto,
+        ajouteParNom: e.ajouteParNom ?? "", fichierPhoto: e.fichierPhoto, fichiersPhotos: e.fichiersPhotos,
       })),
       materiel: materiel.map((m) => ({
         texte: m.texte ?? "", quantite: m.quantite ?? "", complete: m.complete === true,
-        dateAjout: dateDe(m.dateAjout), fichierPhoto: m.fichierPhoto,
+        dateAjout: dateDe(m.dateAjout), fichierPhoto: m.fichierPhoto, fichiersPhotos: m.fichiersPhotos,
       })),
       travaux: travaux.map((t) => ({
         texte: t.texte ?? "", complete: t.complete === true, dateAjout: dateDe(t.dateAjout),
-        dateComplete: dateDe(t.dateComplete), fichierPhoto: t.fichierPhoto,
+        dateComplete: dateDe(t.dateComplete), fichierPhoto: t.fichierPhoto, fichiersPhotos: t.fichiersPhotos,
       })),
       documents: documents.map((x) => ({
         nom: x.nom ?? "", taille: x.taille, dateAjout: dateDe(x.dateAjout), fichier: x.fichier,

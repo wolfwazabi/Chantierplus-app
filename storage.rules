@@ -39,8 +39,11 @@ service firebase.storage {
                          companyId, roles);
     }
 
+    // expireLe : seulement sur les sessions de l'espace web (12 h) ; lu dans le
+    // même document de session, donc aucune lecture de plus.
     function sessionValide(s, companyId, roles) {
       return s.companyId == companyId
+        && (!('expireLe' in s) || s.expireLe > request.time)
         && firestore.exists(/databases/(default)/documents/employees/$(s.employeeId))
         && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.companyId == companyId
         && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.role in roles;

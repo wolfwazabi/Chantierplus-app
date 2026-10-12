@@ -139,6 +139,57 @@ describe('Noms des documents dans le ZIP', () => {
   });
 });
 
+describe('Plusieurs photos par demande', () => {
+  test('photosDe : toutes les photos, sinon l\'ancienne photoUrl, sinon rien', () => {
+    assert.deepEqual(d.photosDe({ photoUrls: ['a', 'b', 'c'], photoUrl: 'a' }), ['a', 'b', 'c']);
+    assert.deepEqual(d.photosDe({ photoUrl: 'seule' }), ['seule']);
+    assert.deepEqual(d.photosDe({}), []);
+    assert.deepEqual(d.photosDe(undefined), []);
+    assert.deepEqual(d.photosDe({ photoUrls: [], photoUrl: 'seule' }), ['seule']);
+    assert.deepEqual(d.photosDe({ photoUrls: 'pas une liste', photoUrl: '' }), []);
+    assert.deepEqual(d.photosDe({ photoUrls: ['a', 7, '', null, 'b'] }), ['a', 'b']);
+  });
+
+  test('photosExtraDe : liens et chemins alignés ; ancien extra : un seul', () => {
+    assert.deepEqual(
+      d.photosExtraDe({ photoUrls: ['u1', 'u2'], cheminsPhotos: ['c1', 'c2'] }),
+      [{ url: 'u1', chemin: 'c1' }, { url: 'u2', chemin: 'c2' }]);
+    assert.deepEqual(d.photosExtraDe({ photoUrl: 'u', cheminPhoto: 'c' }), [{ url: 'u', chemin: 'c' }]);
+    assert.deepEqual(d.photosExtraDe({}), []);
+    // Tailles différentes : on ne devine pas, on prend l'ancien couple s'il existe.
+    assert.deepEqual(
+      d.photosExtraDe({ photoUrls: ['u1', 'u2'], cheminsPhotos: ['c1'], photoUrl: 'u1', cheminPhoto: 'c1' }),
+      [{ url: 'u1', chemin: 'c1' }]);
+    assert.deepEqual(d.photosExtraDe({ photoUrls: ['u1', 'u2'], cheminsPhotos: ['c1'] }), []);
+  });
+
+  test('résumé HTML : un lien par photo (« photo » si une seule, « photo 1 », « photo 2 »… sinon)', () => {
+    const h = d.htmlResume({
+      compagnie: 'A', chantier: { nom: 'X', adresse: '', archive: false }, dateExport: '2026-10-30T12:00:00Z',
+      heures: d.resumerHeures([]), documents: [], photos: 0, ignores: [],
+      extras: [{ dateTravaux: '2026-10-08', description: 'e', mainOeuvre: 'm', ajouteParNom: 'P', fichiersPhotos: ['extras/extra_001.jpg', 'extras/extra_001_2.jpg'] }],
+      materiel: [{ texte: 'Vis', quantite: '', complete: false, dateAjout: '', fichiersPhotos: ['materiel/materiel_001.jpg'] },
+        { texte: 'Clous', quantite: '', complete: false, dateAjout: '', fichiersPhotos: [] }],
+      travaux: [{ texte: 'Peinture', complete: false, dateAjout: '', dateComplete: '', fichiersPhotos: ['travaux/travail_001.jpg', 'travaux/travail_001_2.jpg', 'travaux/travail_001_3.jpg'] }],
+    });
+    assert.ok(h.includes('href="extras/extra_001.jpg">photo 1</a>'));
+    assert.ok(h.includes('href="extras/extra_001_2.jpg">photo 2</a>'));
+    assert.ok(h.includes('href="materiel/materiel_001.jpg">photo</a>'));
+    assert.ok(!h.includes('photo 1</a> <a href="materiel'));
+    assert.ok(h.includes('href="travaux/travail_001_3.jpg">photo 3</a>'));
+  });
+
+  test('résumé HTML : les anciens champs (fichierPhoto seul) fonctionnent encore', () => {
+    const h = d.htmlResume({
+      compagnie: 'A', chantier: { nom: 'X', adresse: '', archive: false }, dateExport: '2026-10-30T12:00:00Z',
+      heures: d.resumerHeures([]), documents: [], photos: 0, ignores: [],
+      extras: [{ dateTravaux: '2026-10-08', description: 'e', mainOeuvre: 'm', ajouteParNom: 'P', fichierPhoto: 'extras/extra_001.jpg' }],
+      materiel: [], travaux: [],
+    });
+    assert.ok(h.includes('href="extras/extra_001.jpg">photo</a>'));
+  });
+});
+
 describe('Résumé HTML', () => {
   const base = () => ({
     compagnie: 'Alpha inc.', chantier: { nom: 'Chalet <b>Nord</b>', adresse: '1 rue "A"', archive: true },

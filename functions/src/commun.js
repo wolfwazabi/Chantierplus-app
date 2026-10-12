@@ -141,12 +141,26 @@ async function proprioAppId() {
   return typeof id === "string" && id.length > 0 ? id : null;
 }
 
+/**
+ * Les sessions de l'espace web portent expireLe (12 h) ; celles de l'application
+ * mobile n'en ont pas et n'expirent pas. Un expireLe illisible est traité
+ * comme expiré.
+ */
+function sessionExpiree(session, maintenant = Date.now()) {
+  if (!("expireLe" in session)) return false;
+  const fin = session.expireLe;
+  return !(fin && typeof fin.toMillis === "function") || fin.toMillis() <= maintenant;
+}
+
 async function contexteEmploye(request) {
   const auth = exigerAnonyme(request);
   const sessionSnap = await db.collection("sessions").doc(auth.uid).get();
   const session = sessionSnap.exists ? sessionSnap.data() : null;
   if (!session?.employeeId || !session?.companyId) {
     throw new HttpsError("permission-denied", "Session invalide. Reconnectez-vous.");
+  }
+  if (sessionExpiree(session)) {
+    throw new HttpsError("permission-denied", "Session expirée. Reconnectez-vous.");
   }
   const [empSnap, compSnap, idProprioApp] = await Promise.all([
     db.collection("employees").doc(session.employeeId).get(),
@@ -229,11 +243,19 @@ const MINUTE = 60 * 1000;
 const HEURE = 60 * MINUTE;
 const JOUR = 24 * HEURE;
 
+/**
+ * Coupe les accès d'un employé : ses sessions et les codes de connexion web en
+ * attente (un NIP changé ou un employé retiré ne doit pas pouvoir finir une
+ * connexion commencée avant).
+ */
 async function supprimerSessionsDe(employeeId, saufUid = null) {
-  const sessions = await db.collection("sessions").where("employeeId", "==", employeeId).get();
+  const [sessions, connexions] = await Promise.all([
+    db.collection("sessions").where("employeeId", "==", employeeId).get(),
+    db.collection("connexions_web").where("employeeId", "==", employeeId).get(),
+  ]);
   const batch = db.batch();
   let n = 0;
-  sessions.docs.forEach((s) => {
+  [...sessions.docs, ...connexions.docs].forEach((s) => {
     if (s.id !== saufUid) {
       batch.delete(s.ref);
       n++;
@@ -248,6 +270,6 @@ module.exports = {
   ROLES, ROLES_GESTION, FORMAT_NIP, FORMAT_NUMERO,
   texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire,
   empreinte, empreinteIp, verifierAppCheck, exigerAuth, exigerAnonyme,
-  proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp,
+  proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp, sessionExpiree,
   limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,
 };

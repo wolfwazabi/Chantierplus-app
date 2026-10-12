@@ -14,7 +14,7 @@ import {
 } from 'firebase/firestore';
 import { lundi } from './helpers.mjs';
 import { initializeApp as initAdmin } from 'firebase-admin/app';
-import { getFirestore as getAdminDb } from 'firebase-admin/firestore';
+import { FieldValue, getFirestore as getAdminDb } from 'firebase-admin/firestore';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import yauzl from 'yauzl';
 import ExcelJS from 'exceljs';
@@ -50,6 +50,15 @@ async function connecter(numero, courriel, pin) {
   const a = await appareil();
   const profil = await a.appeler('connexionEmploye', { numeroCompagnie: numero, courriel, pin });
   return { ...a, profil };
+}
+
+/** Connexion de l'espace web : NIP, puis code reçu par courriel. */
+async function connecterWeb(numero, courriel, pin) {
+  const a = await appareil();
+  await a.appeler('connexionWeb', { numeroCompagnie: numero, courriel, pin });
+  const code = extraire((await dernierCourriel(courriel, 'Code de connexion')).texte, 'Votre code de connexion');
+  const profil = await a.appeler('validerConnexionWeb', { code });
+  return { ...a, profil, code };
 }
 
 async function rejette(promesse, code) {
@@ -341,6 +350,117 @@ describe('Création d\'employés : courriel de confirmation et lien pour créer 
 });
 
 // =============================================================================
+describe('Renvoi de l\'invitation à un employé sans NIP (enregistrerEmploye { renvoiInvitation })', () => {
+  const COURRIEL = 'rappel@exemple.ca';
+  let sa; let id; let ancien;
+  const fiche = async (employeeId = id) => (await adminDb.collection('employees').doc(employeeId).get()).data();
+  const renvoyer = (over = {}) => sa.appeler('enregistrerEmploye',
+    { employeeId: id, nom: 'Rémi Rappel', courriel: COURRIEL, role: 'employe', renvoiInvitation: true, ...over });
+
+  before(async () => {
+    sa = await connecter(numero, 'proprio@exemple.ca', '123456');
+    ({ id } = await sa.appeler('enregistrerEmploye', { nom: 'Rémi Rappel', courriel: 'Rappel@Exemple.ca', role: 'employe' }));
+    ancien = await lienRecu(COURRIEL);
+  });
+
+  test('courriel de rappel : sujet, texte, numéro de compagnie, courriel, lien ; même format de retour', async () => {
+    const r = await renvoyer();
+    assert.deepEqual(r, { id, courrielEnvoye: true });
+    const msg = await dernierCourriel(COURRIEL, 'Rappel');
+    assert.equal(msg.sujet, 'Rappel : créez votre NIP — Chantier+');
+    assert.ok(msg.texte.includes('Voici de nouveau votre invitation'));
+    assert.ok(msg.texte.includes(`Numéro de compagnie : ${numero}`));
+    assert.ok(msg.texte.includes(`Courriel : ${COURRIEL}`));
+    assert.ok(msg.texte.includes('valide 7 jours, une seule fois'));
+    assert.ok(msg.texte.includes('Vous recevez ce message parce que'));
+    assert.ok(!msg.texte.includes('réinitialisé'), 'ce n\'est pas une réinitialisation');
+    const lien = await lienRecu(COURRIEL, 'Rappel');
+    assert.equal(lien.employeeId, id);
+    assert.notEqual(lien.jeton, ancien.jeton);
+  });
+
+  test('un seul lien valide à la fois : l\'ancien est remplacé, le nouveau fonctionne', async () => {
+    assert.equal((await soumettreNip(ancien, '246802')).statut, 400, 'ancien lien refusé');
+    const r = await soumettreNip(await lienRecu(COURRIEL, 'Rappel'), '246802');
+    assert.equal(r.statut, 200);
+    assert.equal((await fiche()).pinHash, hacher(companyId, '246802'));
+  });
+
+  test('refusé si l\'employé a déjà son NIP : rien n\'est modifié, sa session continue', async () => {
+    const employe = await connecter(numero, COURRIEL, '246802');
+    const avant = await fiche();
+    await assert.rejects(renvoyer(), (e) => {
+      assert.equal(e.code, 'functions/failed-precondition');
+      assert.equal(e.message, 'Cet employé a déjà créé son NIP.');
+      return true;
+    });
+    assert.deepEqual(await fiche(), avant, 'NIP et fiche intacts');
+    assert.equal((await adminDb.collection('invitations_nip').doc(id).get()).exists, false, 'aucun lien recréé');
+    assert.ok((await getDoc(doc(employe.db, 'companies', companyId))).exists(), 'sa session n\'est pas coupée');
+    await connecter(numero, COURRIEL, '246802');
+  });
+
+  test('un renvoi ne touche ni au NIP ni aux sessions (contrairement à la réinitialisation)', async () => {
+    const { id: autre } = await sa.appeler('enregistrerEmploye', { nom: 'Sans NIP', courriel: 'sansnip@exemple.ca', role: 'employe' });
+    // Une session fantôme de cet employé (jamais connecté : aucune normalement) doit survivre au renvoi.
+    await adminDb.collection('sessions').doc('uid-fantome-renvoi').set({ employeeId: autre, companyId });
+    await sa.appeler('enregistrerEmploye',
+      { employeeId: autre, nom: 'Sans NIP', courriel: 'sansnip@exemple.ca', role: 'employe', renvoiInvitation: true });
+    assert.equal((await adminDb.collection('sessions').doc('uid-fantome-renvoi').get()).exists, true);
+    assert.equal((await fiche(autre)).pinHash, undefined);
+    // La réinitialisation, elle, coupe les sessions.
+    await sa.appeler('enregistrerEmploye',
+      { employeeId: autre, nom: 'Sans NIP', courriel: 'sansnip@exemple.ca', role: 'employe', reinitialiserNip: true });
+    assert.equal((await adminDb.collection('sessions').doc('uid-fantome-renvoi').get()).exists, false);
+    assert.ok(await dernierCourriel('sansnip@exemple.ca', 'Créez votre nouveau NIP'), 'la réinitialisation garde son texte');
+  });
+
+  test('limite : 3 renvois par heure et par employé (un autre employé n\'est pas touché)', async () => {
+    const { id: premier } = await sa.appeler('enregistrerEmploye', { nom: 'Un', courriel: 'un-rappel@exemple.ca', role: 'employe' });
+    const { id: second } = await sa.appeler('enregistrerEmploye', { nom: 'Deux', courriel: 'deux-rappel@exemple.ca', role: 'employe' });
+    const renvoi = (employeeId, courriel, nom) => sa.appeler('enregistrerEmploye',
+      { employeeId, nom, courriel, role: 'employe', renvoiInvitation: true });
+    for (let i = 0; i < 3; i++) assert.equal((await renvoi(premier, 'un-rappel@exemple.ca', 'Un')).courrielEnvoye, true);
+    const avant = (await adminDb.collection('_courriels_emulateur').where('a', '==', 'un-rappel@exemple.ca').get()).size;
+    await rejette(renvoi(premier, 'un-rappel@exemple.ca', 'Un'), 'resource-exhausted');
+    assert.equal((await adminDb.collection('_courriels_emulateur').where('a', '==', 'un-rappel@exemple.ca').get()).size, avant);
+    assert.equal((await renvoi(second, 'deux-rappel@exemple.ca', 'Deux')).courrielEnvoye, true);
+  });
+
+  test('un refus (NIP déjà créé) ne compte pas dans la limite', async () => {
+    for (let i = 0; i < 4; i++) await rejette(renvoyer(), 'failed-precondition');
+  });
+
+  test('paramètres incohérents : sans employé, ou combiné à la réinitialisation → refusé', async () => {
+    await rejette(sa.appeler('enregistrerEmploye',
+      { nom: 'Nouveau', courriel: 'nouveau-rappel@exemple.ca', role: 'employe', renvoiInvitation: true }), 'invalid-argument');
+    await rejette(renvoyer({ reinitialiserNip: true }), 'invalid-argument');
+    assert.equal((await adminDb.collection('employees').where('courriel', '==', 'nouveau-rappel@exemple.ca').get()).size, 0);
+    // « renvoiInvitation » doit être exactement true.
+    const { id: autre } = await sa.appeler('enregistrerEmploye', { nom: 'Texte', courriel: 'texte-rappel@exemple.ca', role: 'employe' });
+    const avant = (await adminDb.collection('_courriels_emulateur').where('a', '==', 'texte-rappel@exemple.ca').get()).size;
+    assert.deepEqual(await sa.appeler('enregistrerEmploye',
+      { employeeId: autre, nom: 'Texte', courriel: 'texte-rappel@exemple.ca', role: 'employe', renvoiInvitation: 'oui' }), { id: autre });
+    assert.equal((await adminDb.collection('_courriels_emulateur').where('a', '==', 'texte-rappel@exemple.ca').get()).size, avant);
+  });
+
+  test('employé d\'une autre compagnie ou inexistant : introuvable ; non-admin : refusé', async () => {
+    await rejette(renvoyer({ employeeId: 'fantome' }), 'not-found');
+    const a = await appareil();
+    const { numero: numeroR } = await a.appeler('inscrireCompagnie',
+      inscription({ nomEntreprise: 'Rappel inc.', emailAdmin: 'r@exemple.ca', pinAdmin: '135791' }));
+    const compR = (await adminDb.collection('companies').where('numero', '==', numeroR).get()).docs[0];
+    await compR.ref.update({ statut: 'approuvee' });
+    const adminR = await connecter(numeroR, 'r@exemple.ca', '135791');
+    await rejette(adminR.appeler('enregistrerEmploye',
+      { employeeId: id, nom: 'Rémi Rappel', courriel: COURRIEL, role: 'employe', renvoiInvitation: true }), 'not-found');
+    const employe = await connecter(numero, COURRIEL, '246802');
+    await rejette(employe.appeler('enregistrerEmploye',
+      { employeeId: id, nom: 'Rémi Rappel', courriel: COURRIEL, role: 'employe', renvoiInvitation: true }), 'permission-denied');
+  });
+});
+
+// =============================================================================
 describe('Admins : seul le super-admin de la compagnie les gère', () => {
   let superAdmin; let admin; let adminId; let admin2Id; let employeId;
 
@@ -378,6 +498,14 @@ describe('Admins : seul le super-admin de la compagnie les gère', () => {
       { employeeId: admin2Id, nom: 'Bureau Deux', courriel: 'bureau2@exemple.ca', role: 'admin', reinitialiserNip: true }), 'permission-denied');
     await rejette(admin.appeler('supprimerEmploye', { employeeId: admin2Id }), 'permission-denied');
     assert.ok((await adminDb.collection('employees').doc(admin2Id).get()).exists);
+  });
+
+  test("un admin ne peut pas renvoyer l'invitation d'un autre admin ; le super-admin le peut", async () => {
+    const renvoi = (a) => a.appeler('enregistrerEmploye',
+      { employeeId: admin2Id, nom: 'Bureau Deux', courriel: 'bureau2@exemple.ca', role: 'admin', renvoiInvitation: true });
+    await rejette(renvoi(admin), 'permission-denied');
+    assert.equal((await renvoi(superAdmin)).courrielEnvoye, true);
+    assert.ok(await dernierCourriel('bureau2@exemple.ca', 'Rappel'));
   });
 
   test('un admin modifie sa propre fiche, mais pas son rôle', async () => {
@@ -766,6 +894,186 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     assert.equal(r.totalHeures, 24.25);
     assert.equal(f.totalHeures, 24.25);
   });
+
+  describe('correction par un admin (corrigerFeuilleTemps)', () => {
+    const PASSEE4 = lundi(-4);
+    const R1 = { 'reglesPaie.voyagementActif': true, 'reglesPaie.voyagementSeuilMinutes': 60,
+      'reglesPaie.voyagementPourcentage': 50, 'reglesPaie.dinerPaye': true };
+    const R2 = { 'reglesPaie.voyagementActif': true, 'reglesPaie.voyagementSeuilMinutes': 60,
+      'reglesPaie.voyagementPourcentage': 50, 'reglesPaie.dinerPaye': false };
+    const regles = (maj) => adminDb.collection('companies').doc(cid).update(maj);
+    const corriger = (a, employeeId, jours, lundiDate = SEMAINE, extra = {}) =>
+      a.appeler('corrigerFeuilleTemps', { employeeId, lundiDate, jours, ...extra });
+    const supprimerFeuille = (id, lundiDate) => adminDb.collection('feuilles_temps').doc(`${id}_${lundiDate}`).delete();
+    let plus;
+
+    before(async () => {
+      await regles(R1);
+      await adminDb.collection('employees').doc('ft-plus').set({
+        companyId: cid, nom: 'Luc Contremaître', role: 'plus', estProprietaire: false,
+        courriel: 'ft-plus@exemple.ca', pinHash: hacher(cid, PIN),
+      });
+      await adminDb.collection('employees').doc('ft-etranger').set({
+        companyId: autreCid, nom: 'Étranger', role: 'employe', estProprietaire: false,
+        courriel: 'ft-etranger@exemple.ca', pinHash: hacher(autreCid, PIN),
+      });
+      plus = await connecter(NUM, 'ft-plus@exemple.ca', PIN);
+    });
+    after(async () => { await regles(R1); });
+
+    test('semaine verrouillée : l\'employé ne peut plus la modifier, l\'admin la corrige pour lui', async () => {
+      await supprimerFeuille('ft-emp', PASSEE);
+      await rejette(envoyer(emp, [jour()], PASSEE), 'permission-denied');
+      assert.equal(await feuilleDe('ft-emp', PASSEE), undefined);
+      const adminAvant = await feuilleDe('ft-adm', PASSEE);
+
+      const r = await corriger(adm, 'ft-emp', [jour()], PASSEE);
+      assert.deepEqual(r, {
+        totalHeures: 7.75, totalHeuresTravaillees: 7.75, totalVoyagementPaye: 0,
+        jours: [{ heuresTravaillees: 7.75, voyagementPayeHeures: 0 }],
+      });
+      const f = await feuilleDe('ft-emp', PASSEE);
+      assert.equal(f.employeeId, 'ft-emp');
+      assert.equal(f.employeeNom, 'Marie Employée');
+      assert.equal(f.companyId, cid);
+      assert.equal(f.estIndividuel, false);
+      assert.equal(f.lundiDate, PASSEE);
+      assert.equal(f.jours[0].chantierNom, 'Chantier Alpha');
+      assert.equal(f.totalHeures, 7.75);
+      assert.equal(f.reglesPaie.voyagementPourcentage, 50);
+      assert.ok(f.dateModification);
+      assert.deepEqual(await feuilleDe('ft-adm', PASSEE), adminAvant, 'la feuille de l\'admin n\'est pas touchée');
+    });
+
+    test('même retour que enregistrerFeuilleTemps, et aucune valeur du client n\'est crue', async () => {
+      await supprimerFeuille('ft-emp', SEMAINE);
+      const jours = [jour({ tempsVoyagementMinutes: 90 }), jour()];
+      const attendu = await envoyer(emp, jours);
+      await supprimerFeuille('ft-emp', SEMAINE);
+      const r = await corriger(adm, 'ft-emp', [
+        jour({ tempsVoyagementMinutes: 90, heuresTravaillees: 99, voyagementPayeHeures: 40, chantierNom: 'Faux' }),
+        jour({ totalHeures: 500 }),
+      ], SEMAINE, {
+        totalHeures: 500, employeeNom: 'Faux', companyId: autreCid,
+        reglesPaie: { voyagementPourcentage: 100, voyagementActif: true, voyagementSeuilMinutes: 0 },
+      });
+      assert.deepEqual(r, attendu);
+      const f = await feuilleDe('ft-emp', SEMAINE);
+      assert.equal(f.employeeNom, 'Marie Employée');
+      assert.equal(f.companyId, cid);
+      assert.equal(f.jours[0].chantierNom, 'Chantier Alpha');
+      assert.equal(f.reglesPaie.voyagementPourcentage, 50);
+    });
+
+    test('une journée déjà soumise corrigée : la date de la correction est consignée par le serveur', async () => {
+      await supprimerFeuille('ft-emp', SEMAINE);
+      await envoyer(emp, [jour()]);
+      const r = await corriger(adm, 'ft-emp', [jour({ heureFinMinutes: 16 * 60 })]);
+      assert.equal(r.totalHeures, 8.75);
+      const f = await feuilleDe('ft-emp', SEMAINE);
+      assert.equal(f.jours[0].verrouille, true);
+      assert.ok(Date.parse(f.jours[0].modifieApresVerrouillageLe) > Date.now() - 60_000);
+    });
+
+    test('une journée envoyée vide n\'efface pas des heures déjà soumises', async () => {
+      await supprimerFeuille('ft-emp', SEMAINE);
+      await envoyer(emp, [jour(), jour()]);
+      const r = await corriger(adm, 'ft-emp', [{ estAucun: false }, jour({ heureFinMinutes: 16 * 60 })]);
+      assert.equal(r.totalHeures, 7.75 + 8.75);
+    });
+
+    test('réservé aux admins : employé et contremaître refusés, rien n\'est écrit', async () => {
+      await supprimerFeuille('ft-emp', PASSEE);
+      await rejette(corriger(emp, 'ft-emp', [jour()], PASSEE), 'permission-denied');
+      await rejette(corriger(plus, 'ft-emp', [jour()], PASSEE), 'permission-denied');
+      await rejette(corriger(await appareil(), 'ft-emp', [jour()], PASSEE), 'permission-denied');
+      assert.equal(await feuilleDe('ft-emp', PASSEE), undefined);
+    });
+
+    test('employé d\'une autre compagnie ou inexistant : introuvable ; identifiant invalide : refusé', async () => {
+      await rejette(corriger(adm, 'ft-etranger', [jour()]), 'not-found');
+      await rejette(corriger(adm, 'fantome', [jour()]), 'not-found');
+      assert.equal(await feuilleDe('ft-etranger'), undefined);
+      for (const id of ['a/b', '../employees/ft-emp', '', null, 123, 'x'.repeat(200)]) {
+        await rejette(corriger(adm, id, [jour()]), 'invalid-argument');
+      }
+      await rejette(adm.appeler('corrigerFeuilleTemps', { lundiDate: SEMAINE, jours: [jour()] }), 'invalid-argument');
+    });
+
+    test('chantier d\'une autre compagnie, inexistant ou « Général » : refusé ; saisie invalide : refusée', async () => {
+      await rejette(corriger(adm, 'ft-emp', [jour({ chantierId: 'ft-chB' })]), 'invalid-argument');
+      await rejette(corriger(adm, 'ft-emp', [jour({ chantierId: 'fantome' })]), 'invalid-argument');
+      await rejette(corriger(adm, 'ft-emp', [jour({ chantierId: '_general' })]), 'invalid-argument');
+      await rejette(corriger(adm, 'ft-emp', [jour({ heureFinMinutes: 6 * 60 })]), 'invalid-argument');
+      await rejette(corriger(adm, 'ft-emp', Array(8).fill(jour())), 'invalid-argument');
+      await rejette(corriger(adm, 'ft-emp', [jour()], '2026-01-06'), 'invalid-argument');
+      await rejette(corriger(adm, 'ft-emp', 'lundi'), 'invalid-argument');
+    });
+
+    test('chantier archivé : plus choisissable pour une journée neuve', async () => {
+      await supprimerFeuille('ft-emp', SEMAINE);
+      await adminDb.collection('chantiers').doc('ft-chA').update({ archive: true });
+      try {
+        await rejette(corriger(adm, 'ft-emp', [jour()]), 'invalid-argument');
+      } finally {
+        await adminDb.collection('chantiers').doc('ft-chA').update({ archive: false });
+      }
+    });
+
+    test('semaine pas encore ouverte : refusée, comme pour la saisie normale', async () => {
+      await rejette(corriger(adm, 'ft-emp', [jour()], TROP_LOIN), 'failed-precondition');
+      assert.equal(await feuilleDe('ft-emp', TROP_LOIN), undefined);
+      assert.equal((await corriger(adm, 'ft-emp', [jour()], PROCHAINE)).totalHeures, 7.75);
+    });
+
+    test('semaine passée : les règles de paie copiées dans la feuille restent, pas celles d\'aujourd\'hui', async () => {
+      await regles(R1);
+      await supprimerFeuille('ft-emp', PASSEE4);
+      const avant = await corriger(adm, 'ft-emp', [jour(), jour()], PASSEE4);
+      assert.deepEqual(avant.jours.map((j) => j.heuresTravaillees), [7.75, 7.75]);
+      assert.equal((await feuilleDe('ft-emp', PASSEE4)).reglesPaie.dinerPaye, true);
+
+      // La compagnie cesse de payer le dîner : le passé ne bouge pas.
+      await regles(R2);
+      const r = await corriger(adm, 'ft-emp', [jour(), jour({ heureFinMinutes: 16 * 60 })], PASSEE4);
+      // Jour 1 inchangé : valeur d'origine. Jour 2 corrigé : calculé avec les règles de la semaine
+      // (dîner payé : 9 h − pause 15 min), pas avec celles d'aujourd'hui (8,25 h).
+      assert.deepEqual(r.jours.map((j) => j.heuresTravaillees), [7.75, 8.75]);
+      assert.equal(r.totalHeures, 16.5);
+      const f = await feuilleDe('ft-emp', PASSEE4);
+      assert.equal(f.reglesPaie.dinerPaye, true, 'copie d\'origine conservée');
+      assert.equal(f.totalHeures, 16.5);
+
+      // Une journée inchangée ne bouge pas non plus quand on renvoie toute la feuille.
+      const encore = await corriger(adm, 'ft-emp', [jour(), jour({ heureFinMinutes: 16 * 60 })], PASSEE4);
+      assert.deepEqual(encore.jours, r.jours);
+      assert.equal((await feuilleDe('ft-emp', PASSEE4)).reglesPaie.dinerPaye, true);
+
+      // Semaine courante : les règles d'aujourd'hui s'appliquent (et sont copiées).
+      await supprimerFeuille('ft-emp', SEMAINE);
+      assert.equal((await corriger(adm, 'ft-emp', [jour()])).totalHeures, 7.25);
+      assert.equal((await feuilleDe('ft-emp', SEMAINE)).reglesPaie.dinerPaye, false);
+      await regles(R1);
+    });
+
+    test('semaine passée sans copie de règles (ancienne feuille) : règles actuelles', async () => {
+      await regles(R1);
+      await adminDb.collection('feuilles_temps').doc(`ft-emp_${PASSEE4}`).update({ reglesPaie: FieldValue.delete() });
+      await regles(R2);
+      const r = await corriger(adm, 'ft-emp', [jour({ heureFinMinutes: 14 * 60 }), jour({ heureFinMinutes: 17 * 60 })], PASSEE4);
+      // Jour 1 : 7 h − 15 min − 30 min (dîner non payé) = 6,25 ; jour 2 : 10 h − 45 min = 9,25.
+      assert.deepEqual(r.jours.map((j) => j.heuresTravaillees), [6.25, 9.25]);
+      assert.equal((await feuilleDe('ft-emp', PASSEE4)).reglesPaie.dinerPaye, false);
+      await regles(R1);
+    });
+
+    test('limite par admin : 200 corrections par heure ; la saisie de l\'admin n\'est pas touchée', async () => {
+      await adminDb.collection('limites_connexion').doc('corrfeuille_ft-adm').set(
+        { compte: 200, debut: new Date(), expireLe: new Date(Date.now() + 3600 * 1000) });
+      await rejette(corriger(adm, 'ft-emp', [jour()]), 'resource-exhausted');
+      assert.ok((await envoyer(adm, [jour()], PROCHAINE)).totalHeures > 0, 'enregistrerFeuilleTemps garde son propre compteur');
+    });
+  });
 });
 
 // =============================================================================
@@ -1003,6 +1311,75 @@ describe('Dossier de chantier : résumé et export (admin seulement)', () => {
     assert.equal(r.fichiers, 7);
   });
 
+  test('export : plusieurs photos par demande (matériel, travaux, extras), chacune dans le ZIP', async () => {
+    const lien = (chemin) => `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/${encodeURIComponent(chemin)}?alt=media&token=t`;
+    const dossierC = 'chantiers/dc-compagnie/dc-multi';
+    const deposer = (chemin, contenu) => bucket().file(chemin).save(Buffer.from(contenu), { contentType: 'image/jpeg' });
+    await adminDb.collection('chantiers').doc('dc-multi').set({ companyId: cid, nom: 'Multi photos', adresse: '' });
+    await deposer(`${dossierC}/chantier_materiel/m1.jpg`, 'MAT-1');
+    await deposer(`${dossierC}/chantier_materiel/m2.jpg`, 'MAT-2');
+    await deposer(`${dossierC}/chantier_materiel/m3.jpg`, 'MAT-3');
+    await deposer(`${dossierC}/chantier_travaux/t1.jpg`, 'TRA-1');
+    await deposer(`${dossierC}/chantier_travaux/t2.jpg`, 'TRA-2');
+    await deposer(`${dossierC}/chantier_extras/e1.jpg`, 'EXT-1');
+    await deposer(`${dossierC}/chantier_extras/e2.jpg`, 'EXT-2');
+    const u = (c) => lien(`${dossierC}/${c}`);
+    const c = adminDb.collection.bind(adminDb);
+    const d = (n) => new Date(Date.UTC(2026, 9, n, 12));
+    await c('chantier_materiel').add({
+      companyId: cid, chantierId: 'dc-multi', texte: 'Sangles', quantite: '4', complete: false, dateAjout: d(1),
+      photoUrl: u('chantier_materiel/m1.jpg'),
+      // La deuxième est forgée (fichier d'une autre compagnie) : jamais exportée.
+      photoUrls: [u('chantier_materiel/m1.jpg'), lien('chantiers/dc-autre/dc-chB/photos/secret.jpg'), u('chantier_materiel/m2.jpg'), u('chantier_materiel/m3.jpg')],
+    });
+    await c('chantier_materiel').add({
+      companyId: cid, chantierId: 'dc-multi', texte: 'Une seule', complete: false, dateAjout: d(2),
+      photoUrl: u('chantier_materiel/m3.jpg'),
+    });
+    await c('chantier_travaux').add({
+      companyId: cid, chantierId: 'dc-multi', texte: 'Peinture', complete: false, dateAjout: d(1),
+      photoUrl: u('chantier_travaux/t1.jpg'), photoUrls: [u('chantier_travaux/t1.jpg'), u('chantier_travaux/t2.jpg')],
+    });
+    await c('chantier_extras').add({
+      companyId: cid, chantierId: 'dc-multi', description: 'Cloison', mainOeuvre: '3 gars', dateTravaux: '2026-10-08', ajouteParNom: 'Paul', dateAjout: d(8),
+      photoUrl: u('chantier_extras/e1.jpg'), cheminPhoto: `${dossierC}/chantier_extras/e1.jpg`,
+      photoUrls: [u('chantier_extras/e1.jpg'), u('chantier_extras/e2.jpg')],
+      cheminsPhotos: [`${dossierC}/chantier_extras/e1.jpg`, `${dossierC}/chantier_extras/e2.jpg`],
+    });
+
+    const r = await adm.appeler('exporterChantier', { chantierId: 'dc-multi' });
+    const zip = await ouvrirZip((await telecharger(r.url)).octets);
+    const base = 'Chantier - Multi photos/';
+    // La première photo garde le nom d'avant ; les suivantes prennent _2, _3…
+    assert.equal(zip.lire(base + 'materiel/materiel_001.jpg'), 'MAT-1');
+    assert.equal(zip.lire(base + 'materiel/materiel_001_2.jpg'), 'MAT-2'); // la forgée est sautée, sans trou
+    assert.equal(zip.lire(base + 'materiel/materiel_001_3.jpg'), 'MAT-3');
+    assert.ok(!zip.noms.includes(base + 'materiel/materiel_001_4.jpg'), 'la photo forgée n\'est pas exportée');
+    assert.equal(zip.lire(base + 'materiel/materiel_002.jpg'), 'MAT-3', 'une demande à une seule photo : nom d\'avant');
+    assert.equal(zip.lire(base + 'travaux/travail_001.jpg'), 'TRA-1');
+    assert.equal(zip.lire(base + 'travaux/travail_001_2.jpg'), 'TRA-2');
+    assert.equal(zip.lire(base + 'extras/extra_001.jpg'), 'EXT-1');
+    assert.equal(zip.lire(base + 'extras/extra_001_2.jpg'), 'EXT-2');
+    assert.equal(r.ignores.filter((i) => i.includes('chemin refusé')).length, 1);
+    assert.ok(!zip.noms.map((n) => zip.lire(n) ?? '').join('\n').includes('SECRET-AUTRE-COMPAGNIE'));
+
+    const html = zip.lire(base + 'Resume.html');
+    assert.ok(html.includes('href="materiel/materiel_001.jpg">photo 1</a>'));
+    assert.ok(html.includes('href="materiel/materiel_001_2.jpg">photo 2</a>'));
+    assert.ok(html.includes('href="materiel/materiel_001_3.jpg">photo 3</a>'));
+    assert.ok(html.includes('href="materiel/materiel_002.jpg">photo</a>'));
+    assert.ok(html.includes('href="travaux/travail_001_2.jpg">photo 2</a>'));
+    assert.ok(html.includes('href="extras/extra_001_2.jpg">photo 2</a>'));
+
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(zip.octets(base + 'Dossier.xlsx'));
+    const materiel = wb.getWorksheet('Matériel');
+    assert.equal(materiel.getCell('F2').value, 'materiel/materiel_001.jpg; materiel/materiel_001_2.jpg; materiel/materiel_001_3.jpg');
+    assert.equal(materiel.getCell('F3').value, 'materiel/materiel_002.jpg');
+    assert.equal(wb.getWorksheet('Extras').getCell('E2').value, 'extras/extra_001.jpg; extras/extra_001_2.jpg');
+    assert.equal(wb.getWorksheet('Travaux à compléter').getCell('E2').value, 'travaux/travail_001.jpg; travaux/travail_001_2.jpg');
+  });
+
   test('chantier sans rien : export valide (ZIP avec résumé vide)', async () => {
     await adminDb.collection('chantiers').doc('dc-vide').set({ companyId: cid, nom: 'Vide / test: #1', adresse: '' });
     const r = await adm.appeler('exporterChantier', { chantierId: 'dc-vide' });
@@ -1162,6 +1539,317 @@ describe('Assistant de charpente (admin et contremaître ; clé d\'API côté se
 });
 
 // =============================================================================
+describe('Connexion web : NIP, puis code reçu par courriel (admins et contremaîtres seulement)', () => {
+  const NUM = '660001'; const cid = 'cw-compagnie'; const PIN = '482915';
+  const ADM = 'cw-admin@exemple.ca'; const PLUS = 'cw-plus@exemple.ca'; const EMP = 'cw-emp@exemple.ca';
+  const MESSAGE_RESERVE = 'Cet espace est réservé aux super-admins, admins et contremaîtres.';
+  const session = async (uid) => (await adminDb.collection('sessions').doc(uid).get()).data();
+  const connexion = async (uid) => (await adminDb.collection('connexions_web').doc(uid).get()).data();
+  const uidDe = (a) => a.auth.currentUser.uid;
+  const demander = (a, courriel, pin = PIN, numero = NUM) =>
+    a.appeler('connexionWeb', { numeroCompagnie: numero, courriel, pin });
+  const valider = (a, code) => a.appeler('validerConnexionWeb', { code });
+  const mauvais = (code) => (code === '000000' ? '000001' : '000000');
+  const nbCourriels = async (a) => (await adminDb.collection('_courriels_emulateur').where('a', '==', a).get()).size;
+
+  before(async () => {
+    await adminDb.collection('companies').doc(cid).set(
+      { numero: NUM, nomEntreprise: 'Web inc.', statut: 'approuvee', reglesPaie: {} });
+    const fiche = (nom, role, courriel, estProprietaire = false) =>
+      ({ companyId: cid, nom, role, estProprietaire, courriel, pinHash: hacher(cid, PIN) });
+    await adminDb.collection('employees').doc('cw-admin').set(fiche('Camille Admin', 'admin', ADM, true));
+    await adminDb.collection('employees').doc('cw-plus').set(fiche('Claude Contremaître', 'plus', PLUS));
+    await adminDb.collection('employees').doc('cw-emp').set(fiche('Chloé Employée', 'employe', EMP));
+  });
+
+  test('un employé avec le bon NIP : refusé par le serveur, sans session, sans code, sans courriel', async () => {
+    const a = await appareil();
+    await assert.rejects(demander(a, EMP), (e) => {
+      assert.equal(e.code, 'functions/permission-denied');
+      assert.equal(e.message, MESSAGE_RESERVE);
+      return true;
+    });
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
+    assert.equal((await adminDb.collection('connexions_web').doc(uidDe(a)).get()).exists, false);
+    assert.equal(await nbCourriels(EMP), 0);
+    // Un mauvais NIP ne révèle pas le rôle : même message générique qu'ailleurs.
+    await rejette(demander(a, EMP, '000000'), 'not-found');
+    // Rien ne change pour l'application mobile : l'employé s'y connecte toujours.
+    const mobile = await connecter(NUM, EMP, PIN);
+    assert.equal(mobile.profil.role, 'employe');
+  });
+
+  test('échecs : même message générique que connexionEmploye (numéro, courriel ou NIP faux)', async () => {
+    const a = await appareil();
+    const messages = [];
+    for (const essai of [
+      { numeroCompagnie: NUM, courriel: ADM, pin: '999999' },
+      { numeroCompagnie: NUM, courriel: 'inconnu@exemple.ca', pin: PIN },
+      { numeroCompagnie: '999999', courriel: ADM, pin: PIN },
+      { numeroCompagnie: NUM, courriel: ADM, pin: '1234' },
+    ]) {
+      await assert.rejects(a.appeler('connexionWeb', essai), (e) => {
+        assert.equal(e.code, 'functions/not-found');
+        messages.push(e.message);
+        return true;
+      });
+    }
+    assert.equal(new Set(messages).size, 1);
+    assert.equal(messages[0], 'Numéro de compagnie, courriel ou NIP invalide.');
+    await rejette(a.appeler('connexionWeb', { numeroCompagnie: NUM, pin: PIN }), 'invalid-argument');
+  });
+
+  test('limites par IP partagées avec connexionEmploye : 10 échecs → bloqué', async () => {
+    const a = await appareil();
+    for (let i = 0; i < 5; i++) {
+      await rejette(a.appeler('connexionEmploye', { numeroCompagnie: NUM, courriel: ADM, pin: `90000${i}` }), 'not-found');
+      await rejette(demander(a, ADM, `80000${i}`), 'not-found');
+    }
+    await rejette(demander(a, ADM), 'resource-exhausted');
+  });
+
+  test('admin : un code est envoyé, aucune session n\'est créée, le document est réservé au serveur', async () => {
+    const a = await appareil();
+    const uid = uidDe(a);
+    const r = await demander(a, 'CW-Admin@Exemple.ca');
+    assert.deepEqual(r, { etape: 'code', expireDans: 600, courrielMasque: 'c***@exemple.ca' });
+    assert.equal((await adminDb.collection('sessions').doc(uid).get()).exists, false, 'pas de session avant le code');
+
+    const c = await connexion(uid);
+    assert.equal(c.employeeId, 'cw-admin');
+    assert.equal(c.companyId, cid);
+    assert.equal(c.essais, 0);
+    assert.match(c.codeHash, /^[0-9a-f]{64}$/);
+    assert.ok(Math.abs(c.expireLe.toMillis() - (Date.now() + 10 * 60 * 1000)) < 20_000, 'expire dans 10 minutes');
+    assert.ok(c.creeLe);
+
+    const msg = await dernierCourriel(ADM, 'Code de connexion');
+    assert.equal(msg.sujet, 'Code de connexion — Chantier+');
+    const code = extraire(msg.texte, 'Votre code de connexion');
+    assert.match(code, /^\d{6}$/);
+    assert.ok(msg.texte.includes('10 minutes'));
+    assert.equal(c.codeHash, hacher('reinit:cw-admin', code), 'seule l\'empreinte du code est conservée');
+    assert.ok(!JSON.stringify(c).includes(code));
+
+    // Aucun accès du client à ce document, ni aux données de la compagnie.
+    await assert.rejects(getDoc(doc(a.db, 'connexions_web', uid)));
+    await assert.rejects(setDoc(doc(a.db, 'connexions_web', uid), { employeeId: 'cw-admin', companyId: cid, essais: 0 }));
+    await assert.rejects(getDoc(doc(a.db, 'companies', cid)));
+  });
+
+  test('bon code : même réponse que connexionEmploye, session web de 12 h, code consommé', async () => {
+    const mobile = await connecter(NUM, ADM, PIN);
+    const a = await appareil();
+    await demander(a, ADM);
+    const code = extraire((await dernierCourriel(ADM, 'Code de connexion')).texte, 'Votre code de connexion');
+    const profil = await valider(a, code);
+    assert.deepEqual(profil, mobile.profil, 'même structure et mêmes valeurs que connexionEmploye');
+    assert.deepEqual(Object.keys(profil).sort(),
+      ['companyId', 'companyNom', 'courriel', 'estProprietaire', 'estProprioApp', 'id', 'nom', 'role']);
+
+    const s = await session(uidDe(a));
+    assert.equal(s.canal, 'web');
+    assert.equal(s.employeeId, 'cw-admin');
+    assert.equal(s.companyId, cid);
+    assert.equal(s.proprioApp, false);
+    assert.ok(s.creeLe);
+    assert.ok(Math.abs(s.expireLe.toMillis() - (Date.now() + 12 * 3600 * 1000)) < 60_000, 'valable 12 h');
+    assert.equal((await adminDb.collection('connexions_web').doc(uidDe(a)).get()).exists, false, 'code consommé');
+    assert.ok((await getDoc(doc(a.db, 'companies', cid))).exists(), 'les lectures Firestore fonctionnent');
+
+    // Le code ne sert qu'une fois.
+    await assert.rejects(valider(a, code), (e) => {
+      assert.equal(e.code, 'functions/failed-precondition');
+      assert.equal(e.message, 'Code expiré. Recommencez.');
+      return true;
+    });
+
+    // La session de l'application, elle, n'a ni canal ni expiration.
+    const m = await session(uidDe(mobile));
+    assert.equal(m.expireLe, undefined);
+    assert.equal(m.canal, undefined);
+  });
+
+  test('contremaître : accepté aussi', async () => {
+    const w = await connecterWeb(NUM, PLUS, PIN);
+    assert.equal(w.profil.role, 'plus');
+    assert.equal((await session(uidDe(w))).canal, 'web');
+  });
+
+  test('mauvais code : refusé et compté ; à 5 essais le code est supprimé, même le bon ne sert plus', async () => {
+    const a = await appareil();
+    await demander(a, PLUS);
+    const code = extraire((await dernierCourriel(PLUS, 'Code de connexion')).texte, 'Votre code de connexion');
+    for (let i = 0; i < 4; i++) {
+      await assert.rejects(valider(a, mauvais(code)), (e) => {
+        assert.equal(e.code, 'functions/permission-denied');
+        return true;
+      });
+      assert.equal((await connexion(uidDe(a))).essais, i + 1);
+    }
+    await rejette(valider(a, mauvais(code)), 'resource-exhausted');
+    assert.equal((await adminDb.collection('connexions_web').doc(uidDe(a)).get()).exists, false);
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
+    await rejette(valider(a, code), 'failed-precondition');
+    // Il faut recommencer la première étape.
+    await demander(a, PLUS);
+    const neuf = extraire((await dernierCourriel(PLUS, 'Code de connexion')).texte, 'Votre code de connexion');
+    assert.equal((await valider(a, neuf)).role, 'plus');
+  });
+
+  test('quatre mauvais codes puis le bon : accepté', async () => {
+    const a = await appareil();
+    await demander(a, PLUS);
+    const code = extraire((await dernierCourriel(PLUS, 'Code de connexion')).texte, 'Votre code de connexion');
+    for (let i = 0; i < 4; i++) await rejette(valider(a, mauvais(code)), 'permission-denied');
+    assert.equal((await valider(a, code)).id, 'cw-plus');
+  });
+
+  test('code expiré (10 minutes) : refusé et supprimé', async () => {
+    const a = await appareil();
+    await demander(a, ADM);
+    const code = extraire((await dernierCourriel(ADM, 'Code de connexion')).texte, 'Votre code de connexion');
+    await adminDb.collection('connexions_web').doc(uidDe(a)).update({ expireLe: new Date(Date.now() - 1000) });
+    await rejette(valider(a, code), 'failed-precondition');
+    assert.equal((await adminDb.collection('connexions_web').doc(uidDe(a)).get()).exists, false);
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
+  });
+
+  test('le code d\'un autre appareil ne sert à rien ; sans première étape : « code expiré »', async () => {
+    const a = await appareil();
+    const intrus = await appareil();
+    await demander(a, ADM);
+    const code = extraire((await dernierCourriel(ADM, 'Code de connexion')).texte, 'Votre code de connexion');
+    await rejette(valider(intrus, code), 'failed-precondition');
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(intrus)).get()).exists, false);
+    assert.equal((await valider(a, code)).id, 'cw-admin', 'le code de l\'appareil d\'origine reste valable');
+  });
+
+  test('format du code invalide : refusé sans consommer d\'essai', async () => {
+    const a = await appareil();
+    await demander(a, ADM);
+    for (const mauvaisFormat of ['abc', '12345', '1234567', '12 456', '', null, 123456]) {
+      await rejette(valider(a, mauvaisFormat), 'invalid-argument');
+    }
+    assert.equal((await connexion(uidDe(a))).essais, 0);
+  });
+
+  test('une nouvelle demande remplace le code précédent', async () => {
+    const a = await appareil();
+    await demander(a, PLUS);
+    const ancien = extraire((await dernierCourriel(PLUS, 'Code de connexion')).texte, 'Votre code de connexion');
+    await demander(a, PLUS);
+    const recent = extraire((await dernierCourriel(PLUS, 'Code de connexion')).texte, 'Votre code de connexion');
+    assert.equal((await connexion(uidDe(a))).essais, 0);
+    if (ancien !== recent) await rejette(valider(a, ancien), 'permission-denied');
+    assert.equal((await valider(a, recent)).role, 'plus');
+  });
+
+  test('envoi limité : 5 codes par heure et par employé', async () => {
+    const a = await appareil();
+    const avant = await nbCourriels(PLUS);
+    for (let i = 0; i < 5; i++) await demander(a, PLUS);
+    await rejette(demander(a, PLUS), 'resource-exhausted');
+    assert.equal(await nbCourriels(PLUS) - avant, 5, 'aucun courriel de plus');
+    // Un autre employé n'est pas touché.
+    await demander(a, ADM);
+  });
+
+  test('rétrogradé, retiré ou compagnie bloquée entre les deux étapes : aucune session', async () => {
+    // Rétrogradé en « employé ».
+    const a = await appareil();
+    await demander(a, PLUS);
+    const code = extraire((await dernierCourriel(PLUS, 'Code de connexion')).texte, 'Votre code de connexion');
+    await adminDb.collection('employees').doc('cw-plus').update({ role: 'employe' });
+    await assert.rejects(valider(a, code), (e) => {
+      assert.equal(e.code, 'functions/permission-denied');
+      assert.equal(e.message, MESSAGE_RESERVE);
+      return true;
+    });
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
+    await adminDb.collection('employees').doc('cw-plus').update({ role: 'plus' });
+
+    // Compagnie en cours de suppression.
+    const b = await appareil();
+    await demander(b, ADM);
+    const codeB = extraire((await dernierCourriel(ADM, 'Code de connexion')).texte, 'Votre code de connexion');
+    await adminDb.collection('companies').doc(cid).update({ statut: 'suppression' });
+    await rejette(valider(b, codeB), 'permission-denied');
+    await adminDb.collection('companies').doc(cid).update({ statut: 'approuvee' });
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(b)).get()).exists, false);
+  });
+
+  test('retrait d\'un employé : son code de connexion en attente disparaît', async () => {
+    await adminDb.collection('employees').doc('cw-temp').set({
+      companyId: cid, nom: 'Temp Contremaître', role: 'plus', estProprietaire: false,
+      courriel: 'cw-temp@exemple.ca', pinHash: hacher(cid, PIN),
+    });
+    const a = await appareil();
+    await demander(a, 'cw-temp@exemple.ca');
+    const code = extraire((await dernierCourriel('cw-temp@exemple.ca', 'Code de connexion')).texte, 'Votre code de connexion');
+    assert.ok(await connexion(uidDe(a)));
+    const sa = await connecter(NUM, ADM, PIN);
+    assert.deepEqual(await sa.appeler('supprimerEmploye', { employeeId: 'cw-temp' }), { ok: true });
+    assert.equal((await adminDb.collection('connexions_web').doc(uidDe(a)).get()).exists, false);
+    await rejette(valider(a, code), 'failed-precondition');
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
+  });
+});
+
+// =============================================================================
+describe('Sessions de l\'espace web : expiration à 12 h (fonctions et règles)', () => {
+  const NUM = '660001'; const cid = 'cw-compagnie'; const PIN = '482915';
+  const ADM = 'cw-admin@exemple.ca';
+  const fixer = (a, expireLe) => adminDb.collection('sessions').doc(a.auth.currentUser.uid).update({ expireLe });
+  const heures = (h) => new Date(Date.now() + h * 3600 * 1000);
+  let w;
+  before(async () => { w = await connecterWeb(NUM, ADM, PIN); });
+
+  test('session valide : fonctions et lectures Firestore fonctionnent', async () => {
+    await fixer(w, heures(11));
+    assert.ok((await getDoc(doc(w.db, 'companies', cid))).exists());
+    assert.equal((await w.appeler('recalculerSemaineCourante')).semaine, lundi(0));
+  });
+
+  test('session expirée : fonctions et Firestore refusent, avec le message de reconnexion', async () => {
+    await fixer(w, heures(-0.01));
+    await assert.rejects(w.appeler('recalculerSemaineCourante'), (e) => {
+      assert.equal(e.code, 'functions/permission-denied');
+      assert.equal(e.message, 'Session expirée. Reconnectez-vous.');
+      return true;
+    });
+    await rejette(w.appeler('enregistrerFeuilleTemps', { lundiDate: lundi(0), jours: [] }), 'permission-denied');
+    await assert.rejects(getDoc(doc(w.db, 'companies', cid)));
+    await assert.rejects(getDocs(query(collection(w.db, 'employees'), where('companyId', '==', cid))));
+  });
+
+  test('expireLe illisible : refusé (jamais « sans limite »)', async () => {
+    for (const valeur of ['demain', 12, null]) {
+      await fixer(w, valeur);
+      await rejette(w.appeler('recalculerSemaineCourante'), 'permission-denied');
+      await assert.rejects(getDoc(doc(w.db, 'companies', cid)));
+    }
+  });
+
+  test('se reconnecter (NIP puis code) rend l\'accès', async () => {
+    await fixer(w, heures(-1));
+    await assert.rejects(getDoc(doc(w.db, 'companies', cid)));
+    await w.appeler('connexionWeb', { numeroCompagnie: NUM, courriel: ADM, pin: PIN });
+    const code = extraire((await dernierCourriel(ADM, 'Code de connexion')).texte, 'Votre code de connexion');
+    await w.appeler('validerConnexionWeb', { code });
+    assert.ok((await getDoc(doc(w.db, 'companies', cid))).exists());
+    assert.equal((await w.appeler('recalculerSemaineCourante')).semaine, lundi(0));
+  });
+
+  test('une session de l\'application (sans expireLe) n\'expire jamais', async () => {
+    const m = await connecter(NUM, ADM, PIN);
+    await adminDb.collection('sessions').doc(m.auth.currentUser.uid).update({ creeLe: new Date(Date.now() - 400 * 24 * 3600 * 1000) });
+    assert.ok((await getDoc(doc(m.db, 'companies', cid))).exists());
+    assert.equal((await m.appeler('recalculerSemaineCourante')).semaine, lundi(0));
+  });
+});
+
+// =============================================================================
 describe('Limites anti-force brute', () => {
   test('connexion : blocage après 10 échecs par IP', async () => {
     const a = await appareil();
@@ -1189,7 +1877,7 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
   const NUM_CIBLE = '770001'; const NUM_TEMOIN = '770002';
   const bucket = () => getAdminStorage(adminApp).bucket(BUCKET);
   const COLLECTIONS = ['chantiers', 'chantier_photos', 'chantier_travaux', 'chantier_materiel',
-    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'materiel_general_vus', 'feuilles_temps'];
+    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'materiel_general_vus', 'liste_achats', 'connexions_web', 'feuilles_temps'];
 
   const existe = async (chemin) => (await adminDb.doc(chemin).get()).exists;
   const compter = async (collection, cid) =>
@@ -1224,13 +1912,13 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
   // Compteurs anti-abus : semés juste avant l'appel (le beforeEach global les vide).
   async function semerLimites(cid) {
     for (const suffixe of ['admin', 'plus', 'emp']) {
-      for (const p of ['feuille', 'export', 'nip', 'assistant_h']) {
+      for (const p of ['feuille', 'corrfeuille', 'recalcul', 'export', 'nip', 'assistant_h', 'connweb', 'renvoi']) {
         await adminDb.collection('limites_connexion').doc(`${p}_${cid}-${suffixe}`).set({ compte: 1 });
       }
     }
     await adminDb.collection('limites_connexion').doc(`co_${cid}`).set({ compte: 1 });
     await adminDb.collection('limites_connexion').doc(`assistant_j_${cid}`).set({ compte: 1 });
-    assert.equal(await limitesDe(cid), 3 * 4 + 2);
+    assert.equal(await limitesDe(cid), 3 * 8 + 2);
   }
 
   const etatIntact = async (cid) => {
@@ -1324,7 +2012,7 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
     // La compagnie témoin et celle du Proprio n'ont pas bougé.
     await etatIntact(TEMOIN);
     assert.equal(await compter('sessions', TEMOIN), sessionsTemoin);
-    assert.equal(await limitesDe(TEMOIN), 3 * 4 + 2);
+    assert.equal(await limitesDe(TEMOIN), 3 * 8 + 2);
     assert.equal(await existe('config/proprio_app'), true);
     assert.equal((await adminDb.collection('companies').where('numero', '==', numeroS).get()).size, 1);
 
