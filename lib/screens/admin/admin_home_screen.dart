@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../../services/liste_achats_source.dart';
 import '../../services/materiel_general_source.dart';
 import '../../services/theme_compagnie.dart';
 import 'couleur_compagnie_screen.dart';
+import 'liste_achats_screen.dart';
 import 'materiel_general_screen.dart';
 import 'regles_paie_screen.dart';
 import 'semaine_liste_screen.dart';
@@ -14,7 +16,11 @@ class AdminHomeScreen extends StatelessWidget {
   @visibleForTesting
   final SourceMaterielGeneral? sourceMateriel;
 
-  const AdminHomeScreen({super.key, this.sourceMateriel});
+  /// Remplace Firestore pour la Liste d'achats (tests).
+  @visibleForTesting
+  final SourceListeAchats? sourceAchats;
+
+  const AdminHomeScreen({super.key, this.sourceMateriel, this.sourceAchats});
 
   @override
   Widget build(BuildContext context) {
@@ -82,6 +88,22 @@ class AdminHomeScreen extends StatelessWidget {
                 MaterialPageRoute(
                   builder: (_) =>
                       ChantiersGestionScreen(sourceMateriel: sourceMateriel),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.shopping_cart_checkout, color: accent),
+            title: const Text('Liste d\'achats'),
+            subtitle: const Text('Matériel à acheter, transféré depuis Général'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ListeAchatsScreen(source: sourceAchats),
                 ),
               );
             },

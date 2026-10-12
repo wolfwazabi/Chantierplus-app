@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../charpente/escalier.dart';
+import '../../charpente/escalier_solveur.dart';
 import '../../charpente/escalier_texte.dart';
 import '../../charpente/unites.dart';
 import '../../services/preferences.dart';
 import 'champs.dart';
+import 'schema_coupes.dart';
 import 'schema_limon.dart';
 
 /// Calcul des limons d'un escalier droit : nombre et hauteur des contremarches,
@@ -35,15 +37,46 @@ class _EcranEscalierState extends State<EcranEscalier> {
   SectionLimon _section = SectionLimon.s2x12;
   double _entraxe = 16;
 
-  SpecEscalier _spec(bool metrique) => SpecEscalier(
-    hauteurTotale: _hauteur,
+  // Mode « à partir de ce que je connais » : 2 données ou plus, le calcul trouve le
+  // reste avec les girons et contremarches idéals du Code.
+  bool _modeDonnees = false;
+  Set<DonneeEscalier> _connues = {DonneeEscalier.hauteur, DonneeEscalier.course};
+  double _dHauteur = 108;
+  double _dCourse = 144;
+  double _dGiron = 10.25;
+  double _dContremarche = 7.25;
+  int _dNombre = 15;
+
+  DonneesEscalier _donnees() => DonneesEscalier(
+    hauteur: _connues.contains(DonneeEscalier.hauteur) ? _dHauteur : null,
+    course: _connues.contains(DonneeEscalier.course) ? _dCourse : null,
+    giron: _connues.contains(DonneeEscalier.giron) ? _dGiron : null,
+    contremarche: _connues.contains(DonneeEscalier.contremarche)
+        ? _dContremarche
+        : null,
+    nombre: _connues.contains(DonneeEscalier.nombre) ? _dNombre : null,
+  );
+
+  static String _nomDonnee(DonneeEscalier d) => switch (d) {
+    DonneeEscalier.hauteur => 'Hauteur',
+    DonneeEscalier.course => 'Course',
+    DonneeEscalier.giron => 'Giron',
+    DonneeEscalier.contremarche => 'Contremarche',
+    DonneeEscalier.nombre => 'Nombre de contremarches',
+  };
+
+  SpecEscalier _spec(bool metrique, SolutionEscalier? sol) => SpecEscalier(
+    // Mode « données connues » : hauteur, nombre et giron viennent de la solution.
+    hauteurTotale: sol?.hauteur ?? _hauteur,
     largeur: _largeur,
     usage: _usage,
-    mode: _mode,
-    giron: _giron,
+    mode: sol == null ? _mode : ModeCourse.gironFixe,
+    giron: sol?.giron ?? _giron,
     courseDisponible: _course,
     contremarcheSouhaitee: _souhaitee,
-    nombreContremarches: _nombreImpose ? _nombre : null,
+    nombreContremarches: sol != null
+        ? sol.nombreContremarches
+        : (_nombreImpose ? _nombre : null),
     epaisseurMarche: _epaisseurMarche,
     nez: _nez,
     contremarchesFermees: _fermees,
@@ -61,9 +94,13 @@ class _EcranEscalierState extends State<EcranEscalier> {
       builder: (context, _, _) {
         final metrique = Preferences.estMetrique;
         ResultatEscalier? res;
+        SolutionEscalier? sol;
         String? erreur;
         try {
-          res = calculerEscalier(_spec(metrique), metrique: metrique);
+          if (_modeDonnees) {
+            sol = resoudreEscalier(_donnees(), usage: _usage, metrique: metrique);
+          }
+          res = calculerEscalier(_spec(metrique, sol), metrique: metrique);
         } on EscalierInvalide catch (e) {
           erreur = e.message;
         }
@@ -74,7 +111,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
             if (erreur != null)
               BlocMessages([erreur], erreur: true, key: const ValueKey('escalier_erreur'))
             else if (res != null)
-              ..._resultats(res, metrique),
+              ..._resultats(res, metrique, sol),
           ],
         );
       },
@@ -86,19 +123,33 @@ class _EcranEscalierState extends State<EcranEscalier> {
   List<Widget> _formulaire() {
     const espace = SizedBox(height: 12);
     return [
+      SwitchListTile(
+        key: const ValueKey('escalier_mode_donnees'),
+        contentPadding: EdgeInsets.zero,
+        title: const Text('Partir de ce que je connais'),
+        subtitle: const Text(
+          'Hauteur, course, giron, contremarche ou nombre : donnez-en 2 ou plus, '
+          'le calcul trouve le reste avec les dimensions idéales du Code.',
+        ),
+        value: _modeDonnees,
+        onChanged: (v) => setState(() => _modeDonnees = v),
+      ),
+      if (_modeDonnees) ..._panneauDonnees(),
       const TitreSection(
         'Dimensions',
         aide: 'Du plancher fini du bas au plancher fini du haut.',
       ),
-      ChampLongueur(
-        key: const ValueKey('escalier_hauteur'),
-        label: 'Hauteur totale',
-        valeur: _hauteur,
-        min: 4,
-        max: 400,
-        onChange: (v) => setState(() => _hauteur = v),
-      ),
-      espace,
+      if (!_modeDonnees) ...[
+        ChampLongueur(
+          key: const ValueKey('escalier_hauteur'),
+          label: 'Hauteur totale',
+          valeur: _hauteur,
+          min: 4,
+          max: 400,
+          onChange: (v) => setState(() => _hauteur = v),
+        ),
+        espace,
+      ],
       ChampLongueur(
         key: const ValueKey('escalier_largeur'),
         label: 'Largeur libre de l\'escalier',
@@ -119,69 +170,71 @@ class _EcranEscalierState extends State<EcranEscalier> {
         onSelectionChanged: (s) => setState(() => _usage = s.first),
       ),
       const TitreSection('Marches'),
-      SegmentedButton<ModeCourse>(
-        key: const ValueKey('escalier_mode'),
-        showSelectedIcon: false,
-        segments: const [
-          ButtonSegment(value: ModeCourse.gironFixe, label: Text('Giron voulu')),
-          ButtonSegment(
-            value: ModeCourse.courseDisponible,
-            label: Text('Course disponible'),
+      if (!_modeDonnees) ...[
+        SegmentedButton<ModeCourse>(
+          key: const ValueKey('escalier_mode'),
+          showSelectedIcon: false,
+          segments: const [
+            ButtonSegment(value: ModeCourse.gironFixe, label: Text('Giron voulu')),
+            ButtonSegment(
+              value: ModeCourse.courseDisponible,
+              label: Text('Course disponible'),
+            ),
+          ],
+          selected: {_mode},
+          onSelectionChanged: (s) => setState(() => _mode = s.first),
+        ),
+        espace,
+        if (_mode == ModeCourse.gironFixe)
+          ChampLongueur(
+            key: const ValueKey('escalier_giron'),
+            label: 'Giron (nez à nez)',
+            valeur: _giron,
+            min: 4,
+            max: 24,
+            onChange: (v) => setState(() => _giron = v),
+          )
+        else
+          ChampLongueur(
+            key: const ValueKey('escalier_course'),
+            label: 'Course horizontale disponible',
+            aide:
+                'De la face de la 1re contremarche à la face du plancher du haut.',
+            valeur: _course,
+            min: 4,
+            max: 1200,
+            onChange: (v) => setState(() => _course = v),
           ),
-        ],
-        selected: {_mode},
-        onSelectionChanged: (s) => setState(() => _mode = s.first),
-      ),
-      espace,
-      if (_mode == ModeCourse.gironFixe)
+        espace,
         ChampLongueur(
-          key: const ValueKey('escalier_giron'),
-          label: 'Giron (nez à nez)',
-          valeur: _giron,
-          min: 4,
-          max: 24,
-          onChange: (v) => setState(() => _giron = v),
-        )
-      else
-        ChampLongueur(
-          key: const ValueKey('escalier_course'),
-          label: 'Course horizontale disponible',
-          aide:
-              'De la face de la 1re contremarche à la face du plancher du haut.',
-          valeur: _course,
-          min: 4,
-          max: 1200,
-          onChange: (v) => setState(() => _course = v),
+          key: const ValueKey('escalier_souhaitee'),
+          label: 'Contremarche visée',
+          aide: 'Sert à choisir le nombre de contremarches.',
+          valeur: _souhaitee,
+          min: 3,
+          max: 12,
+          onChange: (v) => setState(() => _souhaitee = v),
         ),
-      espace,
-      ChampLongueur(
-        key: const ValueKey('escalier_souhaitee'),
-        label: 'Contremarche visée',
-        aide: 'Sert à choisir le nombre de contremarches.',
-        valeur: _souhaitee,
-        min: 3,
-        max: 12,
-        onChange: (v) => setState(() => _souhaitee = v),
-      ),
-      SwitchListTile(
-        key: const ValueKey('escalier_nombre_impose'),
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Choisir le nombre de contremarches'),
-        subtitle: const Text('Sinon, le calcul le choisit.'),
-        value: _nombreImpose,
-        onChanged: (v) => setState(() => _nombreImpose = v),
-      ),
-      if (_nombreImpose)
-        ChampNombre(
-          key: const ValueKey('escalier_nombre'),
-          label: 'Nombre de contremarches',
-          valeur: _nombre.toDouble(),
-          min: 2,
-          max: 100,
-          decimales: 0,
-          onChange: (v) => setState(() => _nombre = v.round()),
+        SwitchListTile(
+          key: const ValueKey('escalier_nombre_impose'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Choisir le nombre de contremarches'),
+          subtitle: const Text('Sinon, le calcul le choisit.'),
+          value: _nombreImpose,
+          onChanged: (v) => setState(() => _nombreImpose = v),
         ),
-      espace,
+        if (_nombreImpose)
+          ChampNombre(
+            key: const ValueKey('escalier_nombre'),
+            label: 'Nombre de contremarches',
+            valeur: _nombre.toDouble(),
+            min: 2,
+            max: 100,
+            decimales: 0,
+            onChange: (v) => setState(() => _nombre = v.round()),
+          ),
+        espace,
+      ],
       ChampLongueur(
         key: const ValueKey('escalier_ep_marche'),
         label: 'Épaisseur de la marche',
@@ -240,9 +293,145 @@ class _EcranEscalierState extends State<EcranEscalier> {
     ];
   }
 
+  /// Les données connues : on coche ce qu'on sait (2 ou plus), on les saisit.
+  List<Widget> _panneauDonnees() {
+    const espace = SizedBox(height: 12);
+    void bascule(DonneeEscalier d, bool connue) => setState(() {
+      _connues = connue ? {..._connues, d} : ({..._connues}..remove(d));
+    });
+    return [
+      const TitreSection(
+        'Ce que vous connaissez',
+        aide: 'Cochez au moins 2 données : le calcul trouve les autres.',
+      ),
+      Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          for (final d in DonneeEscalier.values)
+            FilterChip(
+              key: ValueKey('escalier_donnee_${d.name}'),
+              label: Text(_nomDonnee(d)),
+              selected: _connues.contains(d),
+              onSelected: (v) => bascule(d, v),
+            ),
+        ],
+      ),
+      if (_connues.contains(DonneeEscalier.hauteur)) ...[
+        espace,
+        ChampLongueur(
+          key: const ValueKey('escalier_d_hauteur'),
+          label: 'Hauteur totale',
+          aide: 'Du plancher fini du bas au plancher fini du haut.',
+          valeur: _dHauteur,
+          min: 4,
+          max: 400,
+          onChange: (v) => setState(() => _dHauteur = v),
+        ),
+      ],
+      if (_connues.contains(DonneeEscalier.course)) ...[
+        espace,
+        ChampLongueur(
+          key: const ValueKey('escalier_d_course'),
+          label: 'Course horizontale',
+          aide: 'De la face de la 1re contremarche à la face du plancher du haut.',
+          valeur: _dCourse,
+          min: 4,
+          max: 1200,
+          onChange: (v) => setState(() => _dCourse = v),
+        ),
+      ],
+      if (_connues.contains(DonneeEscalier.giron)) ...[
+        espace,
+        ChampLongueur(
+          key: const ValueKey('escalier_d_giron'),
+          label: 'Giron (nez à nez)',
+          valeur: _dGiron,
+          min: 4,
+          max: 24,
+          onChange: (v) => setState(() => _dGiron = v),
+        ),
+      ],
+      if (_connues.contains(DonneeEscalier.contremarche)) ...[
+        espace,
+        ChampLongueur(
+          key: const ValueKey('escalier_d_contremarche'),
+          label: 'Contremarche',
+          valeur: _dContremarche,
+          min: 3,
+          max: 12,
+          onChange: (v) => setState(() => _dContremarche = v),
+        ),
+      ],
+      if (_connues.contains(DonneeEscalier.nombre)) ...[
+        espace,
+        ChampNombre(
+          key: const ValueKey('escalier_d_nombre'),
+          label: 'Nombre de contremarches',
+          valeur: _dNombre.toDouble(),
+          min: 2,
+          max: 100,
+          decimales: 0,
+          onChange: (v) => setState(() => _dNombre = v.round()),
+        ),
+      ],
+    ];
+  }
+
+  /// Ce qui a été donné et ce qui a été trouvé, avec les explications.
+  Widget _carteSolution(SolutionEscalier s, bool metrique) {
+    String l(double po) => formatLongueur(po, metrique: metrique);
+    String etat(DonneeEscalier d) =>
+        s.donnees.contains(d) ? 'donnée' : 'trouvée';
+    final valeurs = <DonneeEscalier, String>{
+      DonneeEscalier.hauteur: l(s.hauteur),
+      DonneeEscalier.course: l(s.course),
+      DonneeEscalier.giron: l(s.giron),
+      DonneeEscalier.contremarche: l(s.contremarche),
+      DonneeEscalier.nombre: '${s.nombreContremarches}',
+    };
+    return Card(
+      key: const ValueKey('escalier_solution'),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final d in DonneeEscalier.values)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: _nomDonnee(d),
+                        style: TextStyle(
+                          fontWeight: s.donnees.contains(d)
+                              ? FontWeight.w500
+                              : FontWeight.w700,
+                        ),
+                      ),
+                      TextSpan(text: '  ${valeurs[d]}  (${etat(d)})'),
+                    ],
+                  ),
+                  key: ValueKey('escalier_solution_${d.name}'),
+                ),
+              ),
+            for (final n in s.notes)
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Text(n, style: const TextStyle(fontSize: 12)),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ------------------------------------------------------------------ Résultats
 
-  List<Widget> _resultats(ResultatEscalier r, bool metrique) {
+  List<Widget> _resultats(ResultatEscalier r, bool metrique, SolutionEscalier? sol) {
     String l(double po) => formatLongueur(po, metrique: metrique);
     String mm(double po) => '${formatNombre(poucesEnMm(po), decimales: 1)} mm';
     final s = r.spec;
@@ -256,6 +445,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
         [for (final v in r.avertissements) v.message],
         key: const ValueKey('escalier_avertissements'),
       ),
+      if (sol != null) ...[
+        const TitreSection('Trouvé à partir de vos données'),
+        _carteSolution(sol, metrique),
+      ],
       const TitreSection('Escalier'),
       _Carte(
         cle: 'escalier_resume',
@@ -275,7 +468,30 @@ class _EcranEscalierState extends State<EcranEscalier> {
           _Ligne('Pente', formatAngle(r.angle)),
         ],
       ),
-      if (r.variantes.isNotEmpty) ...[
+      if (sol != null && sol.autresChoix.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Text('Autres choix conformes', style: Theme.of(context).textTheme.labelLarge),
+        const SizedBox(height: 4),
+        Wrap(
+          spacing: 6,
+          runSpacing: 4,
+          children: [
+            for (final c in sol.autresChoix)
+              ActionChip(
+                key: ValueKey('escalier_choix_${c.nombreContremarches}'),
+                label: Text(
+                  '${c.nombreContremarches} × ${l(c.contremarche)}, '
+                  'giron ${l(c.giron)}',
+                ),
+                // Impose ce nombre : les autres données s'ajustent.
+                onPressed: () => setState(() {
+                  _connues = {..._connues, DonneeEscalier.nombre};
+                  _dNombre = c.nombreContremarches;
+                }),
+              ),
+          ],
+        ),
+      ] else if (sol == null && r.variantes.isNotEmpty) ...[
         const SizedBox(height: 8),
         Text('Autres choix conformes', style: Theme.of(context).textTheme.labelLarge),
         const SizedBox(height: 4),
@@ -334,6 +550,8 @@ class _EcranEscalierState extends State<EcranEscalier> {
           ),
         ],
       ),
+      // Les coupes et la pente dessinées : gabarit de l equerre, pied et tete du limon.
+      SchemaCoupes(resultat: r, metrique: metrique),
       ExpansionTile(
         key: const ValueKey('escalier_trace'),
         tilePadding: EdgeInsets.zero,

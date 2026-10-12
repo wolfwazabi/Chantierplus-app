@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'chantier.dart';
 import 'employee.dart';
+import 'photos_entree.dart';
 
 /// Une demande de matériel (collection `chantier_materiel`).
 ///
@@ -12,7 +13,9 @@ class EntreeMateriel {
   final String id;
   final String texte;
   final String quantite;
-  final String? photoUrl;
+
+  /// Toutes les photos, dans l'ordre (jusqu'à [maxPhotosParEntree]).
+  final List<String> photos;
   final bool complete;
 
   /// Auteur de la demande ('' si inconnu : entrée sans auteur).
@@ -23,11 +26,16 @@ class EntreeMateriel {
   final String? modifiePar;
   final DateTime? dateComplete;
 
+  /// Transférée à la Liste d'achats par un admin : elle reste visible pour son auteur
+  /// jusqu'à ce qu'elle soit marquée faite, mais lui seul (un admin) la modifie.
+  final bool transfere;
+  final String transfereParNom;
+
   const EntreeMateriel({
     required this.id,
     required this.texte,
     this.quantite = '',
-    this.photoUrl,
+    this.photos = const [],
     this.complete = false,
     this.auteurId = '',
     this.auteurNom = '',
@@ -35,17 +43,18 @@ class EntreeMateriel {
     this.dateModif,
     this.modifiePar,
     this.dateComplete,
+    this.transfere = false,
+    this.transfereParNom = '',
   });
 
   factory EntreeMateriel.fromMap(String id, Map<String, dynamic> d) {
     String texteDe(Object? v) => v is String ? v : '';
-    final photo = d['photoUrl'];
     final modif = d['modifiePar'];
     return EntreeMateriel(
       id: id,
       texte: texteDe(d['texte']),
       quantite: d['quantite'] == null ? '' : d['quantite'].toString(),
-      photoUrl: photo is String && photo.isNotEmpty ? photo : null,
+      photos: photosDe(d),
       complete: d['complete'] == true,
       auteurId: texteDe(d['ajoutePar']),
       auteurNom: texteDe(d['ajouteParNom']),
@@ -53,8 +62,37 @@ class EntreeMateriel {
       dateModif: _date(d['dateModif']),
       modifiePar: modif is String && modif.isNotEmpty ? modif : null,
       dateComplete: _date(d['dateComplete']),
+      transfere: d['transfere'] == true,
+      transfereParNom: texteDe(d['transfereParNom']),
     );
   }
+
+  /// La première photo (la vignette).
+  String? get photoUrl => photos.isEmpty ? null : photos.first;
+
+  /// Cette demande avec quelques champs changés.
+  EntreeMateriel copieAvec({
+    bool? complete,
+    DateTime? dateModif,
+    String? modifiePar,
+    DateTime? dateComplete,
+    bool? transfere,
+    String? transfereParNom,
+  }) => EntreeMateriel(
+    id: id,
+    texte: texte,
+    quantite: quantite,
+    photos: photos,
+    complete: complete ?? this.complete,
+    auteurId: auteurId,
+    auteurNom: auteurNom,
+    dateAjout: dateAjout,
+    dateModif: dateModif ?? this.dateModif,
+    modifiePar: modifiePar ?? this.modifiePar,
+    dateComplete: dateComplete ?? this.dateComplete,
+    transfere: transfere ?? this.transfere,
+    transfereParNom: transfereParNom ?? this.transfereParNom,
+  );
 
   /// Dernier changement : la modification, sinon l'ajout. Absent tant que le
   /// serveur n'a pas donné l'heure (écriture en cours).
@@ -72,7 +110,15 @@ class EntreeMateriel {
 
 /// Un changement est « non vu » par [moiId] si quelqu'un d'autre l'a fait après
 /// la dernière visite [vuLe] de cette personne (jamais visitée : tout est nouveau).
-bool estNonVu(EntreeMateriel e, {required String moiId, DateTime? vuLe}) {
+/// [marqueNonLu] : l'admin a lui-même marqué la demande « non lu » (appui long) ;
+/// elle reste alors non vue jusqu'à l'ouverture de son groupe.
+bool estNonVu(
+  EntreeMateriel e, {
+  required String moiId,
+  DateTime? vuLe,
+  bool marqueNonLu = false,
+}) {
+  if (marqueNonLu) return true;
   final quand = e.dateChangement;
   if (quand == null) return false;
   if (e.changePar == moiId) return false;
@@ -84,7 +130,8 @@ class GroupeAuteur {
   final String auteurId;
   final String nom;
 
-  /// À acheter d'abord (le plus récent en premier), puis les obtenues.
+  /// À acheter d'abord (le plus récent en premier), puis celles dans la Liste
+  /// d'achats, puis les obtenues.
   final List<EntreeMateriel> entrees;
 
   /// Changements que [moiId] n'a pas encore vus dans ce groupe.
@@ -97,8 +144,12 @@ class GroupeAuteur {
     required this.nonVus,
   });
 
-  int get aAcheter => entrees.where((e) => !e.complete).length;
-  int get obtenues => entrees.length - aAcheter;
+  /// Encore à acheter (pas transférées).
+  int get aAcheter => entrees.where((e) => !e.complete && !e.transfere).length;
+
+  /// Transférées à la Liste d'achats, pas encore faites.
+  int get enAchat => entrees.where((e) => !e.complete && e.transfere).length;
+  int get obtenues => entrees.where((e) => e.complete).length;
 }
 
 const String nomAuteurInconnu = 'Auteur inconnu';
@@ -117,11 +168,13 @@ int _comparerRecents(EntreeMateriel a, EntreeMateriel b) {
 
 /// Sépare les demandes par auteur, dans l'ordre alphabétique des noms (un ordre
 /// stable : un groupe ne saute pas de place quand on l'ouvre). [vus] : dernière
-/// visite de [moiId] pour chaque auteur (voir [cleVu]).
+/// visite de [moiId] pour chaque auteur (voir [cleVu]) ; [nonLus] : identifiants
+/// des demandes qu'il a marquées « non lu ».
 List<GroupeAuteur> grouperParAuteur(
   List<EntreeMateriel> entrees, {
   required String moiId,
   Map<String, DateTime> vus = const {},
+  Set<String> nonLus = const {},
 }) {
   final parAuteur = <String, List<EntreeMateriel>>{};
   for (final e in entrees) {
@@ -134,7 +187,8 @@ List<GroupeAuteur> grouperParAuteur(
         .map((e) => e.auteurNom)
         .firstWhere((n) => n.isNotEmpty, orElse: () => nomAuteurInconnu);
     final ordonnees = [
-      ...recents.where((e) => !e.complete),
+      ...recents.where((e) => !e.complete && !e.transfere),
+      ...recents.where((e) => !e.complete && e.transfere),
       ...recents.where((e) => e.complete),
     ];
     groupes.add(
@@ -143,7 +197,14 @@ List<GroupeAuteur> grouperParAuteur(
         nom: nom,
         entrees: ordonnees,
         nonVus: liste
-            .where((e) => estNonVu(e, moiId: moiId, vuLe: vus[cleVu(auteurId)]))
+            .where(
+              (e) => estNonVu(
+                e,
+                moiId: moiId,
+                vuLe: vus[cleVu(auteurId)],
+                marqueNonLu: nonLus.contains(e.id),
+              ),
+            )
             .length,
       ),
     );
@@ -175,6 +236,54 @@ Map<String, DateTime> vusDepuisDonnees(Map<String, dynamic>? data) {
   return resultat;
 }
 
+/// Les demandes (identifiant → données) du plus récent au plus ancien ; celles dont
+/// l'heure du serveur n'est pas encore reçue (écriture en cours) en premier.
+List<MapEntry<String, Map<String, dynamic>>> ordonnerParRecence(
+  List<MapEntry<String, Map<String, dynamic>>> entrees,
+) {
+  DateTime? quand(MapEntry<String, Map<String, dynamic>> e) {
+    final v = e.value['dateAjout'];
+    return v is Timestamp ? v.toDate() : (v is DateTime ? v : null);
+  }
+
+  return [...entrees]..sort((a, b) {
+    final da = quand(a);
+    final db = quand(b);
+    if (da == null && db == null) return 0;
+    if (da == null) return -1;
+    if (db == null) return 1;
+    return db.compareTo(da);
+  });
+}
+
+/// L'auteur à imposer dans la requête Firestore de la liste Général : un
+/// contremaître ne demande que SA liste (les règles refusent tout le reste) ; un
+/// admin demande toutes les listes (null : aucune restriction).
+String? auteurImposeALaRequete({required bool estAdmin, required String? moiId}) =>
+    estAdmin ? null : moiId;
+
+/// Demandes marquées « non lu » à la main : { idDeLaDemande: true }.
+Set<String> nonLusDepuisDonnees(Map<String, dynamic>? data) {
+  final brut = data?['nonLus'];
+  if (brut is! Map) return <String>{};
+  return {
+    for (final e in brut.entries)
+      if (e.key is String && e.value == true) e.key as String,
+  };
+}
+
+/// Ce que l'admin a vu et ce qu'il a marqué « non lu » (son document personnel).
+class VisitesGeneral {
+  final Map<String, DateTime> vus;
+  final Set<String> nonLus;
+  const VisitesGeneral({this.vus = const {}, this.nonLus = const {}});
+}
+
+VisitesGeneral visitesDepuisDonnees(Map<String, dynamic>? data) => VisitesGeneral(
+  vus: vusDepuisDonnees(data),
+  nonLus: nonLusDepuisDonnees(data),
+);
+
 /// Entrées d'un seul auteur ([auteurId] null : toutes).
 List<EntreeMateriel> filtrerParAuteur(
   List<EntreeMateriel> entrees,
@@ -194,7 +303,7 @@ Map<String, dynamic> donneesNouvelleEntree({
   required String chantierId,
   required String texte,
   String? quantite,
-  String? photoUrl,
+  List<String> photos = const [],
   Employee? auteur,
 }) {
   final general = chantierId == idChantierGeneral;
@@ -207,7 +316,7 @@ Map<String, dynamic> donneesNouvelleEntree({
     'texte': texte,
     'complete': false,
     'dateAjout': FieldValue.serverTimestamp(),
-    'photoUrl': ?photoUrl,
+    ...champsPhotos(photos),
     if (quantite != null && quantite.isNotEmpty) 'quantite': quantite,
     if (general) ...{'ajoutePar': auteur!.id, 'ajouteParNom': auteur.nom},
   };
@@ -230,16 +339,32 @@ Map<String, dynamic> donneesCompletion({
   if (general) ...signatureModification(modifieParId),
 };
 
-/// Modification du texte, de la quantité ou de la photo d'une entrée.
+/// Modification du texte, de la quantité ou des photos d'une entrée. [photos] :
+/// null = photos inchangées, liste vide = toutes retirées.
 Map<String, dynamic> donneesModification({
   required String texte,
   String? quantite,
-  String? photoUrl,
+  List<String>? photos,
   required bool general,
   String? modifieParId,
 }) => {
   'texte': texte,
   'quantite': ?quantite,
-  'photoUrl': ?photoUrl,
+  if (photos != null) ...champsPhotosModification(photos),
   if (general) ...signatureModification(modifieParId),
+};
+
+/// Un admin transfère la demande à la Liste d'achats : elle est marquée (nom de
+/// l'admin) et reste visible pour son auteur jusqu'à ce qu'elle soit faite.
+Map<String, dynamic> donneesMarquerTransfert(Employee admin) => {
+  'transfere': true,
+  'transfereParNom': admin.nom,
+  ...signatureModification(admin.id),
+};
+
+/// L'article est retiré de la Liste d'achats : la demande redevient ordinaire.
+Map<String, dynamic> donneesRetirerTransfert(String adminId) => {
+  'transfere': FieldValue.delete(),
+  'transfereParNom': FieldValue.delete(),
+  ...signatureModification(adminId),
 };

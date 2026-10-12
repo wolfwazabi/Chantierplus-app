@@ -1,4 +1,5 @@
 import 'package:construction_app/charpente/escalier.dart';
+import 'package:construction_app/charpente/escalier_solveur.dart';
 import 'package:construction_app/charpente/escalier_texte.dart';
 import 'package:construction_app/screens/charpente/ecran_escalier.dart';
 import 'package:construction_app/screens/charpente/schema_limon.dart';
@@ -45,6 +46,18 @@ void main() {
       // Rien en rouge : toutes les dimensions sont dans le Code.
       expect(find.descendant(of: _cle('escalier_erreurs'), matching: find.byIcon(Icons.error_outline)), findsNothing);
       expect(_cle('escalier_verifications'), findsOneWidget);
+    });
+
+    testWidgets('schémas des coupes et de la pente : gabarit, pied et tête du limon', (t) async {
+      await ouvrir(t);
+      expect(_cle('schema_coupes'), findsOneWidget);
+      for (final cle in ['schema_gabarit', 'schema_pied', 'schema_tete']) {
+        expect(_cle(cle), findsOneWidget, reason: cle);
+      }
+      // Légendes chiffrées : pente, coupe d'aplomb du bas, coupe de niveau, tête.
+      expect(_texte('Pente 35,1°'), findsOneWidget);
+      expect(_texte('11 7/16"'), findsWidgets);
+      expect(_texte('Pointe du haut'), findsWidgets);
     });
 
     testWidgets('hauteur de 8 pi 6 po : 14 contremarches', (t) async {
@@ -156,6 +169,175 @@ void main() {
       expect(copie, contains('15 contremarches'));
       expect(copie, contains('MATÉRIAUX'));
       expect(find.text('Calcul copié.'), findsOneWidget);
+    });
+  });
+
+  group('à partir de ce que je connais', () {
+    Future<void> activer(WidgetTester t) async {
+      await ouvrir(t);
+      await t.tap(_cle('escalier_mode_donnees'));
+      await t.pumpAndSettle();
+    }
+
+    Future<void> basculer(WidgetTester t, DonneeEscalier d) async {
+      await t.ensureVisible(_cle('escalier_donnee_${d.name}'));
+      await t.tap(_cle('escalier_donnee_${d.name}'));
+      await t.pumpAndSettle();
+    }
+
+    String ligne(WidgetTester t, DonneeEscalier d) =>
+        t.widget<Text>(_cle('escalier_solution_${d.name}')).textSpan!.toPlainText();
+
+    testWidgets('le mode est éteint au départ : l\'écran d\'avant, inchangé', (t) async {
+      await ouvrir(t);
+      expect(_cle('escalier_hauteur'), findsOneWidget);
+      expect(_cle('escalier_mode'), findsOneWidget);
+      expect(_cle('escalier_donnee_hauteur'), findsNothing);
+      expect(_cle('escalier_solution'), findsNothing);
+    });
+
+    testWidgets('activé : les 5 données à cocher, hauteur et course connues au départ', (t) async {
+      await activer(t);
+      for (final d in DonneeEscalier.values) {
+        expect(_cle('escalier_donnee_${d.name}'), findsOneWidget, reason: d.name);
+      }
+      expect(_cle('escalier_d_hauteur'), findsOneWidget);
+      expect(_cle('escalier_d_course'), findsOneWidget);
+      expect(_cle('escalier_d_giron'), findsNothing);
+      // Les contrôles d'avant sont remplacés.
+      expect(_cle('escalier_hauteur'), findsNothing);
+      expect(_cle('escalier_mode'), findsNothing);
+      expect(_cle('escalier_nombre_impose'), findsNothing);
+    });
+
+    testWidgets('hauteur 9 pi + course 12 pi : 15 contremarches, le reste est « trouvé »', (t) async {
+      await activer(t);
+      // 108 / 144 : n = 15 (7,2 po, giron 144 ÷ 14 = 10,29 po ; 2R + G = 24,69 po).
+      expect(_cle('escalier_solution'), findsOneWidget);
+      expect(_texte('15 contremarches'), findsWidgets);
+      expect(ligne(t, DonneeEscalier.hauteur), contains('(donnée)'));
+      expect(ligne(t, DonneeEscalier.course), contains('(donnée)'));
+      expect(ligne(t, DonneeEscalier.giron), contains('(trouvée)'));
+      expect(ligne(t, DonneeEscalier.contremarche), contains('(trouvée)'));
+      expect(ligne(t, DonneeEscalier.nombre), contains('15'));
+      expect(ligne(t, DonneeEscalier.nombre), contains('(trouvée)'));
+      // Tout le calcul des limons suit.
+      expect(_texte('4 limons en 2×12'), findsOneWidget);
+      expect(find.byType(SchemaLimon), findsOneWidget);
+    });
+
+    testWidgets('hauteur + course de 135 po : 14 contremarches, giron 10 3/8 po', (t) async {
+      await activer(t);
+      await saisir(t, 'escalier_d_course', '135"');
+      expect(_texte('14 contremarches'), findsWidgets);
+      expect(ligne(t, DonneeEscalier.giron), contains('10 3/8"'));
+    });
+
+    testWidgets('hauteur + giron : la course est trouvée', (t) async {
+      await activer(t);
+      await basculer(t, DonneeEscalier.course); // décoché
+      await basculer(t, DonneeEscalier.giron); // coché
+      expect(_cle('escalier_d_course'), findsNothing);
+      expect(_cle('escalier_d_giron'), findsOneWidget);
+      expect(ligne(t, DonneeEscalier.giron), contains('(donnée)'));
+      expect(ligne(t, DonneeEscalier.course), contains('(trouvée)'));
+      expect(ligne(t, DonneeEscalier.course), contains('11\' 11 1/2"')); // 14 × 10 1/4 = 143 1/2 po
+      expect(_texte('15 contremarches'), findsWidgets);
+    });
+
+    testWidgets('hauteur seule : l\'escalier idéal (giron 10 5/8 po)', (t) async {
+      await activer(t);
+      await basculer(t, DonneeEscalier.course); // plus que la hauteur
+      expect(ligne(t, DonneeEscalier.giron), contains('10 5/8"'));
+      expect(ligne(t, DonneeEscalier.nombre), contains('15'));
+      expect(_texte('Giron idéal'), findsOneWidget);
+    });
+
+    testWidgets('course + giron, sans la hauteur : la hauteur est trouvée', (t) async {
+      await activer(t);
+      await basculer(t, DonneeEscalier.hauteur); // décochée
+      await basculer(t, DonneeEscalier.giron); // cochée avec la course
+      await saisir(t, 'escalier_d_giron', '10 1/2"');
+      expect(ligne(t, DonneeEscalier.hauteur), contains('(trouvée)'));
+      // 144 po / 10,5 → 14 marches, 15 contremarches de 7 3/8 po : 9' 2 5/8".
+      expect(ligne(t, DonneeEscalier.hauteur), contains('9\' 2 5/8"'));
+      expect(_texte('Hauteur trouvée'), findsOneWidget);
+      // Le calcul des limons part de CETTE hauteur : 15 contremarches de 7 3/8 po.
+      expect(_texte('15 contremarches'), findsWidgets);
+      expect(find.descendant(of: _cle('escalier_resume'), matching: _texte('7 3/8"')), findsOneWidget);
+    });
+
+    testWidgets('changer la hauteur donnée refait tout le calcul', (t) async {
+      await activer(t);
+      await saisir(t, 'escalier_d_hauteur', '8\'6"');
+      // 102 po sur 144 po : 14 contremarches (7,29 po), giron 144 ÷ 13 = 11,08 po.
+      expect(ligne(t, DonneeEscalier.nombre), contains('14'));
+      expect(find.descendant(of: _cle('escalier_resume'), matching: _texte('14 contremarches')), findsOneWidget);
+    });
+
+    testWidgets('données insuffisantes : message clair, écran intact', (t) async {
+      await activer(t);
+      await basculer(t, DonneeEscalier.hauteur);
+      await basculer(t, DonneeEscalier.course);
+      await basculer(t, DonneeEscalier.giron);
+      await basculer(t, DonneeEscalier.contremarche);
+      expect(_cle('escalier_erreur'), findsOneWidget);
+      expect(_texte('Données insuffisantes'), findsOneWidget);
+      expect(t.takeException(), isNull);
+      // On ajoute la hauteur : le calcul revient.
+      await basculer(t, DonneeEscalier.hauteur);
+      expect(_cle('escalier_erreur'), findsNothing);
+      expect(_cle('escalier_solution'), findsOneWidget);
+    });
+
+    testWidgets('autres choix : un toucher impose ce nombre de contremarches', (t) async {
+      await activer(t);
+      await basculer(t, DonneeEscalier.course);
+      await basculer(t, DonneeEscalier.giron); // hauteur + giron 10 1/4
+      expect(_cle('escalier_choix_14'), findsOneWidget);
+      await t.ensureVisible(_cle('escalier_choix_14'));
+      await t.tap(_cle('escalier_choix_14'));
+      await t.pumpAndSettle();
+      expect(_cle('escalier_d_nombre'), findsOneWidget);
+      expect(ligne(t, DonneeEscalier.nombre), contains('(donnée)'));
+      expect(_texte('14 contremarches'), findsWidgets);
+    });
+
+    testWidgets('hors du Code : le calcul le dit (giron de 8 po)', (t) async {
+      await activer(t);
+      await basculer(t, DonneeEscalier.course);
+      await basculer(t, DonneeEscalier.giron);
+      await saisir(t, 'escalier_d_giron', '8"');
+      expect(
+        find.descendant(of: _cle('escalier_erreurs'), matching: _texte('Giron de 8"')),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('métrique : mesures et explications en mm, sans pouces', (t) async {
+      Preferences.unites.value = SystemeUnites.metrique;
+      await activer(t);
+      expect(ligne(t, DonneeEscalier.giron), contains('mm'));
+      expect(ligne(t, DonneeEscalier.giron), isNot(contains('"')));
+      await basculer(t, DonneeEscalier.course); // hauteur seule : « Giron idéal : … »
+      final note = find.descendant(
+        of: _cle('escalier_solution'),
+        matching: find.textContaining('Giron idéal', findRichText: true),
+      );
+      expect(note, findsOneWidget);
+      final w = t.widget(note);
+      final texte = w is RichText ? w.text.toPlainText() : (w as Text).data!;
+      expect(texte, contains('mm'));
+      expect(texte, isNot(contains('"')));
+    });
+
+    testWidgets('on éteint le mode : l\'écran d\'avant revient', (t) async {
+      await activer(t);
+      await t.tap(_cle('escalier_mode_donnees'));
+      await t.pumpAndSettle();
+      expect(_cle('escalier_hauteur'), findsOneWidget);
+      expect(_cle('escalier_solution'), findsNothing);
+      expect(_texte('15 contremarches'), findsOneWidget);
     });
   });
 

@@ -5,6 +5,7 @@ import '../../services/app_session.dart';
 import '../../services/materiel_general_source.dart';
 import '../../services/theme_compagnie.dart';
 import '../../widgets/confirmer_action.dart';
+import '../../widgets/photos_multiples.dart';
 
 /// Pastille de couleur : nombre de changements pas encore vus. Rien à l'écran
 /// s'il n'y en a pas.
@@ -56,7 +57,7 @@ class NonVusGeneral extends StatefulWidget {
 
 class _NonVusGeneralState extends State<NonVusGeneral> {
   Stream<List<EntreeMateriel>>? _entrees;
-  Stream<Map<String, DateTime>>? _vus;
+  Stream<VisitesGeneral>? _visites;
   String _moiId = '';
 
   @override
@@ -67,7 +68,7 @@ class _NonVusGeneralState extends State<NonVusGeneral> {
       final source = widget.source ?? SourceMaterielGeneralFirestore();
       _moiId = moi.id;
       _entrees = source.entrees(moi.companyId!);
-      _vus = source.vus(moi.id);
+      _visites = source.visites(moi.id);
     }
   }
 
@@ -77,15 +78,17 @@ class _NonVusGeneralState extends State<NonVusGeneral> {
     if (entrees == null) return widget.builder(context, 0);
     return StreamBuilder<List<EntreeMateriel>>(
       stream: entrees,
-      builder: (context, demandes) => StreamBuilder<Map<String, DateTime>>(
-        stream: _vus,
-        builder: (context, vus) {
+      builder: (context, demandes) => StreamBuilder<VisitesGeneral>(
+        stream: _visites,
+        builder: (context, visites) {
+          final v = visites.data ?? const VisitesGeneral();
           final n = demandes.hasData
               ? totalNonVus(
                   grouperParAuteur(
                     demandes.data!,
                     moiId: _moiId,
-                    vus: vus.data ?? const {},
+                    vus: v.vus,
+                    nonLus: v.nonLus,
                   ),
                 )
               : 0;
@@ -98,7 +101,8 @@ class _NonVusGeneralState extends State<NonVusGeneral> {
 
 /// Admin → Chantiers → Général : le matériel de la remorque, séparé par
 /// contremaître et admin, pour acheter équipe par équipe. Une pastille de couleur
-/// signale ce qui a changé depuis la dernière visite de cette personne.
+/// signale ce qui a changé depuis la dernière visite de cette personne ; un appui
+/// long permet de marquer « non lu » ou de transférer à la Liste d'achats.
 class MaterielGeneralScreen extends StatefulWidget {
   /// Tests : remplace Firestore.
   @visibleForTesting
@@ -113,14 +117,16 @@ class MaterielGeneralScreen extends StatefulWidget {
 class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
   late final SourceMaterielGeneral _source;
   Stream<List<EntreeMateriel>>? _entrees;
-  Stream<Map<String, DateTime>>? _vus;
+  Stream<VisitesGeneral>? _visites;
   String _companyId = '';
   String _moiId = '';
 
-  /// Groupes ouverts, et la dernière visite d'AVANT leur ouverture : les
-  /// demandes plus récentes sont marquées « Nouveau » tant que la page reste ouverte.
+  /// Groupes ouverts, et ce qui était « non vu » AVANT leur ouverture (dernière
+  /// visite et demandes marquées « non lu ») : ces demandes restent marquées
+  /// « Nouveau » tant que la page reste ouverte.
   final Set<String> _ouverts = {};
   final Map<String, DateTime> _visiteAvant = {};
+  final Map<String, Set<String>> _nonLusAvant = {};
 
   @override
   void initState() {
@@ -131,7 +137,7 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
       _companyId = moi.companyId!;
       _moiId = moi.id;
       _entrees = _source.entrees(_companyId);
-      _vus = _source.vus(_moiId);
+      _visites = _source.visites(_moiId);
     }
   }
 
@@ -142,28 +148,75 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
     );
   }
 
-  /// Ouvrir un groupe = l'avoir vu : la pastille disparaît.
-  void _basculer(GroupeAuteur g, bool ouvert, Map<String, DateTime> vus) {
+  /// Ouvrir un groupe = l'avoir vu : la pastille disparaît, les drapeaux « non
+  /// lu » de ce groupe tombent (et ceux de demandes qui n'existent plus).
+  void _basculer(
+    GroupeAuteur g,
+    bool ouvert,
+    VisitesGeneral visites,
+    Set<String> idsExistants,
+  ) {
     final cle = cleVu(g.auteurId);
+    final drapeaux = {
+      for (final e in g.entrees)
+        if (visites.nonLus.contains(e.id)) e.id,
+    };
     setState(() {
       if (ouvert) {
         _ouverts.add(cle);
-        _visiteAvant[cle] = vus[cle] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        _visiteAvant[cle] =
+            visites.vus[cle] ?? DateTime.fromMillisecondsSinceEpoch(0);
+        _nonLusAvant[cle] = drapeaux;
       } else {
         _ouverts.remove(cle);
         _visiteAvant.remove(cle);
+        _nonLusAvant.remove(cle);
       }
     });
-    if (ouvert && g.nonVus > 0) {
+    if (ouvert && (g.nonVus > 0 || drapeaux.isNotEmpty)) {
+      final perimes = visites.nonLus.difference(idsExistants);
       _source
           .marquerVu(
             companyId: _companyId,
             employeId: _moiId,
             auteurId: g.auteurId,
+            idsALever: {...drapeaux, ...perimes},
           )
           .catchError((_) {
             // Pas grave : la pastille reviendra à la prochaine ouverture.
           });
+    }
+  }
+
+  Future<void> _marquerNonLu(List<EntreeMateriel> entrees) async {
+    if (entrees.isEmpty) {
+      _message('Rien à marquer : aucune demande à acheter.');
+      return;
+    }
+    try {
+      await _source.marquerNonLu(
+        companyId: _companyId,
+        employeId: _moiId,
+        entreeIds: [for (final e in entrees) e.id],
+      );
+      _message(
+        entrees.length == 1
+            ? 'Marqué comme non lu.'
+            : '${entrees.length} demandes marquées comme non lues.',
+      );
+    } catch (_) {
+      _message('Impossible de marquer comme non lu. Réessayez.', erreur: true);
+    }
+  }
+
+  Future<void> _transferer(EntreeMateriel e) async {
+    final moi = AppSession.current;
+    if (moi == null) return;
+    try {
+      await _source.transfererAuxAchats(e, moi);
+      _message('« ${e.texte} » transféré à la Liste d\'achats.');
+    } catch (_) {
+      _message('Transfert impossible. Réessayez.', erreur: true);
     }
   }
 
@@ -191,6 +244,77 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
     }
   }
 
+  /// Appui long sur une demande : marquer « non lu » ou transférer aux achats.
+  Future<void> _menuDemande(EntreeMateriel e) async {
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(
+                e.texte,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              key: const ValueKey('action_non_lu'),
+              leading: const Icon(Icons.mark_email_unread_outlined),
+              title: const Text('Marquer comme non lu'),
+              onTap: () => Navigator.pop(ctx, 'non_lu'),
+            ),
+            if (!e.complete && !e.transfere)
+              ListTile(
+                key: const ValueKey('action_transferer'),
+                leading: const Icon(Icons.shopping_cart_checkout),
+                title: const Text('Transférer à la Liste d\'achats'),
+                onTap: () => Navigator.pop(ctx, 'transferer'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (choix == 'non_lu') await _marquerNonLu([e]);
+    if (choix == 'transferer') await _transferer(e);
+  }
+
+  /// Appui long sur une personne : marquer sa liste « non lu » (ses demandes à
+  /// acheter).
+  Future<void> _menuGroupe(GroupeAuteur g) async {
+    final choix = await showModalBottomSheet<String>(
+      context: context,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              title: Text(
+                g.nom,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+            ),
+            ListTile(
+              key: const ValueKey('action_groupe_non_lu'),
+              leading: const Icon(Icons.mark_email_unread_outlined),
+              title: const Text('Marquer comme non lu'),
+              subtitle: const Text('Ses demandes à acheter'),
+              onTap: () => Navigator.pop(ctx, 'non_lu'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (choix == 'non_lu') {
+      await _marquerNonLu([
+        for (final e in g.entrees)
+          if (!e.complete && !e.transfere) e,
+      ]);
+    }
+  }
+
   static String _dateHeure(DateTime? d) {
     if (d == null) return '';
     final l = d.toLocal();
@@ -203,29 +327,27 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
       if (e.quantite.isNotEmpty) 'Quantité : ${e.quantite}',
       if (e.complete)
         'Obtenu${e.dateComplete == null ? '' : ' le ${_dateHeure(e.dateComplete)}'}'
+      else if (e.transfere)
+        'Dans la Liste d\'achats${e.transfereParNom.isEmpty ? '' : ' (transféré par ${e.transfereParNom})'}'
       else
         'Demandé le ${_dateHeure(e.dateAjout)}',
     ].join(' • ');
     return ListTile(
       key: ValueKey('entree_${e.id}'),
-      leading: e.photoUrl != null
-          ? ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Image.network(
-                e.photoUrl!,
-                width: 44,
-                height: 44,
-                fit: BoxFit.cover,
-                errorBuilder: (_, _, _) => const SizedBox(
-                  width: 44,
-                  height: 44,
-                  child: Icon(Icons.broken_image_outlined),
-                ),
-              ),
-            )
+      onLongPress: () => _menuDemande(e),
+      leading: e.photos.isNotEmpty
+          ? VignettePhotos(urls: e.photos)
           : Icon(
-              e.complete ? Icons.check_circle : Icons.shopping_cart_outlined,
-              color: e.complete ? Colors.green : Colors.orange.shade800,
+              e.complete
+                  ? Icons.check_circle
+                  : (e.transfere
+                        ? Icons.shopping_cart_checkout
+                        : Icons.shopping_cart_outlined),
+              color: e.complete
+                  ? Colors.green
+                  : (e.transfere
+                        ? ThemeCompagnie.accentDe(context)
+                        : Colors.orange.shade800),
             ),
       title: Row(
         children: [
@@ -256,19 +378,32 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
       trailing: PopupMenuButton<String>(
         key: ValueKey('menu_entree_${e.id}'),
         onSelected: (v) {
-          if (v == 'supprimer') {
-            _supprimer(e);
-          } else {
-            _definirObtenue(e, v == 'obtenue');
+          switch (v) {
+            case 'supprimer':
+              _supprimer(e);
+            case 'non_lu':
+              _marquerNonLu([e]);
+            case 'transferer':
+              _transferer(e);
+            default:
+              _definirObtenue(e, v == 'obtenue');
           }
         },
         itemBuilder: (ctx) => [
-          PopupMenuItem(
-            value: e.complete ? 'manquante' : 'obtenue',
-            child: Text(
-              e.complete ? 'Remettre comme manquant' : 'Marquer comme obtenu',
+          // Une demande dans la Liste d'achats se marque achetée là-bas.
+          if (e.complete || !e.transfere)
+            PopupMenuItem(
+              value: e.complete ? 'manquante' : 'obtenue',
+              child: Text(
+                e.complete ? 'Remettre comme manquant' : 'Marquer comme obtenu',
+              ),
             ),
-          ),
+          const PopupMenuItem(value: 'non_lu', child: Text('Marquer comme non lu')),
+          if (!e.complete && !e.transfere)
+            const PopupMenuItem(
+              value: 'transferer',
+              child: Text('Transférer à la Liste d\'achats'),
+            ),
           const PopupMenuItem(
             value: 'supprimer',
             child: Text('Supprimer', style: TextStyle(color: Colors.red)),
@@ -278,51 +413,69 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
     );
   }
 
-  Widget _groupe(GroupeAuteur g, Map<String, DateTime> vus) {
+  Widget _groupe(GroupeAuteur g, VisitesGeneral visites, Set<String> idsExistants) {
     final cle = cleVu(g.auteurId);
     final baseline = _visiteAvant[cle];
-    final resume = g.aAcheter == 0
-        ? 'Rien à acheter'
-        : '${g.aAcheter} à acheter';
-    return Card(
-      child: ExpansionTile(
-        key: ValueKey('groupe_${g.auteurId}'),
-        initiallyExpanded: _ouverts.contains(cle),
-        shape: const Border(),
-        collapsedShape: const Border(),
-        leading: Icon(
-          Icons.person_outline,
-          color: ThemeCompagnie.accentDe(context),
-        ),
-        title: Row(
-          children: [
-            Flexible(
-              child: Text(
-                g.nom,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w600),
+    final drapeauxAvant = _nonLusAvant[cle] ?? const <String>{};
+    final parties = [
+      if (g.aAcheter > 0) '${g.aAcheter} à acheter',
+      if (g.enAchat > 0) '${g.enAchat} dans la Liste d\'achats',
+    ];
+    final resume = parties.isEmpty ? 'Rien à acheter' : parties.join(' • ');
+    return GestureDetector(
+      // Appui long sur la personne : marquer sa liste « non lu ».
+      onLongPress: () => _menuGroupe(g),
+      child: Card(
+        child: ExpansionTile(
+          key: ValueKey('groupe_${g.auteurId}'),
+          initiallyExpanded: _ouverts.contains(cle),
+          shape: const Border(),
+          collapsedShape: const Border(),
+          leading: Icon(
+            Icons.person_outline,
+            color: ThemeCompagnie.accentDe(context),
+          ),
+          title: Row(
+            children: [
+              Flexible(
+                child: Text(
+                  g.nom,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            PastilleNonVus(
-              g.nonVus,
-              key: ValueKey('pastille_groupe_${g.auteurId}'),
-            ),
+              const SizedBox(width: 8),
+              PastilleNonVus(
+                g.nonVus,
+                key: ValueKey('pastille_groupe_${g.auteurId}'),
+              ),
+            ],
+          ),
+          subtitle: Text(
+            g.obtenues > 0
+                ? '$resume • ${g.obtenues} obtenu${g.obtenues > 1 ? 's' : ''}'
+                : resume,
+          ),
+          onExpansionChanged: (ouvert) =>
+              _basculer(g, ouvert, visites, idsExistants),
+          children: [
+            for (final e in g.entrees)
+              _ligne(
+                e,
+                // Demandes nouvelles depuis la dernière visite, marquées « non lu »
+                // avant l'ouverture, ou marquées « non lu » maintenant.
+                nouveau:
+                    visites.nonLus.contains(e.id) ||
+                    (baseline != null &&
+                        estNonVu(
+                          e,
+                          moiId: _moiId,
+                          vuLe: baseline,
+                          marqueNonLu: drapeauxAvant.contains(e.id),
+                        )),
+              ),
           ],
         ),
-        subtitle: Text(
-          g.obtenues > 0 ? '$resume • ${g.obtenues} obtenu${g.obtenues > 1 ? 's' : ''}' : resume,
-        ),
-        onExpansionChanged: (ouvert) => _basculer(g, ouvert, vus),
-        children: [
-          for (final e in g.entrees)
-            _ligne(
-              e,
-              nouveau:
-                  baseline != null &&
-                  estNonVu(e, moiId: _moiId, vuLe: baseline),
-            ),
-        ],
       ),
     );
   }
@@ -346,14 +499,16 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
           if (!demandes.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          return StreamBuilder<Map<String, DateTime>>(
-            stream: _vus,
-            builder: (context, vusSnap) {
-              final vus = vusSnap.data ?? const <String, DateTime>{};
+          return StreamBuilder<VisitesGeneral>(
+            stream: _visites,
+            builder: (context, visitesSnap) {
+              final visites = visitesSnap.data ?? const VisitesGeneral();
+              final idsExistants = {for (final e in demandes.data!) e.id};
               final groupes = grouperParAuteur(
                 demandes.data!,
                 moiId: _moiId,
-                vus: vus,
+                vus: visites.vus,
+                nonLus: visites.nonLus,
               );
               final total = groupes.fold<int>(0, (s, g) => s + g.aAcheter);
               return ListView(
@@ -365,7 +520,9 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
                       'Matériel de la remorque et sans chantier, séparé par '
                       'contremaître et admin. Ouvrez une personne pour voir sa '
                       'liste ; la pastille rouge signale ce qui a changé depuis '
-                      'votre dernière visite.',
+                      'votre dernière visite. Appui long sur une personne ou une '
+                      'demande : marquer « non lu » ou transférer à la Liste '
+                      'd\'achats.',
                       key: ValueKey('aide_general_admin'),
                       style: TextStyle(fontSize: 12, color: Colors.black54),
                     ),
@@ -390,7 +547,7 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
                         style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
-                    for (final g in groupes) _groupe(g, vus),
+                    for (final g in groupes) _groupe(g, visites, idsExistants),
                   ],
                 ],
               );

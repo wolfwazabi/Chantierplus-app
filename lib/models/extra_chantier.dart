@@ -1,7 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'photos_entree.dart';
+
 /// Extra d'un chantier : travaux supplémentaires effectués (description,
-/// main-d'œuvre et temps en texte libre, date, photo facultative).
+/// main-d'œuvre et temps en texte libre, date, jusqu'à [maxPhotosParEntree] photos).
 class ExtraChantier {
   final String id;
   final String companyId;
@@ -13,8 +15,10 @@ class ExtraChantier {
 
   /// Date des travaux, « AAAA-MM-JJ ».
   final String dateTravaux;
-  final String? photoUrl;
-  final String? cheminPhoto;
+
+  /// Les photos (liens) et leurs chemins dans le Storage, dans le même ordre.
+  final List<String> photos;
+  final List<String> chemins;
   final String ajouteParNom;
   final DateTime? dateAjout;
 
@@ -25,14 +29,15 @@ class ExtraChantier {
     required this.description,
     required this.mainOeuvre,
     required this.dateTravaux,
-    this.photoUrl,
-    this.cheminPhoto,
+    this.photos = const [],
+    this.chemins = const [],
     this.ajouteParNom = '',
     this.dateAjout,
   });
 
   factory ExtraChantier.fromFirestore(String id, Map<String, dynamic> data) {
     final ajout = data['dateAjout'];
+    final liens = photosDe(data);
     return ExtraChantier(
       id: id,
       companyId: data['companyId'] ?? '',
@@ -40,12 +45,65 @@ class ExtraChantier {
       description: data['description'] ?? '',
       mainOeuvre: data['mainOeuvre'] ?? '',
       dateTravaux: data['dateTravaux'] ?? '',
-      photoUrl: data['photoUrl'] as String?,
-      cheminPhoto: data['cheminPhoto'] as String?,
+      photos: liens,
+      chemins: cheminsPhotosDe(data, liens.length),
       ajouteParNom: data['ajouteParNom'] ?? '',
       dateAjout: ajout is Timestamp ? ajout.toDate() : null,
     );
   }
+
+  /// La première photo (la vignette).
+  String? get photoUrl => photos.isEmpty ? null : photos.first;
+
+  /// Le chemin de la photo [url] dans le Storage (null si inconnu).
+  String? cheminDe(String url) {
+    final i = photos.indexOf(url);
+    return i < 0 || i >= chemins.length || chemins[i].isEmpty ? null : chemins[i];
+  }
+}
+
+/// Les chemins Storage des photos d'un extra, alignés sur ses liens : `cheminsPhotos`
+/// (toutes) ou, pour un ancien extra, le seul `cheminPhoto` ; '' si inconnu.
+List<String> cheminsPhotosDe(Map<String, dynamic> data, int nombre) {
+  final liste = data['cheminsPhotos'];
+  if (liste is List && liste.length == nombre) {
+    return [for (final c in liste) c is String ? c : ''];
+  }
+  final un = data['cheminPhoto'];
+  return [
+    for (var i = 0; i < nombre; i++) i == 0 && un is String ? un : '',
+  ];
+}
+
+/// Champs Firestore des photos d'un extra : la première (`photoUrl`, `cheminPhoto`,
+/// pour l'export et les anciennes versions) et toutes (`photoUrls`, `cheminsPhotos`).
+Map<String, dynamic> champsPhotosExtra(List<String> urls, List<String> chemins) {
+  final n = urls.length < chemins.length ? urls.length : chemins.length;
+  final u = urls.take(n).take(maxPhotosParEntree).toList();
+  final c = chemins.take(u.length).toList();
+  if (u.isEmpty) return const {};
+  return {
+    'photoUrl': u.first,
+    'cheminPhoto': c.first,
+    'photoUrls': u,
+    'cheminsPhotos': c,
+  };
+}
+
+/// Même chose pour une modification : une liste vide retire toutes les photos.
+Map<String, dynamic> champsPhotosExtraModification(
+  List<String> urls,
+  List<String> chemins,
+) {
+  if (urls.isEmpty) {
+    return {
+      'photoUrl': FieldValue.delete(),
+      'cheminPhoto': FieldValue.delete(),
+      'photoUrls': FieldValue.delete(),
+      'cheminsPhotos': FieldValue.delete(),
+    };
+  }
+  return champsPhotosExtra(urls, chemins);
 }
 
 /// Longueurs maximales (mêmes bornes que firestore.rules).

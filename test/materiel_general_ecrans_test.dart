@@ -1,8 +1,7 @@
-// Matériel « Général » côté écrans : choix toujours premier dans la liste, filtre par
-// personne (contremaître/admin), liste Admin séparée par personne avec pastille
-// « changement non vu ». Tout Firestore est remplacé par des doubles de test.
-import 'dart:async';
-
+// Matériel « Général » côté écrans : choix toujours premier dans la liste, un
+// contremaître ne voit que SA liste (l'admin a les filtres), liste Admin séparée par
+// personne avec pastille « changement non vu ». Tout Firestore est remplacé par des
+// doubles de test (voir doubles/faux_materiel.dart).
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:construction_app/models/chantier.dart';
 import 'package:construction_app/models/employee.dart';
@@ -12,12 +11,15 @@ import 'package:construction_app/screens/admin/chantiers_gestion_screen.dart';
 import 'package:construction_app/screens/admin/materiel_general_screen.dart';
 import 'package:construction_app/screens/chantier_screen.dart';
 import 'package:construction_app/services/app_session.dart';
-import 'package:construction_app/services/materiel_general_source.dart';
 import 'package:construction_app/widgets/recherche_chantier.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-DateTime _t(int jour, [int heure = 8]) => DateTime.utc(2026, 10, jour, heure);
+import 'doubles/faux_materiel.dart';
+
+DateTime _t(int jour, [int heure = 8]) => tTest(jour, heure);
+final _e = entreeTest;
+List<EntreeMateriel> _jeu() => jeuTest();
 Finder _cle(String k) => find.byKey(ValueKey(k));
 
 /// L'en-tête d'un groupe (pas son centre : ouvert, le centre tombe sur une demande).
@@ -27,124 +29,6 @@ Finder _entete(String auteur) => find
 
 Employee _emp(String id, String nom, EmployeeRole role) =>
     Employee(id: id, companyId: 'A', companyNom: 'Alpha', nom: nom, role: role);
-
-EntreeMateriel _e(
-  String id, {
-  String auteur = 'plusA',
-  String nom = 'Plus A',
-  DateTime? ajout,
-  DateTime? modif,
-  String? modifiePar,
-  bool complete = false,
-  String texte = 'Sangles',
-  String quantite = '',
-}) => EntreeMateriel(
-  id: id,
-  texte: texte,
-  quantite: quantite,
-  auteurId: auteur,
-  auteurNom: nom,
-  dateAjout: ajout ?? _t(1),
-  dateModif: modif,
-  modifiePar: modifiePar,
-  complete: complete,
-);
-
-/// Double de test : les demandes et les visites en direct, et les actions notées.
-class FauxSource implements SourceMaterielGeneral {
-  List<EntreeMateriel> donnees;
-  Map<String, DateTime> vusMap;
-  DateTime maintenant = _t(20);
-  final _ctrlE = StreamController<List<EntreeMateriel>>.broadcast();
-  final _ctrlV = StreamController<Map<String, DateTime>>.broadcast();
-
-  final List<String> marques = []; // auteurs marqués « vus »
-  final List<String> obtenues = []; // « id:true|false »
-  final List<String> supprimees = [];
-  int abonnementsEntrees = 0;
-  bool echecMarquer = false;
-  bool echecObtenue = false;
-  bool erreurLecture = false;
-
-  FauxSource(this.donnees, [Map<String, DateTime>? vus])
-    : vusMap = {...?vus};
-
-  @override
-  Stream<List<EntreeMateriel>> entrees(String companyId) async* {
-    abonnementsEntrees++;
-    if (erreurLecture) throw StateError('lecture refusée');
-    yield donnees;
-    yield* _ctrlE.stream;
-  }
-
-  @override
-  Stream<Map<String, DateTime>> vus(String employeId) async* {
-    yield vusMap;
-    yield* _ctrlV.stream;
-  }
-
-  void pousser(List<EntreeMateriel> nouvelles) {
-    donnees = nouvelles;
-    _ctrlE.add(nouvelles);
-  }
-
-  @override
-  Future<void> marquerVu({
-    required String companyId,
-    required String employeId,
-    required String auteurId,
-  }) async {
-    marques.add(auteurId);
-    if (echecMarquer) throw StateError('refusé');
-    vusMap = {...vusMap, cleVu(auteurId): maintenant};
-    _ctrlV.add(vusMap);
-  }
-
-  @override
-  Future<void> definirObtenue(
-    EntreeMateriel entree,
-    bool obtenue, {
-    required String employeId,
-  }) async {
-    obtenues.add('${entree.id}:$obtenue');
-    if (echecObtenue) throw StateError('refusé');
-    pousser([
-      for (final e in donnees)
-        if (e.id == entree.id)
-          _e(
-            e.id,
-            auteur: e.auteurId,
-            nom: e.auteurNom,
-            ajout: e.dateAjout,
-            modif: maintenant,
-            modifiePar: employeId,
-            complete: obtenue,
-            texte: e.texte,
-            quantite: e.quantite,
-          )
-        else
-          e,
-    ]);
-  }
-
-  @override
-  Future<void> supprimer(EntreeMateriel entree) async {
-    supprimees.add(entree.id);
-    pousser([
-      for (final e in donnees)
-        if (e.id != entree.id) e,
-    ]);
-  }
-}
-
-/// Trois équipes : plusA (3 demandes dont 1 obtenue), plusB « Bernard » (1), adminA (1).
-List<EntreeMateriel> _jeu() => [
-  _e('a1', auteur: 'plusA', nom: 'Plus A', ajout: _t(1, 9), texte: 'Sangles'),
-  _e('a2', auteur: 'plusA', nom: 'Plus A', ajout: _t(2, 9), texte: 'Cordes', complete: true),
-  _e('a3', auteur: 'plusA', nom: 'Plus A', ajout: _t(3, 9), texte: 'Clous 3 po', quantite: '2 boîtes'),
-  _e('b1', auteur: 'plusB', nom: 'Bernard', ajout: _t(2, 10), texte: 'Bâche'),
-  _e('c1', auteur: 'adminA', nom: 'Admin A', ajout: _t(1, 11), texte: 'Marteau'),
-];
 
 void main() {
   tearDown(() => AppSession.notifier.value = null);
@@ -295,6 +179,8 @@ void main() {
     testWidgets('une demande obtenue peut être remise comme manquante', (tester) async {
       final source = await ouvrir(tester);
       await tester.tap(_cle('groupe_plusA'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(_cle('menu_entree_a2'));
       await tester.pumpAndSettle();
       await tester.tap(_cle('menu_entree_a2'));
       await tester.pumpAndSettle();
@@ -551,7 +437,7 @@ void main() {
   });
 
   // ===========================================================================
-  group('Chantiers (contremaître / admin) : choix « Général »', () {
+  group('Chantiers : choix « Général » (contremaître : sa liste seulement ; admin : filtres)', () {
     const chantiers = [
       Chantier(id: 'c1', companyId: 'A', nom: 'Atelier', adresse: '1 rue des Pins'),
       Chantier(id: 'c2', companyId: 'A', nom: 'Zèbre', adresse: '2 rue du Lac'),
@@ -561,13 +447,18 @@ void main() {
     final modifs = <(String, String, Map<String, dynamic>)>[];
     bool echecAjout = false;
 
-    // Demandes du moment : moi (plusA), Bernard, un admin.
+    // Les demandes du moment : plusA, Bernard (plusB), un admin ; une obtenue pour plusA
+    // et une obtenue pour Bernard.
     List<MapEntry<String, Map<String, dynamic>>> donnees() => [
       MapEntry('m1', {'texte': 'Sangles', 'quantite': '4', 'complete': false, 'ajoutePar': 'plusA', 'ajouteParNom': 'Plus A', 'dateAjout': Timestamp.fromDate(_t(3))}),
       MapEntry('m2', {'texte': 'Bâche', 'complete': false, 'ajoutePar': 'plusB', 'ajouteParNom': 'Bernard', 'dateAjout': Timestamp.fromDate(_t(2))}),
       MapEntry('m3', {'texte': 'Marteau', 'complete': false, 'ajoutePar': 'adminA', 'ajouteParNom': 'Admin A', 'dateAjout': Timestamp.fromDate(_t(1))}),
       MapEntry('m4', {'texte': 'Vieux clous', 'complete': true, 'ajoutePar': 'plusA', 'ajouteParNom': 'Plus A', 'dateAjout': Timestamp.fromDate(_t(1))}),
+      MapEntry('m5', {'texte': 'Colle secrète', 'complete': true, 'ajoutePar': 'plusB', 'ajouteParNom': 'Bernard', 'dateAjout': Timestamp.fromDate(_t(1))}),
     ];
+
+    final contremaitre = _emp('plusA', 'Plus A', EmployeeRole.plus);
+    final admin = _emp('adminA', 'Admin A', EmployeeRole.admin);
 
     Future<void> ouvrir(
       WidgetTester tester, {
@@ -577,7 +468,7 @@ void main() {
       ajouts.clear();
       modifs.clear();
       echecAjout = false;
-      AppSession.notifier.value = moi ?? _emp('plusA', 'Plus A', EmployeeRole.plus);
+      AppSession.notifier.value = moi ?? contremaitre;
       await tester.pumpWidget(
         MaterialApp(
           home: Scaffold(
@@ -666,86 +557,146 @@ void main() {
       expect(_cle('aide_general'), findsOneWidget);
     });
 
-    testWidgets('Général : par défaut, seulement mes ajouts', (tester) async {
-      await ouvrir(tester);
-      await choisirGeneral(tester);
-      expect(find.text('Sangles'), findsOneWidget);
-      expect(find.text('Bâche'), findsNothing);
-      expect(find.text('Marteau'), findsNothing);
-      // Le matériel déjà obtenu est dans l'historique, pas dans la liste.
-      expect(find.text('Vieux clous'), findsNothing);
+    // -------------------------------------------------------------- contremaître
+    group('contremaître : ne voit que SA liste', () {
+      testWidgets('seulement ses demandes, même si le serveur en envoyait d\'autres', (tester) async {
+        await ouvrir(tester);
+        await choisirGeneral(tester);
+        expect(find.text('Sangles'), findsOneWidget);
+        for (final autre in ['Bâche', 'Marteau']) {
+          expect(find.text(autre), findsNothing, reason: autre);
+        }
+        // L'obtenue est dans l'historique, pas dans la liste.
+        expect(find.text('Vieux clous'), findsNothing);
+      });
+
+      testWidgets('aucun filtre, aucun nom d\'un autre, aucun « Par … »', (tester) async {
+        await ouvrir(tester);
+        await choisirGeneral(tester);
+        for (final cle in ['filtre_moi', 'filtre_tous', 'filtre_plusB', 'filtre_adminA']) {
+          expect(_cle(cle), findsNothing, reason: cle);
+        }
+        expect(find.text('Bernard'), findsNothing);
+        expect(find.text('Admin A'), findsNothing);
+        expect(find.textContaining('Par '), findsNothing);
+        expect(find.byType(ChoiceChip), findsNothing);
+      });
+
+      testWidgets('le même court texte d\'aide que pour un admin (rien sur la confidentialité)', (tester) async {
+        await ouvrir(tester);
+        await choisirGeneral(tester);
+        final texte = (tester.widget<Text>(_cle('aide_general'))).data!;
+        expect(texte, 'Général : le matériel dont vous avez besoin pour la remorque ou sans chantier précis.');
+      });
+
+      testWidgets('historique : seulement le sien', (tester) async {
+        await ouvrir(tester);
+        await choisirGeneral(tester);
+        await tester.tap(find.text('Voir l\'historique'));
+        await tester.pumpAndSettle();
+        expect(find.text('Vieux clous'), findsOneWidget);
+        expect(find.text('Colle secrète'), findsNothing); // obtenue de Bernard
+      });
+
+      testWidgets('rien de sa part : message sans « Tous » (il n\'a pas ce bouton)', (tester) async {
+        await ouvrir(tester, flux: donnees().sublist(1, 3));
+        await choisirGeneral(tester);
+        expect(find.text('Aucun matériel actif dans votre liste Général.'), findsOneWidget);
+        expect(find.textContaining('Tous'), findsNothing);
+      });
+
+      testWidgets('un admin a SA liste privée aussi : le contremaître ne voit pas la sienne', (tester) async {
+        await ouvrir(tester);
+        await choisirGeneral(tester);
+        expect(find.text('Marteau'), findsNothing);
+      });
     });
 
-    testWidgets('filtres : Mes ajouts, Tous, puis une puce par autre personne', (tester) async {
-      await ouvrir(tester);
-      await choisirGeneral(tester);
-      expect(_cle('filtre_moi'), findsOneWidget);
-      expect(_cle('filtre_tous'), findsOneWidget);
-      expect(_cle('filtre_plusB'), findsOneWidget);
-      expect(_cle('filtre_adminA'), findsOneWidget);
-      // Pas de puce en double pour moi.
-      expect(_cle('filtre_plusA'), findsNothing);
-      expect(find.text('Bernard'), findsOneWidget);
-      expect(find.text('Admin A'), findsOneWidget);
+    // ------------------------------------------------------------------- admin
+    group('admin : mes ajouts, tous, ou une personne', () {
+      testWidgets('par défaut, seulement mes ajouts ; même texte d\'aide', (tester) async {
+        await ouvrir(tester, moi: admin);
+        await choisirGeneral(tester);
+        expect(find.text('Marteau'), findsOneWidget);
+        expect(find.text('Sangles'), findsNothing);
+        expect(find.text('Bâche'), findsNothing);
+        expect(
+          (tester.widget<Text>(_cle('aide_general'))).data,
+          'Général : le matériel dont vous avez besoin pour la remorque ou sans chantier précis.',
+        );
+      });
+
+      testWidgets('filtres : Mes ajouts, Tous, puis une puce par autre personne', (tester) async {
+        await ouvrir(tester, moi: admin);
+        await choisirGeneral(tester);
+        expect(_cle('filtre_moi'), findsOneWidget);
+        expect(_cle('filtre_tous'), findsOneWidget);
+        expect(_cle('filtre_plusA'), findsOneWidget);
+        expect(_cle('filtre_plusB'), findsOneWidget);
+        // Pas de puce en double pour moi.
+        expect(_cle('filtre_adminA'), findsNothing);
+        expect(find.text('Bernard'), findsOneWidget);
+        expect(find.text('Plus A'), findsOneWidget);
+      });
+
+      testWidgets('« Tous » montre tout le monde, avec « Par … » sur chaque demande', (tester) async {
+        await ouvrir(tester, moi: admin);
+        await choisirGeneral(tester);
+        await tester.tap(_cle('filtre_tous'));
+        await tester.pumpAndSettle();
+        for (final t in ['Sangles', 'Bâche', 'Marteau']) {
+          expect(find.text(t), findsOneWidget, reason: t);
+        }
+        expect(find.text('Par Bernard'), findsOneWidget);
+        expect(find.text('Par Plus A'), findsOneWidget);
+        expect(find.text('Par Admin A'), findsOneWidget);
+      });
+
+      testWidgets('une puce montre seulement cette personne', (tester) async {
+        await ouvrir(tester, moi: admin);
+        await choisirGeneral(tester);
+        await tester.tap(_cle('filtre_plusB'));
+        await tester.pumpAndSettle();
+        expect(find.text('Bâche'), findsOneWidget);
+        expect(find.text('Sangles'), findsNothing);
+        expect(find.text('Marteau'), findsNothing);
+        // Le nom est déjà dans la puce : pas de « Par … » redondant.
+        expect(find.text('Par Bernard'), findsNothing);
+        await tester.tap(_cle('filtre_moi'));
+        await tester.pumpAndSettle();
+        expect(find.text('Marteau'), findsOneWidget);
+        expect(find.text('Bâche'), findsNothing);
+      });
+
+      testWidgets('l\'historique suit le même filtre', (tester) async {
+        await ouvrir(tester, moi: admin);
+        await choisirGeneral(tester);
+        await tester.tap(find.text('Voir l\'historique'));
+        await tester.pumpAndSettle();
+        expect(find.text('Aucun historique dans Général.'), findsOneWidget); // rien d'obtenu pour moi
+        await tester.tap(_cle('filtre_plusA'));
+        await tester.pumpAndSettle();
+        expect(find.text('Vieux clous'), findsOneWidget);
+        expect(find.text('Colle secrète'), findsNothing);
+      });
+
+      testWidgets('rien de ma part : message qui indique « Tous »', (tester) async {
+        await ouvrir(tester, moi: admin, flux: donnees().sublist(0, 2));
+        await choisirGeneral(tester);
+        expect(find.textContaining('Aucun matériel de votre part dans Général'), findsOneWidget);
+        expect(_cle('filtre_tous'), findsOneWidget);
+      });
+
+      testWidgets('liste Général vide pour tout le monde', (tester) async {
+        await ouvrir(tester, moi: admin, flux: const []);
+        await choisirGeneral(tester);
+        await tester.tap(_cle('filtre_tous'));
+        await tester.pumpAndSettle();
+        expect(find.text('Aucun matériel actif dans Général.'), findsOneWidget);
+      });
     });
 
-    testWidgets('« Tous » montre tout le monde, avec « Par … » sur chaque demande', (tester) async {
-      await ouvrir(tester);
-      await choisirGeneral(tester);
-      await tester.tap(_cle('filtre_tous'));
-      await tester.pumpAndSettle();
-      for (final t in ['Sangles', 'Bâche', 'Marteau']) {
-        expect(find.text(t), findsOneWidget, reason: t);
-      }
-      expect(find.text('Par Bernard'), findsOneWidget);
-      expect(find.text('Par Plus A'), findsOneWidget);
-      expect(find.text('Par Admin A'), findsOneWidget);
-    });
-
-    testWidgets('une puce montre seulement cette personne', (tester) async {
-      await ouvrir(tester);
-      await choisirGeneral(tester);
-      await tester.tap(_cle('filtre_plusB'));
-      await tester.pumpAndSettle();
-      expect(find.text('Bâche'), findsOneWidget);
-      expect(find.text('Sangles'), findsNothing);
-      expect(find.text('Marteau'), findsNothing);
-      // Le nom est déjà dans la puce : pas de « Par … » redondant.
-      expect(find.text('Par Bernard'), findsNothing);
-      await tester.tap(_cle('filtre_moi'));
-      await tester.pumpAndSettle();
-      expect(find.text('Sangles'), findsOneWidget);
-      expect(find.text('Bâche'), findsNothing);
-    });
-
-    testWidgets('l\'historique suit le même filtre', (tester) async {
-      await ouvrir(tester);
-      await choisirGeneral(tester);
-      await tester.tap(find.text('Voir l\'historique'));
-      await tester.pumpAndSettle();
-      expect(find.text('Vieux clous'), findsOneWidget); // le mien
-      await tester.tap(_cle('filtre_plusB'));
-      await tester.pumpAndSettle();
-      expect(find.text('Vieux clous'), findsNothing);
-      expect(find.text('Aucun historique dans Général.'), findsOneWidget);
-    });
-
-    testWidgets('rien de ma part : message qui indique « Tous »', (tester) async {
-      await ouvrir(tester, flux: donnees().sublist(1, 3));
-      await choisirGeneral(tester);
-      expect(find.textContaining('Aucun matériel de votre part dans Général'), findsOneWidget);
-      // Les filtres restent là pour changer de vue.
-      expect(_cle('filtre_tous'), findsOneWidget);
-    });
-
-    testWidgets('liste Général vide pour tout le monde', (tester) async {
-      await ouvrir(tester, flux: const []);
-      await choisirGeneral(tester);
-      await tester.tap(_cle('filtre_tous'));
-      await tester.pumpAndSettle();
-      expect(find.text('Aucun matériel actif dans Général.'), findsOneWidget);
-    });
-
+    // ------------------------------------------------------------ écritures
     testWidgets('ajouter du matériel Général : l\'entrée porte MON id et MON nom', (tester) async {
       await ouvrir(tester);
       await choisirGeneral(tester);
@@ -768,7 +719,7 @@ void main() {
     });
 
     testWidgets('un admin qui ajoute signe de son nom', (tester) async {
-      await ouvrir(tester, moi: _emp('adminA', 'Admin A', EmployeeRole.admin));
+      await ouvrir(tester, moi: admin);
       await choisirGeneral(tester);
       await tester.enterText(find.byType(TextField).first, 'Perceuse');
       await tester.tap(find.text('Ajouter'));

@@ -9,6 +9,7 @@ import '../../services/app_session.dart';
 import '../../services/fichiers_chantier.dart';
 import '../../services/fonctions.dart';
 import '../../services/theme_compagnie.dart';
+import '../../widgets/photos_multiples.dart';
 import '../documents/documents_chantier.dart';
 import 'chantier_admin_actions.dart';
 import 'grille_photos_dossier.dart';
@@ -404,24 +405,6 @@ Query<Map<String, dynamic>> _requete(
     .where('chantierId', isEqualTo: chantierId)
     .orderBy('dateAjout', descending: true);
 
-void _voirPhoto(BuildContext context, String url) {
-  showDialog(
-    context: context,
-    builder: (ctx) => Dialog(
-      child: Stack(
-        alignment: Alignment.topRight,
-        children: [
-          InteractiveViewer(child: Image.network(url)),
-          IconButton(
-            icon: const Icon(Icons.close, color: Colors.white),
-            onPressed: () => Navigator.pop(ctx),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
 Widget _titreSection(String titre, int? n) => Padding(
   padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
   child: Text(
@@ -457,24 +440,8 @@ class _SectionExtras extends StatelessWidget {
             for (final e in extras)
               Card(
                 child: ListTile(
-                  leading: e.photoUrl != null
-                      ? GestureDetector(
-                          onTap: () => _voirPhoto(context, e.photoUrl!),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(6),
-                            child: Image.network(
-                              e.photoUrl!,
-                              width: 44,
-                              height: 44,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => const SizedBox(
-                                width: 44,
-                                height: 44,
-                                child: Icon(Icons.broken_image_outlined),
-                              ),
-                            ),
-                          ),
-                        )
+                  leading: e.photos.isNotEmpty
+                      ? VignettePhotos(urls: e.photos)
                       : Icon(
                           Icons.add_task,
                           color: ThemeCompagnie.accentDe(context),

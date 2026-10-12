@@ -15,6 +15,42 @@ bois sur limons entaillés. Code : `lib/charpente/escalier.dart` (moteur, en pou
 - vérification des dimensions du Code, autres nombres de contremarches conformes,
   liste de matériaux, texte copiable.
 
+## À partir de 2 données (ou plus)
+
+Interrupteur « Partir de ce que je connais » en haut de l'écran. On coche ce qu'on sait
+parmi cinq données : **hauteur, course, giron, contremarche, nombre de contremarches** ; le
+calcul trouve le reste (`escalier_solveur.dart`, `resoudreEscalier`) et dit pour chaque
+valeur si elle est « donnée » ou « trouvée », avec des notes sur les ajustements.
+
+| Données | Ce qui est trouvé |
+|---|---|
+| hauteur + course | le nombre de contremarches qui respecte le Code (les deux limites) ; si plusieurs, le plus confortable |
+| hauteur + giron | contremarche, course = (n − 1) × giron ; n le plus confortable |
+| hauteur + contremarche | n = hauteur ÷ contremarche (arrondi) ; contremarche ajustée ; giron idéal |
+| hauteur + nombre | contremarche = hauteur ÷ n ; giron idéal |
+| hauteur seule | l'escalier idéal (contremarche la plus proche de 7 1/4 po) |
+| course + giron | n marches = course ÷ giron (arrondi) ; giron ajusté ; contremarche idéale ; hauteur trouvée |
+| course + contremarche, course + nombre, nombre + giron, nombre + contremarche, nombre seul | idem, avec le giron ou la contremarche idéal |
+| contremarche + giron seulement | refusé : il manque la hauteur, la course ou le nombre |
+
+La hauteur, la course et le nombre donnés sont **exacts** ; la contremarche et le giron
+donnés sont des cibles qui s'ajustent (la note le dit). Si aucun nombre ne respecte le Code
+avec les données, le moins éloigné est choisi et la vérification du Code le signale.
+
+**Idéal.** Giron + 2 × contremarche = 635 mm (25 po), au milieu de la plage de confort de 600 à
+650 mm ; contremarche visée 7 1/4 po (184 mm) quand rien ne la fixe. Les valeurs trouvées sont
+arrondies au 1/16 po et ne sortent **jamais** des bornes du Code (un minimum est arrondi vers
+le haut, un maximum vers le bas). Les autres nombres de contremarches conformes sont offerts
+en « Autres choix » (un toucher impose ce nombre).
+
+## Schémas des coupes et de la pente
+
+Sous le tableau des coupes (`schema_coupes.dart`), trois schémas avec les mesures écrites :
+le **gabarit** (triangle de l'équerre : contremarche, giron, diagonale, pente et son
+complément), le **pied** du limon (coupe d'aplomb = contremarche − épaisseur de la marche ;
+coupe de niveau sur le plancher ; pente) et la **tête** (coupe d'aplomb contre la poutre,
+pointe du haut). Les mesures viennent de `etiquettesCoupes` (testée).
+
 ## Conventions
 
 - `n` contremarches, `n − 1` marches (le plancher du haut est la dernière marche).

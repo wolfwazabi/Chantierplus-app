@@ -10,8 +10,8 @@ const _extra = ExtraChantier(
   description: 'Cloison',
   mainOeuvre: '3 gars, 1 compagnon, 1 apprenti — 4 h',
   dateTravaux: '2026-10-01',
-  photoUrl: 'https://firebasestorage.googleapis.com/v0/b/b/o/p.jpg',
-  cheminPhoto: 'chantiers/A/chA/chantier_extras/p.jpg',
+  photos: ['https://firebasestorage.googleapis.com/v0/b/b/o/p.jpg'],
+  chemins: ['chantiers/A/chA/chantier_extras/p.jpg'],
 );
 
 void main() {
@@ -108,8 +108,8 @@ void main() {
       expect(recues, hasLength(1));
       expect(recues.single.description, 'Cloison');
       expect(recues.single.mainOeuvre, '3 gars, 1 compagnon, 1 apprenti');
-      expect(recues.single.nouvellePhoto, isNull);
-      expect(recues.single.retirerPhoto, isFalse);
+      expect(recues.single.nouvelles, isEmpty);
+      expect(recues.single.conservees, isEmpty);
       expect(dateIso(recues.single.date), dateIso(DateTime.now()));
     },
   );
@@ -168,9 +168,7 @@ void main() {
     );
     expect(
       tester
-          .widget<OutlinedButton>(
-            find.byKey(const ValueKey('extra_prendre_photo')),
-          )
+          .widget<OutlinedButton>(find.byKey(const ValueKey('photos_ajouter')))
           .onPressed,
       isNull,
     );
@@ -187,11 +185,11 @@ void main() {
       );
       expect(find.text('Date : 01/10/2026'), findsOneWidget);
 
-      await tester.tap(find.byKey(const ValueKey('extra_retirer_photo')));
+      await tester.tap(find.byKey(const ValueKey('photo_retirer_existante_0')));
       await tester.pump();
       await valider(tester);
-      expect(recues.single.retirerPhoto, isTrue);
-      expect(recues.single.nouvellePhoto, isNull);
+      expect(recues.single.conservees, isEmpty); // la photo est retirée
+      expect(recues.single.nouvelles, isEmpty);
     },
   );
 
@@ -201,7 +199,8 @@ void main() {
     final recues = await ouvrir(tester, initial: _extra);
     await remplir(tester, mainOeuvre: '4 gars, 5 h');
     await valider(tester);
-    expect(recues.single.retirerPhoto, isFalse);
+    expect(recues.single.conservees, _extra.photos);
+    expect(recues.single.nouvelles, isEmpty);
     expect(recues.single.mainOeuvre, '4 gars, 5 h');
   });
 }

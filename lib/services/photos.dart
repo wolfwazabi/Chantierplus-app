@@ -32,11 +32,14 @@ class Photos {
     imageQuality: _qualite,
   );
 
-  static Future<List<XFile>> choisirPlusieurs() => _selecteur.pickMultiImage(
-    maxWidth: _cote.toDouble(),
-    maxHeight: _cote.toDouble(),
-    imageQuality: _qualite,
-  );
+  /// Choisit plusieurs photos dans la galerie, [limite] au plus (2 ou plus).
+  static Future<List<XFile>> choisirPlusieurs({int? limite}) =>
+      _selecteur.pickMultiImage(
+        maxWidth: _cote.toDouble(),
+        maxHeight: _cote.toDouble(),
+        imageQuality: _qualite,
+        limit: limite,
+      );
 
   /// Supprime la copie temporaire d'une photo une fois envoyée (ou abandonnée).
   ///

@@ -1,10 +1,7 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../models/extra_chantier.dart';
-import '../../services/photos.dart';
+import '../../widgets/photos_multiples.dart';
 
 /// Ce que l'utilisateur a saisi dans le formulaire d'un extra.
 class ExtraSaisie {
@@ -14,18 +11,18 @@ class ExtraSaisie {
   final String mainOeuvre;
   final DateTime date;
 
-  /// Nouvelle photo choisie (prise avec l'app ou de la galerie), sinon null.
-  final XFile? nouvellePhoto;
+  /// Photos déjà enregistrées que l'on garde, dans l'ordre (modification seulement).
+  final List<String> conservees;
 
-  /// La photo existante doit être retirée (modification seulement).
-  final bool retirerPhoto;
+  /// Nouvelles photos choisies (prises avec l'app ou de la galerie), à envoyer.
+  final List<PhotoEnAttente> nouvelles;
 
   const ExtraSaisie({
     required this.description,
     required this.mainOeuvre,
     required this.date,
-    this.nouvellePhoto,
-    this.retirerPhoto = false,
+    this.conservees = const [],
+    this.nouvelles = const [],
   });
 }
 
@@ -40,12 +37,20 @@ class FormulaireExtra extends StatefulWidget {
   /// d'ajout se vide alors).
   final Future<bool> Function(ExtraSaisie saisie) onValider;
 
+  /// Tests : remplacent l'appareil photo et la galerie.
+  @visibleForTesting
+  final PrendrePhoto? prendrePhoto;
+  @visibleForTesting
+  final ChoisirPhotos? choisirPhotos;
+
   const FormulaireExtra({
     super.key,
     this.initial,
     required this.connecte,
     required this.libelleBouton,
     required this.onValider,
+    this.prendrePhoto,
+    this.choisirPhotos,
   });
 
   @override
@@ -56,9 +61,7 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
   late final TextEditingController _description;
   late final TextEditingController _mainOeuvre;
   late DateTime _date;
-  XFile? _photo;
-  Uint8List? _apercu;
-  late bool _photoExistante;
+  late final ControleurPhotos _photos;
   bool _enCours = false;
   String? _erreur;
 
@@ -69,43 +72,15 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
     _description = TextEditingController(text: e?.description ?? '');
     _mainOeuvre = TextEditingController(text: e?.mainOeuvre ?? '');
     _date = (e == null ? null : lireDateIso(e.dateTravaux)) ?? DateTime.now();
-    _photoExistante = e?.photoUrl != null;
+    _photos = ControleurPhotos(existantes: e?.photos ?? const []);
   }
 
   @override
   void dispose() {
     _description.dispose();
     _mainOeuvre.dispose();
-    _abandonnerPhoto();
+    _photos.dispose();
     super.dispose();
-  }
-
-  /// Supprime la copie temporaire d'une photo choisie mais pas envoyée.
-  void _abandonnerPhoto() {
-    final p = _photo;
-    if (p != null) Photos.supprimerTemporaire(p);
-  }
-
-  Future<void> _obtenirPhoto(Future<XFile?> Function() source) async {
-    final image = await source();
-    if (image == null) return;
-    final octets = await image.readAsBytes();
-    if (!mounted) return;
-    _abandonnerPhoto();
-    setState(() {
-      _photo = image;
-      _apercu = octets;
-      _erreur = null;
-    });
-  }
-
-  void _retirerPhoto() {
-    _abandonnerPhoto();
-    setState(() {
-      _photo = null;
-      _apercu = null;
-      _photoExistante = false;
-    });
   }
 
   Future<void> _choisirDate() async {
@@ -140,11 +115,8 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
       description: description,
       mainOeuvre: mainOeuvre,
       date: _date,
-      nouvellePhoto: _photo,
-      retirerPhoto:
-          _photo == null &&
-          widget.initial?.photoUrl != null &&
-          !_photoExistante,
+      conservees: [..._photos.existantes],
+      nouvelles: [..._photos.nouvelles],
     );
     bool ok = false;
     try {
@@ -155,19 +127,14 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
     if (ok && mounted && widget.initial == null) {
       _description.clear();
       _mainOeuvre.clear();
-      // La copie temporaire a été supprimée par l'envoi.
-      setState(() {
-        _photo = null;
-        _apercu = null;
-        _date = DateTime.now();
-      });
+      _photos.vider();
+      setState(() => _date = DateTime.now());
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final connecte = widget.connecte;
-    final aPhoto = _apercu != null || _photoExistante;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -214,66 +181,17 @@ class _FormulaireExtraState extends State<FormulaireExtra> {
         ),
         const SizedBox(height: 8),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (aPhoto) ...[
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: _apercu != null
-                        ? Image.memory(
-                            _apercu!,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                          )
-                        : Image.network(
-                            widget.initial!.photoUrl!,
-                            width: 48,
-                            height: 48,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, _, _) => const SizedBox(
-                              width: 48,
-                              height: 48,
-                              child: Icon(Icons.broken_image_outlined),
-                            ),
-                          ),
-                  ),
-                  Positioned(
-                    top: -8,
-                    right: -8,
-                    child: IconButton(
-                      key: const ValueKey('extra_retirer_photo'),
-                      icon: const Icon(
-                        Icons.cancel,
-                        size: 18,
-                        color: Colors.red,
-                      ),
-                      tooltip: 'Retirer la photo',
-                      onPressed: _retirerPhoto,
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ),
-                ],
+            Expanded(
+              child: SelecteurPhotos(
+                controleur: _photos,
+                actif: connecte && !_enCours,
+                prendre: widget.prendrePhoto,
+                choisir: widget.choisirPhotos,
               ),
-              const SizedBox(width: 10),
-            ],
-            OutlinedButton.icon(
-              key: const ValueKey('extra_prendre_photo'),
-              onPressed: connecte ? () => _obtenirPhoto(Photos.prendre) : null,
-              icon: const Icon(Icons.camera_alt, size: 18),
-              label: Text(aPhoto ? 'Reprendre' : 'Photo'),
             ),
-            const SizedBox(width: 6),
-            IconButton(
-              key: const ValueKey('extra_galerie'),
-              tooltip: 'Choisir depuis la galerie',
-              onPressed: connecte ? () => _obtenirPhoto(Photos.choisir) : null,
-              icon: const Icon(Icons.photo_library_outlined),
-            ),
-            const Spacer(),
+            const SizedBox(width: 8),
             FilledButton.icon(
               key: const ValueKey('extra_valider'),
               onPressed: (!connecte || _enCours) ? null : _valider,
