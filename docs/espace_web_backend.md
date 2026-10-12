@@ -85,6 +85,31 @@ gsutil cors set cors.json gs://chantierplus-mtl
 À tester ensuite avec un vrai dépôt de document depuis l'espace web : si le navigateur réclame d'autres
 en-têtes de réponse, il faut les ajouter à `responseHeader`.
 
+## 6. Appareil de confiance (30 jours)
+
+Pour ne pas redemander le code par courriel à chaque connexion : **le code reste obligatoire à la
+première connexion sur un appareil**, puis au plus une fois par 30 jours **si l'utilisateur coche la case**
+(décochée par défaut). **Le NIP est TOUJOURS exigé** : le jeton remplace seulement le code. Volé seul, il
+n'ouvre rien. L'application mobile et les connexions sans la case ne changent pas.
+
+- `validerConnexionWeb({code, faireConfiance: true})` : après un bon code, un jeton aléatoire de 32 octets
+  (base64url) est retourné **une seule fois** dans `appareil: {jeton, expireDans: 2592000}`. Seul son
+  hachage (HMAC avec `PIN_PEPPER`) est conservé, avec `employeeId`, `companyId`, `creeLe` et `expireLe`
+  (+30 jours) dans `appareils_web/{hachage}` : serveur seul, TTL Firestore. **Aucune adresse IP, aucun
+  agent utilisateur.** Au plus 5 appareils par employé (le plus ancien part au 6e). Un courriel prévient
+  l'utilisateur.
+- `connexionWeb({..., jetonAppareil})` : **après** la vérification du NIP (aucun renseignement sans le bon
+  NIP), un jeton valable pour CET employé et CETTE compagnie ouvre la session sans code :
+  `{etape: "connecte", ...profil}`. Sinon (absent, faux, mal formé, expiré, d'un autre employé) : le flux
+  habituel avec code, sans dire pourquoi, avec `jetonRefuse: true` dans la réponse si un jeton avait été
+  envoyé (le client efface le sien). Ce chemin ne consomme pas la limite de 5 codes par heure. Un employé
+  (rôle « employé »), un ancien employé, une compagnie bloquée : refusés comme toujours.
+- Révocation automatique des appareils : retrait ou suppression d'un employé, changement ou
+  réinitialisation du NIP (y compris « NIP oublié »), passage au rôle « employé », suppression de la
+  compagnie. En plus, le jeton est revérifié à chaque usage.
+- `revoquerAppareilWeb({jeton})` (« Ne plus faire confiance à cet appareil ») : sans session ; répond
+  toujours `{ok: true}` ; 20 demandes par heure et par adresse IP.
+
 ## Déploiement (ordre)
 
 1. `firebase deploy --only firestore:rules,firestore:indexes,storage` (règles d'expiration, collection

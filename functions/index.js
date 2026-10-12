@@ -10,7 +10,7 @@ const {
   texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire,
   empreinte, empreinteIp, verifierAppCheck, exigerAnonyme,
   proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp,
-  limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,
+  limiteur, supprimerSessionsDe, revoquerAppareilsWeb, MINUTE, HEURE, JOUR,
 } = require("./src/commun");
 const {RESEND_API_KEY, envoyerCourriel, courrielConfigure, NOM_APP} = require("./src/courriel");
 const {hacherJeton, creerInvitation} = require("./src/invitation");
@@ -140,6 +140,67 @@ const DUREE_SESSION_WEB_MS = 12 * HEURE;
 const ESSAIS_CODE_WEB = 5;
 const FORMAT_CODE_WEB = /^\d{6}$/;
 
+// Appareil de confiance : après un code valide, et seulement si l'utilisateur coche la
+// case (décochée par défaut), un jeton aléatoire remplace le code par courriel pendant
+// 30 jours. Le NIP reste TOUJOURS exigé. Seul le hachage du jeton est conservé, avec
+// des dates : ni adresse IP ni agent utilisateur (loi 25).
+const DUREE_APPAREIL_MS = 30 * JOUR;
+const MAX_APPAREILS_PAR_EMPLOYE = 5;
+const FORMAT_JETON_APPAREIL = /^[A-Za-z0-9_-]{43}$/; // 32 octets en base64url
+
+function hacherJetonAppareil(jeton) {
+  return hacherNip("appareil_web", jeton);
+}
+
+/** Un jeton est valable s'il existe, n'est pas expiré et appartient à CET employé et CETTE compagnie. */
+async function appareilValide(jeton, employe, compagnie) {
+  if (typeof jeton !== "string" || !FORMAT_JETON_APPAREIL.test(jeton)) return false;
+  const hash = hacherJetonAppareil(jeton);
+  const ref = db.collection("appareils_web").doc(hash);
+  const snap = await ref.get();
+  if (!snap.exists) return false;
+  const a = snap.data();
+  const fin = a.expireLe && typeof a.expireLe.toMillis === "function" ? a.expireLe.toMillis() : 0;
+  if (fin <= Date.now()) {
+    await ref.delete();
+    return false;
+  }
+  return egalConstant(a.jetonHash, hash) && a.employeeId === employe.id && a.companyId === compagnie.id;
+}
+
+/** Crée un appareil de confiance et retourne son jeton (une seule fois) ; au plus 5 par employé. */
+async function creerAppareilWeb(employe, compagnieId) {
+  const jeton = crypto.randomBytes(32).toString("base64url");
+  const hash = hacherJetonAppareil(jeton);
+  await db.collection("appareils_web").doc(hash).set({
+    employeeId: employe.id,
+    companyId: compagnieId,
+    jetonHash: hash,
+    creeLe: FieldValue.serverTimestamp(),
+    expireLe: Timestamp.fromMillis(Date.now() + DUREE_APPAREIL_MS),
+  });
+  // Plafond : au-delà de 5, le plus ancien est supprimé.
+  const tous = await db.collection("appareils_web").where("employeeId", "==", employe.id).get();
+  const depuis = (d) => (d.data().creeLe?.toMillis?.() ?? 0);
+  const plusAnciens = tous.docs.filter((d) => d.id !== hash).sort((a, b) => depuis(a) - depuis(b))
+      .slice(0, Math.max(0, tous.size - MAX_APPAREILS_PAR_EMPLOYE));
+  await Promise.all(plusAnciens.map((d) => d.ref.delete()));
+  return {jeton, expireDans: DUREE_APPAREIL_MS / 1000};
+}
+
+async function ecrireSessionWeb(uid, employeeId, companyId, estProprioApp) {
+  await db.collection("sessions").doc(uid).set({
+    employeeId,
+    companyId,
+    proprioApp: estProprioApp,
+    creeLe: FieldValue.serverTimestamp(),
+    canal: "web",
+    // Les règles Firestore et Storage et contexteEmploye refusent la session
+    // une fois cette date passée.
+    expireLe: Timestamp.fromMillis(Date.now() + DUREE_SESSION_WEB_MS),
+  });
+}
+
 /** « philippe@gmail.com » → « p***@gmail.com ». */
 function masquerCourriel(adresse) {
   const [local, domaine] = adresse.split("@");
@@ -152,6 +213,13 @@ function masquerCourriel(adresse) {
  * côté serveur, sans session ni code. Pour un admin ou un contremaître, un code à
  * 6 chiffres (10 minutes) est envoyé par courriel ; aucune session n'est créée
  * avant validerConnexionWeb.
+ *
+ * Appareil de confiance : si `jetonAppareil` (reçu d'une connexion précédente où
+ * l'utilisateur avait coché la case) est valable pour CET employé, la session s'ouvre
+ * sans code : {etape: "connecte", ...profil}. Le NIP, lui, vient d'être vérifié comme
+ * toujours. Jeton absent, inconnu, expiré ou d'un autre employé : flux normal avec
+ * code, sans dire pourquoi, avec `jetonRefuse: true` si un jeton avait été envoyé
+ * (le client efface alors le sien). Ce chemin ne consomme pas la limite d'envoi de codes.
  */
 exports.connexionWeb = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
   verifierAppCheck(request, "connexionWeb");
@@ -160,6 +228,19 @@ exports.connexionWeb = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) =
   if (!ROLES_GESTION.includes(data.role)) {
     throw new HttpsError("permission-denied", MESSAGE_WEB_RESERVE);
   }
+
+  const jetonAppareil = request.data?.jetonAppareil;
+  const jetonFourni = jetonAppareil !== undefined && jetonAppareil !== null && jetonAppareil !== "";
+  // Rôle de gestion, fiche active et compagnie approuvée viennent d'être vérifiés par
+  // identifierParNip et ci-dessus : les mêmes conditions que validerConnexionWeb.
+  if (jetonFourni && await appareilValide(jetonAppareil, employe, compagnie)) {
+    const estProprioApp = (await proprioAppId()) === employe.id;
+    await ecrireSessionWeb(auth.uid, employe.id, compagnie.id, estProprioApp);
+    await db.collection("connexions_web").doc(auth.uid).delete(); // un code resté en attente
+    await limiteIp.reinitialiser();
+    return {etape: "connecte", ...profilConnexion(employe, compagnie, estProprioApp)};
+  }
+
   exigerCourrielDisponible();
 
   const limiteEnvoi = limiteur(`connweb_${employe.id}`, 5, HEURE);
@@ -193,16 +274,23 @@ exports.connexionWeb = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) =
   }
   await limiteIp.reinitialiser();
 
-  return {etape: "code", expireDans: DUREE_CODE_WEB_MS / 1000, courrielMasque: masquerCourriel(data.courriel)};
+  return {
+    etape: "code",
+    expireDans: DUREE_CODE_WEB_MS / 1000,
+    courrielMasque: masquerCourriel(data.courriel),
+    ...(jetonFourni ? {jetonRefuse: true} : {}),
+  };
 });
 
 /**
  * Seconde étape : le code reçu par courriel. 5 essais ratés → le code est
  * supprimé et il faut recommencer la première étape. Le code ne sert qu'une
  * fois. Succès : session de 12 h (canal « web ») et même réponse que
- * connexionEmploye.
+ * connexionEmploye. Avec `faireConfiance: true` (case cochée par l'utilisateur), la
+ * réponse contient en plus `appareil: {jeton, expireDans}`, UNE SEULE FOIS : le jeton
+ * dispense du code pendant 30 jours sur cet appareil (le NIP reste exigé).
  */
-exports.validerConnexionWeb = onCall({secrets: SECRETS_NIP}, async (request) => {
+exports.validerConnexionWeb = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
   verifierAppCheck(request, "validerConnexionWeb");
   const auth = exigerAnonyme(request);
   const code = texte(request.data?.code, "code", {max: 10});
@@ -261,18 +349,42 @@ exports.validerConnexionWeb = onCall({secrets: SECRETS_NIP}, async (request) => 
   }
 
   const estProprioApp = idProprio === empSnap.id;
-  await db.collection("sessions").doc(auth.uid).set({
-    employeeId: empSnap.id,
-    companyId: verdict.companyId,
-    proprioApp: estProprioApp,
-    creeLe: FieldValue.serverTimestamp(),
-    canal: "web",
-    // Les règles Firestore et Storage et contexteEmploye refusent la session
-    // une fois cette date passée.
-    expireLe: Timestamp.fromMillis(Date.now() + DUREE_SESSION_WEB_MS),
-  });
+  await ecrireSessionWeb(auth.uid, empSnap.id, verdict.companyId, estProprioApp);
 
-  return profilConnexion(empSnap, compSnap, estProprioApp);
+  const profil = profilConnexion(empSnap, compSnap, estProprioApp);
+  if (request.data?.faireConfiance !== true) return profil;
+
+  const appareil = await creerAppareilWeb(empSnap, verdict.companyId);
+  await envoyerCourriel({
+    a: empSnap.data().courriel,
+    sujet: `Appareil de confiance — ${NOM_APP}`,
+    lignes: [
+      `Bonjour ${empSnap.data().nom || ""},`,
+      "Vous avez choisi de faire confiance à un appareil pendant 30 jours : sur cet appareil, " +
+        "le code de connexion par courriel ne vous sera pas demandé pendant cette période " +
+        "(votre NIP reste toujours exigé).",
+      "Si ce n'était pas vous, changez votre NIP : tous les appareils de confiance seront alors retirés.",
+    ],
+  });
+  return {...profil, appareil};
+});
+
+/**
+ * « Ne plus faire confiance à cet appareil » : retire l'appareil dont le jeton est fourni.
+ * Utilisateur anonyme, sans session ; répond toujours {ok: true} (aucun oracle) ; limité
+ * par adresse IP. Posséder le jeton suffit pour le révoquer.
+ */
+exports.revoquerAppareilWeb = onCall({secrets: SECRETS_NIP}, async (request) => {
+  verifierAppCheck(request, "revoquerAppareilWeb");
+  exigerAnonyme(request);
+  const limite = limiteur(`revoc_ip_${empreinteIp(request)}`, 20, HEURE);
+  await limite.verifier();
+  await limite.compter();
+  const jeton = request.data?.jeton;
+  if (typeof jeton === "string" && FORMAT_JETON_APPAREIL.test(jeton)) {
+    await db.collection("appareils_web").doc(hacherJetonAppareil(jeton)).delete();
+  }
+  return {ok: true};
 });
 
 // =============================================================================
@@ -490,6 +602,7 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
   const limiteRenvoi = renvoi ? limiteur(`renvoi_${ref.id}`, 3, HEURE) : null;
   if (limiteRenvoi) await limiteRenvoi.verifier();
 
+  let roleAvant = null;
   const enregistre = await db.runTransaction(async (t) => {
     let existant = null;
     if (employeeId) {
@@ -498,6 +611,7 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
         throw new HttpsError("not-found", "Employé introuvable.");
       }
       existant = snap.data();
+      roleAvant = existant.role;
       // Un ancien employé ne se modifie pas : on le réactive ou on supprime sa fiche.
       if (existant.actif === false) throw new HttpsError("failed-precondition", MESSAGE_ANCIEN_EMPLOYE);
     }
@@ -536,6 +650,10 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
     return {...existant, ...maj};
   });
 
+  // Passé au rôle « employé » : plus d'espace web, donc plus d'appareils de confiance.
+  if (ROLES_GESTION.includes(roleAvant) && !ROLES_GESTION.includes(enregistre.role)) {
+    await revoquerAppareilsWeb(ref.id);
+  }
   if (!invitationDemandee) return {id: ref.id};
   if (limiteRenvoi) await limiteRenvoi.compter();
   // Réinitialisation : les sessions de l'employé sont coupées. Un simple renvoi

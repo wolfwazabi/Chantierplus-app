@@ -137,6 +137,12 @@
       "fieldPath": "expireLe",
       "ttl": true,
       "indexes": []
+    },
+    {
+      "collectionGroup": "appareils_web",
+      "fieldPath": "expireLe",
+      "ttl": true,
+      "indexes": []
     }
   ]
 }

@@ -245,19 +245,29 @@ const MINUTE = 60 * 1000;
 const HEURE = 60 * MINUTE;
 const JOUR = 24 * HEURE;
 
+/** Retire tous les appareils de confiance (espace web) d'un employé. */
+async function revoquerAppareilsWeb(employeeId) {
+  const appareils = await db.collection("appareils_web").where("employeeId", "==", employeeId).get();
+  if (appareils.empty) return;
+  const batch = db.batch();
+  appareils.docs.forEach((a) => batch.delete(a.ref));
+  await batch.commit();
+}
+
 /**
- * Coupe les accès d'un employé : ses sessions et les codes de connexion web en
+ * Coupe les accès d'un employé : ses sessions, les codes de connexion web en
  * attente (un NIP changé ou un employé retiré ne doit pas pouvoir finir une
- * connexion commencée avant).
+ * connexion commencée avant) et ses appareils de confiance de l'espace web.
  */
 async function supprimerSessionsDe(employeeId, saufUid = null) {
-  const [sessions, connexions] = await Promise.all([
+  const [sessions, connexions, appareils] = await Promise.all([
     db.collection("sessions").where("employeeId", "==", employeeId).get(),
     db.collection("connexions_web").where("employeeId", "==", employeeId).get(),
+    db.collection("appareils_web").where("employeeId", "==", employeeId).get(),
   ]);
   const batch = db.batch();
   let n = 0;
-  [...sessions.docs, ...connexions.docs].forEach((s) => {
+  [...sessions.docs, ...connexions.docs, ...appareils.docs].forEach((s) => {
     if (s.id !== saufUid) {
       batch.delete(s.ref);
       n++;
@@ -273,5 +283,5 @@ module.exports = {
   texte, courriel, nouveauNip, hacherNip, egalConstant, nombreAleatoire,
   empreinte, empreinteIp, verifierAppCheck, exigerAuth, exigerAnonyme,
   proprioAppId, contexteEmploye, contexteAdmin, contexteProprioApp, sessionExpiree,
-  limiteur, supprimerSessionsDe, MINUTE, HEURE, JOUR,
+  limiteur, supprimerSessionsDe, revoquerAppareilsWeb, MINUTE, HEURE, JOUR,
 };

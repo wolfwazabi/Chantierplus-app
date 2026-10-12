@@ -4,7 +4,7 @@
 // _courriels_emulateur au lieu d'être envoyés. Lancer via : npm run test:functions
 import { after, before, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHash, createHmac } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import http from 'node:http';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
@@ -2198,6 +2198,370 @@ describe('Anciens employés : retrait avec fiche conservée (24 mois), réactiva
 });
 
 // =============================================================================
+describe("Appareil de confiance (30 jours) : le code par courriel n'est plus demandé à chaque connexion", () => {
+  const NUM = '440001'; const cid = 'ap-compagnie'; const PIN = '482915';
+  const ADM = 'ap-admin@exemple.ca'; const PLUS = 'ap-plus@exemple.ca'; const EMP = 'ap-emp@exemple.ca';
+  const uidDe = (a) => a.auth.currentUser.uid;
+  const demander = (a, courriel, extra = {}) =>
+    a.appeler('connexionWeb', { numeroCompagnie: NUM, courriel, pin: PIN, ...extra });
+  const codeRecu = async (courriel) =>
+    extraire((await dernierCourriel(courriel, 'Code de connexion')).texte, 'Votre code de connexion');
+  const nbCourriels = async (adresse, sujet = '') =>
+    (await adminDb.collection('_courriels_emulateur').where('a', '==', adresse).get())
+      .docs.filter((d) => d.data().sujet.includes(sujet)).length;
+  const appareils = async (employeeId) =>
+    (await adminDb.collection('appareils_web').where('employeeId', '==', employeeId).get()).docs;
+  const hachageJeton = (jeton) => hacher('appareil_web', jeton);
+  const jetonAleatoire = () => randomBytes(32).toString('base64url');
+  const session = async (uid) => (await adminDb.collection('sessions').doc(uid).get()).data();
+  const heures = (h) => new Date(Date.now() + h * 3600 * 1000);
+
+  /** Connexion complète (NIP puis code) ; `confiance` = la case cochée. */
+  async function connexionComplete(courriel, confiance) {
+    const a = await appareil();
+    await demander(a, courriel);
+    const code = await codeRecu(courriel);
+    const profil = await a.appeler('validerConnexionWeb', confiance === undefined ? { code } : { code, faireConfiance: confiance });
+    return { a, profil };
+  }
+
+  /** Un appareil de confiance posé directement dans la base (pour les tests de révocation). */
+  async function semerAppareil(employeeId, { expireLe = heures(24 * 20), companyId = cid, creeLe = new Date() } = {}) {
+    const jeton = jetonAleatoire();
+    const hash = hachageJeton(jeton);
+    await adminDb.collection('appareils_web').doc(hash).set({ employeeId, companyId, jetonHash: hash, creeLe, expireLe });
+    return jeton;
+  }
+
+  // Chaque test repart sans appareil de confiance (ceux des tests précédents s'accumuleraient).
+  beforeEach(async () => {
+    const tous = await adminDb.collection('appareils_web').get();
+    await Promise.all(tous.docs.map((d) => d.ref.delete()));
+  });
+
+  before(async () => {
+    await adminDb.collection('companies').doc(cid).set(
+      { numero: NUM, nomEntreprise: 'Confiance inc.', statut: 'approuvee', reglesPaie: {} });
+    const fiche = (nom, role, courriel, estProprietaire = false) =>
+      ({ companyId: cid, nom, role, estProprietaire, courriel, pinHash: hacher(cid, PIN) });
+    await adminDb.collection('employees').doc('apadmin').set(fiche('Alice Admin', 'admin', ADM, true));
+    await adminDb.collection('employees').doc('applus').set(fiche('Paul Contremaître', 'plus', PLUS));
+    await adminDb.collection('employees').doc('apemp').set(fiche('Éric Employé', 'employe', EMP));
+  });
+
+  test('sans la case, ou avec autre chose que « true » : aucun jeton, aucun appareil', async () => {
+    for (const confiance of [undefined, false, 'oui', 1, 'true']) {
+      const { profil } = await connexionComplete(ADM, confiance);
+      assert.equal(profil.appareil, undefined, `faireConfiance = ${JSON.stringify(confiance)}`);
+      assert.equal(profil.id, 'apadmin');
+    }
+    assert.equal((await appareils('apadmin')).length, 0);
+    assert.equal(await nbCourriels(ADM, 'Appareil de confiance'), 0);
+  });
+
+  test('avec la case : jeton retourné UNE fois, seul son hachage est conservé (aucune IP, aucun agent)', async () => {
+    const mobile = await connecter(NUM, ADM, PIN);
+    const { a, profil } = await connexionComplete(ADM, true);
+    const { appareil: app, ...reste } = profil;
+    assert.deepEqual(reste, mobile.profil, 'le profil est celui de la connexion habituelle');
+    assert.match(app.jeton, /^[A-Za-z0-9_-]{43}$/, '32 octets aléatoires en base64url');
+    assert.equal(app.expireDans, 30 * 24 * 3600);
+    assert.deepEqual(Object.keys(app).sort(), ['expireDans', 'jeton']);
+
+    const docs = await appareils('apadmin');
+    assert.equal(docs.length, 1);
+    const d = docs[0].data();
+    assert.equal(docs[0].id, hachageJeton(app.jeton));
+    assert.equal(d.jetonHash, hachageJeton(app.jeton));
+    assert.equal(d.employeeId, 'apadmin');
+    assert.equal(d.companyId, cid);
+    assert.ok(Math.abs(d.expireLe.toMillis() - (Date.now() + 30 * 24 * 3600 * 1000)) < 60_000, 'valable 30 jours');
+    assert.ok(d.creeLe);
+    assert.deepEqual(Object.keys(d).sort(), ['companyId', 'creeLe', 'employeeId', 'expireLe', 'jetonHash'],
+      'dates et hachage seulement');
+    assert.ok(!JSON.stringify(d).includes(app.jeton), 'le jeton en clair n\'est jamais stocké');
+    // La session ouverte par le code est une session web normale.
+    assert.equal((await session(uidDe(a))).canal, 'web');
+
+    const msg = await dernierCourriel(ADM, 'Appareil de confiance');
+    assert.ok(msg.texte.includes('30 jours'));
+    assert.ok(msg.texte.includes('changez votre NIP'));
+    assert.ok(!msg.texte.includes(app.jeton), 'le jeton n\'est jamais envoyé par courriel');
+  });
+
+  test('un mauvais code avec la case cochée ne crée aucun appareil', async () => {
+    const a = await appareil();
+    await demander(a, ADM);
+    const code = await codeRecu(ADM);
+    await rejette(a.appeler('validerConnexionWeb', { code: code === '000000' ? '000001' : '000000', faireConfiance: true }),
+      'permission-denied');
+    assert.equal((await appareils('apadmin')).length, 0);
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
+  });
+
+  test('le jeton remplace le code : session sans code, même profil, limite d\'envoi intacte, jeton réutilisable', async () => {
+    const mobile = await connecter(NUM, PLUS, PIN);
+    const { profil } = await connexionComplete(PLUS, true);
+    const jeton = profil.appareil.jeton;
+    const courrielsAvant = await nbCourriels(PLUS, 'Code de connexion');
+
+    // Sept connexions : au-delà des 5 codes par heure, donc le chemin par jeton n'en consomme aucun.
+    for (let i = 0; i < 7; i++) {
+      const b = await appareil();
+      const r = await demander(b, PLUS, { jetonAppareil: jeton });
+      const { etape, ...profilRecu } = r;
+      assert.equal(etape, 'connecte');
+      assert.deepEqual(profilRecu, mobile.profil, 'même structure que connexionEmploye');
+      const s = await session(uidDe(b));
+      assert.equal(s.canal, 'web');
+      assert.equal(s.employeeId, 'applus');
+      assert.ok(Math.abs(s.expireLe.toMillis() - (Date.now() + 12 * 3600 * 1000)) < 60_000, 'session de 12 h');
+      assert.ok((await getDoc(doc(b.db, 'companies', cid))).exists(), 'les lectures fonctionnent');
+      assert.equal((await adminDb.collection('connexions_web').doc(uidDe(b)).get()).exists, false);
+    }
+    assert.equal(await nbCourriels(PLUS, 'Code de connexion'), courrielsAvant, 'aucun code envoyé');
+    assert.equal((await adminDb.collection('limites_connexion').doc('connweb_applus').get()).exists, true,
+      'seule la demande de code initiale a été comptée');
+    assert.equal((await adminDb.collection('limites_connexion').doc('connweb_applus').get()).data().compte, 1);
+    assert.equal((await appareils('applus')).length, 1, 'le jeton n\'est pas consommé');
+  });
+
+  test('le NIP reste TOUJOURS exigé : jeton valide + mauvais NIP, courriel ou numéro = échec générique', async () => {
+    const { profil } = await connexionComplete(ADM, true);
+    const jeton = profil.appareil.jeton;
+    const b = await appareil();
+    const messages = [];
+    for (const essai of [
+      { pin: '999999' }, { pin: '1234' }, { courriel: 'inconnu@exemple.ca' }, { numeroCompagnie: '999999' },
+    ]) {
+      await assert.rejects(
+        b.appeler('connexionWeb', { numeroCompagnie: NUM, courriel: ADM, pin: PIN, jetonAppareil: jeton, ...essai }),
+        (e) => {
+          assert.equal(e.code, 'functions/not-found');
+          messages.push(e.message);
+          return true;
+        });
+    }
+    assert.deepEqual([...new Set(messages)], ['Numéro de compagnie, courriel ou NIP invalide.']);
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(b)).get()).exists, false);
+    // Le jeton, lui, n'a pas été touché.
+    assert.equal((await demander(await appareil(), ADM, { jetonAppareil: jeton })).etape, 'connecte');
+  });
+
+  test('jeton absent, faux, mal formé, expiré ou d\'un autre employé : code envoyé, sans dire pourquoi', async () => {
+    const verifier = async (courriel, extra, refuse) => {
+      await viderLimites();
+      const b = await appareil();
+      const avant = await nbCourriels(courriel, 'Code de connexion');
+      const r = await demander(b, courriel, extra);
+      assert.equal(r.etape, 'code', JSON.stringify(extra));
+      assert.equal(r.expireDans, 600);
+      assert.equal(r.jetonRefuse, refuse ? true : undefined, JSON.stringify(extra));
+      assert.deepEqual(Object.keys(r).sort(), refuse ? ['courrielMasque', 'etape', 'expireDans', 'jetonRefuse']
+        : ['courrielMasque', 'etape', 'expireDans']);
+      assert.equal(await nbCourriels(courriel, 'Code de connexion'), avant + 1, 'le code part');
+      assert.equal((await adminDb.collection('sessions').doc(uidDe(b)).get()).exists, false, 'pas de session');
+    };
+    await verifier(ADM, {}, false);
+    await verifier(ADM, { jetonAppareil: undefined }, false);
+    await verifier(ADM, { jetonAppareil: null }, false);
+    await verifier(ADM, { jetonAppareil: '' }, false);
+    await verifier(ADM, { jetonAppareil: jetonAleatoire() }, true);   // inconnu
+    for (const mauvais of ['abc', 'x'.repeat(42), 'x'.repeat(44), `${'a'.repeat(42)}/`, 12345, {}, [], true]) {
+      await verifier(ADM, { jetonAppareil: mauvais }, true);
+    }
+  });
+
+  test("le jeton d'un autre employé ne sert pas ; un jeton expiré non plus (et il est effacé)", async () => {
+    const { profil } = await connexionComplete(ADM, true);
+    const jetonAdmin = profil.appareil.jeton;
+    const jetonExpire = await semerAppareil('applus', { expireLe: heures(-1) });
+    const b = await appareil();
+    const r1 = await demander(b, PLUS, { jetonAppareil: jetonAdmin });
+    assert.equal(r1.etape, 'code');
+    assert.equal(r1.jetonRefuse, true);
+    const r2 = await demander(b, PLUS, { jetonAppareil: jetonExpire });
+    assert.equal(r2.etape, 'code');
+    assert.equal(r2.jetonRefuse, true);
+    assert.equal((await adminDb.collection('appareils_web').doc(hachageJeton(jetonExpire)).get()).exists, false,
+      'le jeton expiré est effacé');
+    assert.equal((await adminDb.collection('appareils_web').doc(hachageJeton(jetonAdmin)).get()).exists, true,
+      'celui d\'Alice reste intact');
+    // Jeton d'une autre compagnie : même refus.
+    const jetonAutre = await semerAppareil('apadmin', { companyId: 'autre-compagnie' });
+    const r3 = await demander(await appareil(), ADM, { jetonAppareil: jetonAutre });
+    assert.equal(r3.etape, 'code');
+    assert.equal(r3.jetonRefuse, true);
+  });
+
+  test('un employé (rôle « employé ») reste refusé, jeton ou pas, sans session ni code', async () => {
+    const jeton = await semerAppareil('apemp');
+    const b = await appareil();
+    for (const extra of [{}, { jetonAppareil: jeton }, { jetonAppareil: jetonAleatoire() }]) {
+      await assert.rejects(demander(b, EMP, extra), (e) => {
+        assert.equal(e.code, 'functions/permission-denied');
+        assert.equal(e.message, 'Cet espace est réservé aux super-admins, admins et contremaîtres.');
+        return true;
+      });
+    }
+    assert.equal((await adminDb.collection('sessions').doc(uidDe(b)).get()).exists, false);
+    assert.equal(await nbCourriels(EMP, 'Code de connexion'), 0);
+  });
+
+  test('rétrogradé, retiré ou compagnie bloquée : le jeton ne marche plus', async () => {
+    const jeton = await semerAppareil('applus');
+    const b = await appareil();
+    assert.equal((await demander(b, PLUS, { jetonAppareil: jeton })).etape, 'connecte');
+
+    await adminDb.collection('employees').doc('applus').update({ role: 'employe' });
+    await rejette(demander(await appareil(), PLUS, { jetonAppareil: jeton }), 'permission-denied');
+    await adminDb.collection('employees').doc('applus').update({ role: 'plus' });
+
+    await adminDb.collection('employees').doc('applus').update({ actif: false });
+    await rejette(demander(await appareil(), PLUS, { jetonAppareil: jeton }), 'not-found');
+    await adminDb.collection('employees').doc('applus').update({ actif: FieldValue.delete() });
+
+    await adminDb.collection('companies').doc(cid).update({ statut: 'suppression' });
+    await rejette(demander(await appareil(), PLUS, { jetonAppareil: jeton }), 'not-found');
+    await adminDb.collection('companies').doc(cid).update({ statut: 'approuvee' });
+
+    assert.equal((await demander(await appareil(), PLUS, { jetonAppareil: jeton })).etape, 'connecte', 'tout est rétabli');
+  });
+
+  test('révocation automatique : changement de NIP, réinitialisation, retrait, rétrogradation, NIP oublié', async () => {
+    const proprio = await connecter(NUM, ADM, PIN);
+    const refuse = async (courriel, jeton) => {
+      const r = await demander(await appareil(), courriel, { jetonAppareil: jeton });
+      assert.equal(r.etape, 'code');
+      assert.equal(r.jetonRefuse, true);
+    };
+
+    // 1. L'employé change son NIP.
+    await adminDb.collection('employees').doc('apchg').set({
+      companyId: cid, nom: 'Chg', role: 'plus', estProprietaire: false, courriel: 'ap-chg@exemple.ca', pinHash: hacher(cid, PIN),
+    });
+    const j1 = await semerAppareil('apchg'); const j1b = await semerAppareil('apchg');
+    const chg = await connecter(NUM, 'ap-chg@exemple.ca', PIN);
+    assert.equal((await demander(await appareil(), 'ap-chg@exemple.ca', { jetonAppareil: j1 })).etape, 'connecte');
+    assert.deepEqual(await chg.appeler('changerNip', { nipActuel: PIN, nouveauNip: '135790' }), { ok: true });
+    assert.equal((await appareils('apchg')).length, 0, 'tous ses appareils sont retirés (même celui de la session en cours)');
+    await adminDb.collection('employees').doc('apchg').update({ pinHash: hacher(cid, PIN) });
+    await refuse('ap-chg@exemple.ca', j1); await refuse('ap-chg@exemple.ca', j1b);
+
+    // 2. Réinitialisation du NIP par l'admin.
+    await adminDb.collection('employees').doc('aprei').set({
+      companyId: cid, nom: 'Rei', role: 'plus', estProprietaire: false, courriel: 'ap-rei@exemple.ca', pinHash: hacher(cid, PIN),
+    });
+    const j2 = await semerAppareil('aprei');
+    await proprio.appeler('enregistrerEmploye',
+      { employeeId: 'aprei', nom: 'Rei', courriel: 'ap-rei@exemple.ca', role: 'plus', reinitialiserNip: true });
+    assert.equal((await appareils('aprei')).length, 0);
+    await adminDb.collection('employees').doc('aprei').update({ pinHash: hacher(cid, PIN) });
+    await refuse('ap-rei@exemple.ca', j2);
+
+    // 3. Retrait avec fiche conservée, puis suppression de la fiche.
+    for (const [id, retrait] of [['apret', 'retirer'], ['apsup', 'supprimer']]) {
+      await adminDb.collection('employees').doc(id).set({
+        companyId: cid, nom: id, role: 'plus', estProprietaire: false, courriel: `${id}@exemple.ca`, pinHash: hacher(cid, PIN),
+      });
+      await semerAppareil(id); await semerAppareil(id);
+      assert.equal((await appareils(id)).length, 2);
+      await proprio.appeler(retrait === 'retirer' ? 'retirerAccesEmploye' : 'supprimerEmploye', { employeeId: id });
+      assert.equal((await appareils(id)).length, 0, retrait);
+    }
+
+    // 4. Passage au rôle « employé » par l'admin.
+    await adminDb.collection('employees').doc('aprol').set({
+      companyId: cid, nom: 'Rol', role: 'plus', estProprietaire: false, courriel: 'ap-rol@exemple.ca', pinHash: hacher(cid, PIN),
+    });
+    await semerAppareil('aprol');
+    await proprio.appeler('enregistrerEmploye', { employeeId: 'aprol', nom: 'Rol', courriel: 'ap-rol@exemple.ca', role: 'employe' });
+    assert.equal((await appareils('aprol')).length, 0);
+    // Un simple changement de nom ne retire rien.
+    await adminDb.collection('employees').doc('aprob').set({
+      companyId: cid, nom: 'Rob', role: 'plus', estProprietaire: false, courriel: 'ap-rob@exemple.ca', pinHash: hacher(cid, PIN),
+    });
+    await semerAppareil('aprob');
+    await proprio.appeler('enregistrerEmploye', { employeeId: 'aprob', nom: 'Rob Renommé', courriel: 'ap-rob@exemple.ca', role: 'plus' });
+    assert.equal((await appareils('aprob')).length, 1, 'promotion ou renommage : rien n\'est retiré');
+    await proprio.appeler('enregistrerEmploye', { employeeId: 'aprob', nom: 'Rob Renommé', courriel: 'ap-rob@exemple.ca', role: 'admin' });
+    assert.equal((await appareils('aprob')).length, 1);
+
+    // 5. « NIP oublié » mené à terme.
+    await adminDb.collection('employees').doc('apoub').set({
+      companyId: cid, nom: 'Oub', role: 'plus', estProprietaire: false, courriel: 'ap-oub@exemple.ca', pinHash: hacher(cid, PIN),
+    });
+    await semerAppareil('apoub');
+    const x = await appareil();
+    await x.appeler('demanderReinitialisationNip', { numeroCompagnie: NUM, email: 'ap-oub@exemple.ca' });
+    const codeReinit = extraire((await dernierCourriel('ap-oub@exemple.ca', 'réinitialisation')).texte, 'Votre code de réinitialisation');
+    await x.appeler('validerReinitialisationNip',
+      { numeroCompagnie: NUM, email: 'ap-oub@exemple.ca', code: codeReinit, nouveauPin: '864209' });
+    assert.equal((await appareils('apoub')).length, 0);
+
+  });
+
+  test('plafond : 5 appareils par employé, le plus ancien est supprimé au 6e', async () => {
+    await adminDb.collection('employees').doc('apcap').set({
+      companyId: cid, nom: 'Cap', role: 'admin', estProprietaire: false, courriel: 'ap-cap@exemple.ca', pinHash: hacher(cid, PIN),
+    });
+    const jetons = [];
+    for (let i = 0; i < 5; i++) {
+      jetons.push(await semerAppareil('apcap', { creeLe: new Date(Date.now() - (10 - i) * 3600 * 1000) }));
+    }
+    assert.equal((await appareils('apcap')).length, 5);
+    const { profil } = await connexionComplete('ap-cap@exemple.ca', true);
+    const restants = (await appareils('apcap')).map((d) => d.id).sort();
+    assert.equal(restants.length, 5);
+    assert.ok(!restants.includes(hachageJeton(jetons[0])), 'le plus ancien est parti');
+    for (const j of [...jetons.slice(1), profil.appareil.jeton]) assert.ok(restants.includes(hachageJeton(j)));
+  });
+
+  test('« Ne plus faire confiance à cet appareil » : sans session, réponse toujours {ok: true}', async () => {
+    const { profil } = await connexionComplete(ADM, true);
+    const jeton = profil.appareil.jeton;
+    const autre = await semerAppareil('applus');
+    const a = await appareil(); // aucune session de compagnie
+    assert.deepEqual(await a.appeler('revoquerAppareilWeb', { jeton: jetonAleatoire() }), { ok: true }, 'inconnu : même réponse');
+    for (const mauvais of [undefined, null, 'abc', 12, {}, [], true]) {
+      assert.deepEqual(await a.appeler('revoquerAppareilWeb', { jeton: mauvais }), { ok: true });
+    }
+    assert.equal((await appareils('apadmin')).length, 1, 'rien n\'est retiré par les faux jetons');
+    assert.deepEqual(await a.appeler('revoquerAppareilWeb', { jeton }), { ok: true });
+    assert.equal((await appareils('apadmin')).length, 0);
+    assert.equal((await adminDb.collection('appareils_web').doc(hachageJeton(autre)).get()).exists, true,
+      'l\'appareil d\'un autre employé n\'est pas touché');
+    const r = await demander(await appareil(), ADM, { jetonAppareil: jeton });
+    assert.equal(r.etape, 'code');
+    assert.equal(r.jetonRefuse, true);
+  });
+
+  test('« Ne plus faire confiance » : 20 demandes par heure et par adresse', async () => {
+    const a = await appareil();
+    for (let i = 0; i < 20; i++) await a.appeler('revoquerAppareilWeb', { jeton: jetonAleatoire() });
+    await rejette(a.appeler('revoquerAppareilWeb', { jeton: jetonAleatoire() }), 'resource-exhausted');
+  });
+
+  test('appareils_web est illisible et inscriptible par les clients, y compris les admins', async () => {
+    const { a, profil } = await connexionComplete(ADM, true);
+    const hash = hachageJeton(profil.appareil.jeton);
+    await assert.rejects(getDoc(doc(a.db, 'appareils_web', hash)));
+    await assert.rejects(getDocs(collection(a.db, 'appareils_web')));
+    await assert.rejects(getDocs(query(collection(a.db, 'appareils_web'), where('employeeId', '==', 'apadmin'))));
+    await assert.rejects(setDoc(doc(a.db, 'appareils_web', 'x'), { employeeId: 'apadmin', companyId: cid }));
+    await assert.rejects(updateDoc(doc(a.db, 'appareils_web', hash), { expireLe: new Date(Date.now() + 1e10) }));
+  });
+
+  test('connexionEmploye (application) ne change pas : pas de jeton, pas d\'appareil', async () => {
+    const avant = (await appareils('apadmin')).length;
+    const m = await connecter(NUM, ADM, PIN);
+    assert.equal(m.profil.appareil, undefined);
+    assert.equal((await appareils('apadmin')).length, avant);
+    assert.equal((await session(uidDe(m))).canal, undefined);
+  });
+});
+
+// =============================================================================
 describe('Limites anti-force brute', () => {
   test('connexion : blocage après 10 échecs par IP', async () => {
     const a = await appareil();
@@ -2225,7 +2589,7 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
   const NUM_CIBLE = '770001'; const NUM_TEMOIN = '770002';
   const bucket = () => getAdminStorage(adminApp).bucket(BUCKET);
   const COLLECTIONS = ['chantiers', 'chantier_photos', 'chantier_travaux', 'chantier_materiel',
-    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'materiel_general_vus', 'liste_achats', 'connexions_web', 'feuilles_temps'];
+    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'materiel_general_vus', 'liste_achats', 'connexions_web', 'appareils_web', 'feuilles_temps'];
 
   const existe = async (chemin) => (await adminDb.doc(chemin).get()).exists;
   const compter = async (collection, cid) =>
