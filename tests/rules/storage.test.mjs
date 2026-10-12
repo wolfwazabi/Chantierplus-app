@@ -1,7 +1,7 @@
 import { after, before, beforeEach, describe, test } from 'node:test';
 import { assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
 import { deleteObject, getBytes, ref, uploadBytes } from 'firebase/storage';
-import { doc, setDoc } from 'firebase/firestore';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
 import { creerEnvironnement, employe, individu, semer } from './helpers.mjs';
 
 let env;
@@ -159,6 +159,28 @@ describe('Storage — photos de chantier', () => {
     await assertFails(getBytes(ref(st(env.unauthenticatedContext()), 'chantiers/A/chA/photos/existante.jpg')));
     await assertFails(getBytes(ref(st(individu(env, 'uid-ind')), 'chantiers/A/chA/photos/existante.jpg')));
     await assertFails(uploadBytes(ref(st(employe(env, 'uid-adminA')), 'autre/x.jpg'), IMAGE, JPEG));
+  });
+});
+
+describe('Storage — anciens employés (actif: false)', () => {
+  const fiche = (employeeId, donnees) => env.withSecurityRulesDisabled((c) =>
+    updateDoc(doc(c.firestore(), `employees/${employeeId}`), donnees));
+
+  test('retiré : plus de lecture, de dépôt ni de suppression ; les autres ne sont pas touchés', async () => {
+    const s = st(employe(env, 'uid-adminA'));
+    await assertSucceeds(getBytes(ref(s, 'chantiers/A/chA/photos/existante.jpg')));
+    await fiche('adminA', { actif: false });
+    await assertFails(getBytes(ref(s, 'chantiers/A/chA/photos/existante.jpg')));
+    await assertFails(getBytes(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
+    await assertFails(uploadBytes(ref(s, 'chantiers/A/chA/photos/retire.jpg'), IMAGE, JPEG));
+    await assertFails(deleteObject(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
+    await assertSucceeds(getBytes(ref(st(employe(env, 'uid-superA')), 'chantiers/A/chA/photos/existante.jpg')));
+  });
+
+  test('réactivé, ou sans le champ : accès normal', async () => {
+    await fiche('adminA', { actif: true });
+    await assertSucceeds(getBytes(ref(st(employe(env, 'uid-adminA')), 'chantiers/A/chA/photos/existante.jpg')));
+    await assertSucceeds(getBytes(ref(st(employe(env, 'uid-plusA')), 'chantiers/A/chA/photos/existante.jpg')));
   });
 });
 

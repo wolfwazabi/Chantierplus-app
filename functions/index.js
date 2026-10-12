@@ -3,6 +3,7 @@ initializeApp();
 
 const {setGlobalOptions} = require("firebase-functions/v2");
 const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
+const {onSchedule} = require("firebase-functions/v2/scheduler");
 const {
   db, FieldValue, Timestamp,
   PIN_PEPPER, REGION, ROLES, ROLES_GESTION, FORMAT_NIP, FORMAT_NUMERO,
@@ -25,6 +26,7 @@ const xlsx = require("./src/xlsx");
 const PAGE_CREER_NIP = require("./src/page_creer_nip");
 const assistantCharpente = require("./src/assistant_charpente");
 const suppression = require("./src/suppression_compagnie");
+const archivage = require("./src/anciens_employes");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
@@ -33,6 +35,7 @@ const SECRETS_NIP_COURRIEL = [PIN_PEPPER, RESEND_API_KEY];
 
 const MESSAGE_CONNEXION_INVALIDE = "Numéro de compagnie, courriel ou NIP invalide.";
 const MESSAGE_ADMINS_RESERVES = "Seul le super-admin de la compagnie peut nommer, modifier ou retirer un admin.";
+const MESSAGE_ANCIEN_EMPLOYE = "Cette personne figure dans « Anciens employés » : réactivez-la ou supprimez sa fiche.";
 
 // Identifiant de document Firestore reçu d'un client : jamais de « / » (un chemin forgé).
 const FORMAT_ID = /^[A-Za-z0-9_-]{1,128}$/;
@@ -86,7 +89,8 @@ async function identifierParNip(request) {
       .where("courriel", "==", adresse)
       .limit(2)
       .get();
-  const employe = snap.size === 1 &&
+  // Un ancien employé (actif === false) n'a plus de NIP : même échec générique.
+  const employe = snap.size === 1 && snap.docs[0].data().actif !== false &&
     egalConstant(snap.docs[0].data().pinHash, hacherNip(compagnie.id, pin)) ? snap.docs[0] : null;
   if (!employe) await echouer(limiteCompagnie);
 
@@ -227,11 +231,18 @@ exports.validerConnexionWeb = onCall({secrets: SECRETS_NIP}, async (request) => 
     t.update(ref, {essais});
     return {etat: "mauvais"};
   });
-  if (verdict.etat === "expire") throw new HttpsError("failed-precondition", "Code expiré. Recommencez.");
-  if (verdict.etat === "epuise") {
-    throw new HttpsError("resource-exhausted", "Trop d'essais. Recommencez la connexion.");
+  // details.raison : le client web distingue ces cas sans lire le texte du message
+  // (« code-invalide » = on peut réessayer ; tout le reste = retour à la première étape).
+  if (verdict.etat === "expire") {
+    throw new HttpsError("failed-precondition", "Code expiré. Recommencez.", {raison: "code-expire"});
   }
-  if (verdict.etat === "mauvais") throw new HttpsError("permission-denied", "Code invalide.");
+  if (verdict.etat === "epuise") {
+    throw new HttpsError("resource-exhausted", "Trop d'essais. Recommencez la connexion.",
+        {raison: "essais-epuises"});
+  }
+  if (verdict.etat === "mauvais") {
+    throw new HttpsError("permission-denied", "Code invalide.", {raison: "code-invalide"});
+  }
 
   // Entre les deux étapes, l'employé a pu être retiré ou changer de rôle.
   const [empSnap, compSnap, idProprio] = await Promise.all([
@@ -240,11 +251,13 @@ exports.validerConnexionWeb = onCall({secrets: SECRETS_NIP}, async (request) => 
     proprioAppId(),
   ]);
   if (!empSnap.exists || empSnap.data().companyId !== verdict.companyId ||
+      empSnap.data().actif === false ||
       !compSnap.exists || compSnap.data().statut !== "approuvee") {
-    throw new HttpsError("permission-denied", "Session invalide. Reconnectez-vous.");
+    throw new HttpsError("permission-denied", "Session invalide. Reconnectez-vous.",
+        {raison: "session-invalide"});
   }
   if (!ROLES_GESTION.includes(empSnap.data().role)) {
-    throw new HttpsError("permission-denied", MESSAGE_WEB_RESERVE);
+    throw new HttpsError("permission-denied", MESSAGE_WEB_RESERVE, {raison: "role-refuse"});
   }
 
   const estProprioApp = idProprio === empSnap.id;
@@ -402,9 +415,15 @@ exports.supprimerCompagnie = onCall({timeoutSeconds: 540, memory: "512MiB"}, asy
 // Gestion des employés (admins de la compagnie)
 // =============================================================================
 
-// mode : « nouveau » (création de la fiche), « reinit » (NIP réinitialisé par l'admin)
-// ou « rappel » (même invitation renvoyée à qui n'a pas encore créé son NIP).
+// mode : « nouveau » (création de la fiche), « reinit » (NIP réinitialisé par l'admin),
+// « rappel » (même invitation renvoyée à qui n'a pas encore créé son NIP) ou « retour »
+// (ancien employé réactivé : nouveau NIP).
 const TEXTES_INVITATION = {
+  retour: (c) => ({
+    sujet: `Bon retour chez ${c.nomEntreprise} — ${NOM_APP}`,
+    intro: `Bon retour ! ${c.nomEntreprise} a réactivé votre accès à ${NOM_APP}. ` +
+      "Votre ancien NIP n'a pas été conservé : créez-en un nouveau.",
+  }),
   nouveau: (c) => ({
     sujet: `Bienvenue chez ${c.nomEntreprise} — ${NOM_APP}`,
     intro: `Votre inscription est confirmée : ${c.nomEntreprise} vous a créé un accès à ${NOM_APP}.`,
@@ -479,11 +498,15 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
         throw new HttpsError("not-found", "Employé introuvable.");
       }
       existant = snap.data();
+      // Un ancien employé ne se modifie pas : on le réactive ou on supprime sa fiche.
+      if (existant.actif === false) throw new HttpsError("failed-precondition", MESSAGE_ANCIEN_EMPLOYE);
     }
     const memeCourriel = await t.get(employes
         .where("companyId", "==", ctx.companyId).where("courriel", "==", adresse).limit(2));
-    if (memeCourriel.docs.some((doc) => doc.id !== ref.id)) {
-      throw new HttpsError("already-exists", "Ce courriel est déjà utilisé par un autre employé de votre compagnie.");
+    const doublon = memeCourriel.docs.find((doc) => doc.id !== ref.id);
+    if (doublon) {
+      throw new HttpsError("already-exists", doublon.data().actif === false ?
+        MESSAGE_ANCIEN_EMPLOYE : "Ce courriel est déjà utilisé par un autre employé de votre compagnie.");
     }
 
     // Le super-admin de la compagnie reste admin.
@@ -578,7 +601,7 @@ exports.creerNip = onRequest({secrets: SECRETS_NIP_COURRIEL}, async (req, res) =
   try {
     employe = await db.runTransaction(async (t) => {
       const [inv, emp] = await Promise.all([t.get(invRef), t.get(empRef)]);
-      if (!inv.exists || !emp.exists) return null;
+      if (!inv.exists || !emp.exists || emp.data().actif === false) return null;
       const i = inv.data();
       if (i.expireLe.toMillis() < Date.now() || !egalConstant(i.jetonHash, hacherJeton(jeton))) return null;
       t.update(empRef, {
@@ -612,6 +635,32 @@ exports.creerNip = onRequest({secrets: SECRETS_NIP_COURRIEL}, async (req, res) =
   res.status(200).json({ok: true, numero: compagnie.numero || "", courriel: employe.courriel});
 });
 
+/** Identifiant d'employé reçu d'un client : jamais de « / » (un chemin forgé). */
+function idEmploye(valeur) {
+  if (typeof valeur !== "string" || !FORMAT_ID.test(valeur)) {
+    throw new HttpsError("invalid-argument", "Employé invalide.");
+  }
+  return valeur;
+}
+
+/** Coupe tous les accès d'un employé : sessions, codes de connexion, liens et codes de NIP. */
+async function nettoyerAccesEmploye(employeeId, saufUid = null) {
+  await supprimerSessionsDe(employeeId, saufUid);
+  await db.collection("reinitialisations_nip").doc(employeeId).delete();
+  await db.collection("invitations_nip").doc(employeeId).delete();
+}
+
+/** Mêmes protections pour retirer, quel que soit le mode : jamais le super-admin ni le Proprio. */
+function exigerCibleRetirable(ctx, employeeId, cible) {
+  if (cible.estProprietaire === true || employeeId === ctx.idProprioApp) {
+    throw new HttpsError("failed-precondition", "Le super-admin de la compagnie ne peut pas être retiré.");
+  }
+  if (cible.role === "admin" && ctx.employe.estProprietaire !== true) {
+    throw new HttpsError("permission-denied", MESSAGE_ADMINS_RESERVES);
+  }
+}
+
+/** Suppression définitive de la fiche, tout de suite (droit à l'effacement). */
 exports.supprimerEmploye = onCall(async (request) => {
   verifierAppCheck(request, "supprimerEmploye");
   const ctx = await contexteAdmin(request);
@@ -626,20 +675,107 @@ exports.supprimerEmploye = onCall(async (request) => {
     if (!snap.exists || snap.data().companyId !== ctx.companyId) {
       throw new HttpsError("not-found", "Employé introuvable.");
     }
-    const cible = snap.data();
-    if (cible.estProprietaire === true || employeeId === ctx.idProprioApp) {
-      throw new HttpsError("failed-precondition", "Le super-admin de la compagnie ne peut pas être retiré.");
+    exigerCibleRetirable(ctx, employeeId, snap.data());
+    t.delete(ref);
+  });
+  await nettoyerAccesEmploye(employeeId);
+  return {ok: true};
+});
+
+/**
+ * Retire l'accès d'un employé : plus aucune connexion, NIP détruit, sessions coupées.
+ * Seuls le nom, le courriel, le rôle, la date du retrait, la date de suppression
+ * automatique (24 mois) et un motif en liste fermée sont conservés, pour pouvoir le
+ * réactiver (saisonnier). `supprimerEmploye` efface la fiche tout de suite.
+ */
+exports.retirerAccesEmploye = onCall(async (request) => {
+  verifierAppCheck(request, "retirerAccesEmploye");
+  const ctx = await contexteAdmin(request);
+  const employeeId = idEmploye(request.data?.employeeId);
+  const motif = archivage.lireMotif(request.data?.motif);
+  if (employeeId === ctx.employeeId) {
+    throw new HttpsError("failed-precondition", "Vous ne pouvez pas retirer votre propre compte.");
+  }
+
+  const ref = db.collection("employees").doc(employeeId);
+  const supprimeApresLe = archivage.dateSuppression(Date.now());
+  await db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists || snap.data().companyId !== ctx.companyId) {
+      throw new HttpsError("not-found", "Employé introuvable.");
     }
+    exigerCibleRetirable(ctx, employeeId, snap.data());
+    if (snap.data().actif === false) {
+      throw new HttpsError("failed-precondition", "Cette personne figure déjà dans « Anciens employés ».");
+    }
+    t.update(ref, {
+      actif: false,
+      retireLe: FieldValue.serverTimestamp(),
+      supprimeApresLe: Timestamp.fromDate(supprimeApresLe),
+      motifRetrait: motif,
+      // Le NIP est détruit : une réactivation passe toujours par un nouveau NIP.
+      pinHash: FieldValue.delete(),
+      pinModifieLe: FieldValue.delete(),
+    });
+  });
+  await nettoyerAccesEmploye(employeeId);
+  return {ok: true, supprimeApresLe: supprimeApresLe.toISOString()};
+});
+
+/**
+ * Réactive un ancien employé. L'ancien NIP n'existe plus : un lien à usage unique
+ * (7 jours) lui permet d'en créer un nouveau. Même retour que enregistrerEmploye.
+ */
+exports.reactiverEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => {
+  verifierAppCheck(request, "reactiverEmploye");
+  const ctx = await contexteAdmin(request);
+  const employeeId = idEmploye(request.data?.employeeId);
+
+  const limite = limiteur(`reactiver_${employeeId}`, 3, HEURE);
+  await limite.verifier();
+
+  const ref = db.collection("employees").doc(employeeId);
+  const employe = await db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    if (!snap.exists || snap.data().companyId !== ctx.companyId) {
+      throw new HttpsError("not-found", "Employé introuvable.");
+    }
+    const cible = snap.data();
     if (cible.role === "admin" && ctx.employe.estProprietaire !== true) {
       throw new HttpsError("permission-denied", MESSAGE_ADMINS_RESERVES);
     }
-    t.delete(ref);
+    if (cible.actif !== false) {
+      throw new HttpsError("failed-precondition", "Cette personne ne figure pas dans « Anciens employés ».");
+    }
+    t.update(ref, {
+      actif: true,
+      retireLe: FieldValue.delete(),
+      supprimeApresLe: FieldValue.delete(),
+      motifRetrait: FieldValue.delete(),
+      // Par précaution : jamais d'ancien NIP.
+      pinHash: FieldValue.delete(),
+      pinModifieLe: FieldValue.delete(),
+    });
+    return cible;
   });
-  await supprimerSessionsDe(employeeId);
-  await db.collection("reinitialisations_nip").doc(employeeId).delete();
-  await db.collection("invitations_nip").doc(employeeId).delete();
-  return {ok: true};
+  await limite.compter();
+  const lien = await creerInvitation(employeeId);
+  const envoye = await envoyerInvitation(employe, lien, ctx.compagnie, "retour");
+  return envoye ?
+    {id: employeeId, courrielEnvoye: true} :
+    {id: employeeId, courrielEnvoye: false, lienInvitation: lien};
 });
+
+/** Chaque nuit : supprime les anciens employés dont les 24 mois sont écoulés. */
+exports.purgerAnciensEmployes = onSchedule(
+    {schedule: "every day 03:30", timeZone: "America/Toronto", timeoutSeconds: 300},
+    async () => {
+      const nombre = await archivage.purgerAnciens({
+        db, Timestamp, nettoyer: (employeeId) => nettoyerAccesEmploye(employeeId),
+      });
+      // Seulement un compte : aucune donnée personnelle dans les journaux.
+      logger.info("Anciens employés purgés", {nombre});
+    });
 
 // =============================================================================
 // Feuille de temps : calculée et enregistrée par le serveur
@@ -1197,7 +1333,7 @@ exports.recupererNumeroCompagnie = onCall({secrets: [RESEND_API_KEY]}, async (re
   await limiteAdresse.compter();
 
   const employes = await db.collection("employees").where("courriel", "==", adresse).limit(20).get();
-  const ids = [...new Set(employes.docs.map((e) => e.data().companyId))];
+  const ids = [...new Set(employes.docs.filter((e) => e.data().actif !== false).map((e) => e.data().companyId))];
   const compagnies = (await Promise.all(ids.map((id) => db.collection("companies").doc(id).get())))
       .filter((c) => c.exists && c.data().statut !== "refusee");
 
@@ -1237,6 +1373,8 @@ exports.demanderReinitialisationNip = onCall({secrets: SECRETS_NIP_COURRIEL}, as
       .where("companyId", "==", compagnie.id).where("courriel", "==", adresse).limit(2).get();
   if (empSnap.size !== 1) return {ok: true};
   const employe = empSnap.docs[0];
+  // Un ancien employé ne peut pas se redonner accès par « NIP oublié ».
+  if (employe.data().actif === false) return {ok: true};
 
   const code = nombreAleatoire(6);
   await db.collection("reinitialisations_nip").doc(employe.id).set({
@@ -1275,13 +1413,14 @@ exports.validerReinitialisationNip = onCall({secrets: SECRETS_NIP_COURRIEL}, asy
   const compagnie = compSnap.docs[0];
   const empSnap = await db.collection("employees")
       .where("companyId", "==", compagnie.id).where("courriel", "==", adresse).limit(2).get();
-  if (empSnap.size !== 1) throw invalide();
+  if (empSnap.size !== 1 || empSnap.docs[0].data().actif === false) throw invalide();
   const employe = empSnap.docs[0];
   const resetRef = db.collection("reinitialisations_nip").doc(employe.id);
 
   const valide = await db.runTransaction(async (t) => {
-    const snap = await t.get(resetRef);
-    if (!snap.exists) return false;
+    const [snap, fiche] = await Promise.all([t.get(resetRef), t.get(employe.ref)]);
+    // Retiré entre la demande et la validation : le NIP ne ressuscite pas.
+    if (!snap.exists || !fiche.exists || fiche.data().actif === false) return false;
     const r = snap.data();
     if (r.expireLe.toMillis() < Date.now() || r.essais >= 5) {
       t.delete(resetRef);

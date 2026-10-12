@@ -88,6 +88,40 @@ describe('Sessions', () => {
     }
   });
 
+  describe('anciens employés (actif: false)', () => {
+    const lire = (uid) => getDocs(query(collection(ctxDe(uid), 'chantiers'), where('companyId', '==', 'A')));
+    const fiche = (employeeId, donnees) => env.withSecurityRulesDisabled((c) =>
+      updateDoc(doc(c.firestore(), `employees/${employeeId}`), donnees));
+
+    test("un employé retiré (actif: false) n'a plus aucun accès, même avec sa session", async () => {
+      await assertSucceeds(lire('uid-adminA'));
+      await fiche('adminA', { actif: false });
+      await assertFails(lire('uid-adminA'));
+      await assertFails(getDoc(doc(ctxDe('uid-adminA'), 'companies/A')));
+      await assertFails(addDoc(collection(ctxDe('uid-adminA'), 'chantier_travaux'),
+        { companyId: 'A', chantierId: 'chA', texte: 'Coffrage', complete: false, dateAjout: serverTimestamp() }));
+      await assertFails(getDoc(doc(ctxDe('uid-adminA'), 'employees/plusA')));
+      // Les autres employés de la compagnie ne sont pas touchés.
+      await assertSucceeds(lire('uid-superA'));
+      await assertSucceeds(getDoc(doc(ctxDe('uid-plusA'), 'employees/plusA')));
+    });
+
+    test('réactivé (actif: true) ou sans le champ (employés existants) : accès normal', async () => {
+      await fiche('adminA', { actif: true });
+      await assertSucceeds(lire('uid-adminA'));
+      await assertSucceeds(getDoc(doc(ctxDe('uid-adminA'), 'companies/A')));
+      await assertSucceeds(lire('uid-superA'));
+    });
+
+    test("contremaître et employé retirés : plus d'accès non plus", async () => {
+      await fiche('plusA', { actif: false });
+      await fiche('empA', { actif: false });
+      await assertFails(getDoc(doc(ctxDe('uid-plusA'), 'companies/A')));
+      await assertFails(getDoc(doc(ctxDe('uid-empA'), 'companies/A')));
+      await assertFails(getDoc(doc(ctxDe('uid-empA'), 'sessions/uid-adminA')));
+    });
+  });
+
   describe("expiration (sessions de l'espace web : expireLe)", () => {
     const sessionAvec = (uid, expireLe, extra = {}) => env.withSecurityRulesDisabled((c) =>
       setDoc(doc(c.firestore(), `sessions/${uid}`),

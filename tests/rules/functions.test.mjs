@@ -4,7 +4,7 @@
 // _courriels_emulateur au lieu d'être envoyés. Lancer via : npm run test:functions
 import { after, before, beforeEach, describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import http from 'node:http';
 import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
@@ -14,7 +14,8 @@ import {
 } from 'firebase/firestore';
 import { lundi } from './helpers.mjs';
 import { initializeApp as initAdmin } from 'firebase-admin/app';
-import { FieldValue, getFirestore as getAdminDb } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, getFirestore as getAdminDb } from 'firebase-admin/firestore';
+import archivage from '../../functions/src/anciens_employes.js';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import yauzl from 'yauzl';
 import ExcelJS from 'exceljs';
@@ -1661,6 +1662,7 @@ describe('Connexion web : NIP, puis code reçu par courriel (admins et contrema�
     await assert.rejects(valider(a, code), (e) => {
       assert.equal(e.code, 'functions/failed-precondition');
       assert.equal(e.message, 'Code expiré. Recommencez.');
+      assert.equal(e.details?.raison, 'code-expire');
       return true;
     });
 
@@ -1683,11 +1685,17 @@ describe('Connexion web : NIP, puis code reçu par courriel (admins et contrema�
     for (let i = 0; i < 4; i++) {
       await assert.rejects(valider(a, mauvais(code)), (e) => {
         assert.equal(e.code, 'functions/permission-denied');
+        assert.equal(e.message, 'Code invalide.');
+        assert.equal(e.details?.raison, 'code-invalide', 'on peut réessayer');
         return true;
       });
       assert.equal((await connexion(uidDe(a))).essais, i + 1);
     }
-    await rejette(valider(a, mauvais(code)), 'resource-exhausted');
+    await assert.rejects(valider(a, mauvais(code)), (e) => {
+      assert.equal(e.code, 'functions/resource-exhausted');
+      assert.equal(e.details?.raison, 'essais-epuises', 'retour à la première étape');
+      return true;
+    });
     assert.equal((await adminDb.collection('connexions_web').doc(uidDe(a)).get()).exists, false);
     assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
     await rejette(valider(a, code), 'failed-precondition');
@@ -1764,6 +1772,7 @@ describe('Connexion web : NIP, puis code reçu par courriel (admins et contrema�
     await assert.rejects(valider(a, code), (e) => {
       assert.equal(e.code, 'functions/permission-denied');
       assert.equal(e.message, MESSAGE_RESERVE);
+      assert.equal(e.details?.raison, 'role-refuse');
       return true;
     });
     assert.equal((await adminDb.collection('sessions').doc(uidDe(a)).get()).exists, false);
@@ -1774,7 +1783,11 @@ describe('Connexion web : NIP, puis code reçu par courriel (admins et contrema�
     await demander(b, ADM);
     const codeB = extraire((await dernierCourriel(ADM, 'Code de connexion')).texte, 'Votre code de connexion');
     await adminDb.collection('companies').doc(cid).update({ statut: 'suppression' });
-    await rejette(valider(b, codeB), 'permission-denied');
+    await assert.rejects(valider(b, codeB), (e) => {
+      assert.equal(e.code, 'functions/permission-denied');
+      assert.equal(e.details?.raison, 'session-invalide');
+      return true;
+    });
     await adminDb.collection('companies').doc(cid).update({ statut: 'approuvee' });
     assert.equal((await adminDb.collection('sessions').doc(uidDe(b)).get()).exists, false);
   });
@@ -1850,6 +1863,341 @@ describe('Sessions de l\'espace web : expiration à 12 h (fonctions et règles)'
 });
 
 // =============================================================================
+describe('Anciens employés : retrait avec fiche conservée (24 mois), réactivation, suppression, purge', () => {
+  const NUM = '550001'; const cid = 'an-compagnie'; const PIN = '482915';
+  const NUM_B = '550002'; const cidB = 'an-autre';
+  const courrielDe = (id) => `${id}@exemple.ca`;
+  const MESSAGE_ANCIEN = 'Cette personne figure dans « Anciens employés » : réactivez-la ou supprimez sa fiche.';
+  let owner; let admin2; let plus; let autre;
+
+  const fiche = async (id) => (await adminDb.collection('employees').doc(id).get()).data();
+  const existe = async (chemin) => (await adminDb.doc(chemin).get()).exists;
+
+  /** Une fiche active avec NIP, plus un lien d'invitation, un code de NIP oublié et un code web en attente. */
+  async function semer(id, role = 'employe', extra = {}) {
+    await adminDb.collection('employees').doc(id).set({
+      companyId: cid, nom: `Nom ${id}`, role, estProprietaire: false, courriel: courrielDe(id),
+      pinHash: hacher(cid, PIN), ...extra,
+    });
+  }
+  async function semerAcces(id) {
+    const demain = new Date(Date.now() + 24 * 3600 * 1000);
+    await adminDb.collection('invitations_nip').doc(id).set({ jetonHash: 'x', expireLe: demain });
+    await adminDb.collection('reinitialisations_nip').doc(id).set({ codeHash: 'x', essais: 0, expireLe: demain });
+    await adminDb.collection('connexions_web').doc(`uid-web-${id}`).set({ employeeId: id, companyId: cid, expireLe: demain });
+  }
+  const retirer = (a, employeeId, motif) =>
+    a.appeler('retirerAccesEmploye', motif === undefined ? { employeeId } : { employeeId, motif });
+  const reactiver = (a, employeeId) => a.appeler('reactiverEmploye', { employeeId });
+
+  before(async () => {
+    await adminDb.collection('companies').doc(cid).set(
+      { numero: NUM, nomEntreprise: 'Anciens inc.', statut: 'approuvee', reglesPaie: {} });
+    await adminDb.collection('companies').doc(cidB).set(
+      { numero: NUM_B, nomEntreprise: 'Autre inc.', statut: 'approuvee', reglesPaie: {} });
+    await semer('anowner', 'admin', { estProprietaire: true });
+    await semer('anadmin2', 'admin');
+    await semer('anplus', 'plus');
+    await adminDb.collection('employees').doc('anbadmin').set({
+      companyId: cidB, nom: 'Admin B', role: 'admin', estProprietaire: true, courriel: courrielDe('anbadmin'),
+      pinHash: hacher(cidB, PIN),
+    });
+    owner = await connecter(NUM, courrielDe('anowner'), PIN);
+    admin2 = await connecter(NUM, courrielDe('anadmin2'), PIN);
+    plus = await connecter(NUM, courrielDe('anplus'), PIN);
+    autre = await connecter(NUM_B, courrielDe('anbadmin'), PIN);
+  });
+
+  test('retrait : accès coupé, NIP détruit, seule une fiche minimale est conservée', async () => {
+    await semer('ant1');
+    await semerAcces('ant1');
+    const employe = await connecter(NUM, courrielDe('ant1'), PIN);
+    const avant = Date.now();
+
+    const r = await retirer(owner, 'ant1', 'saisonnier');
+    assert.equal(r.ok, true);
+    const echeance = new Date(r.supprimeApresLe);
+    const attendue = new Date(avant); attendue.setUTCMonth(attendue.getUTCMonth() + 24);
+    assert.ok(Math.abs(echeance - attendue) < 2 * 24 * 3600 * 1000, 'suppression automatique dans 24 mois');
+
+    const f = await fiche('ant1');
+    assert.equal(f.actif, false);
+    assert.equal(f.motifRetrait, 'saisonnier');
+    assert.ok(f.retireLe);
+    assert.ok(Math.abs(f.supprimeApresLe.toMillis() - echeance.getTime()) < 1000, 'la date est celle de la fiche');
+    assert.equal(f.pinHash, undefined, 'le NIP est détruit');
+    assert.equal(f.pinModifieLe, undefined);
+    assert.deepEqual(Object.keys(f).sort(),
+      ['actif', 'companyId', 'courriel', 'estProprietaire', 'motifRetrait', 'nom', 'retireLe', 'role', 'supprimeApresLe'],
+      'aucun autre renseignement n\'est conservé');
+    assert.equal(f.nom, 'Nom ant1');
+    assert.equal(f.courriel, courrielDe('ant1'));
+
+    // Plus aucun accès : session, lien, code de NIP oublié, code de connexion web.
+    assert.equal((await adminDb.collection('sessions').where('employeeId', '==', 'ant1').get()).size, 0);
+    assert.equal(await existe('invitations_nip/ant1'), false);
+    assert.equal(await existe('reinitialisations_nip/ant1'), false);
+    assert.equal(await existe('connexions_web/uid-web-ant1'), false);
+    await assert.rejects(getDoc(doc(employe.db, 'companies', cid)));
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: courrielDe('ant1'), pin: PIN }), 'not-found');
+  });
+
+  test('même si un NIP revenait sur la fiche, un ancien employé ne se connecte pas (ni mobile, ni web)', async () => {
+    await semer('ant2', 'plus');
+    await retirer(owner, 'ant2');
+    await adminDb.collection('employees').doc('ant2').update({ pinHash: hacher(cid, PIN) });
+    const a = await appareil();
+    await rejette(a.appeler('connexionEmploye', { numeroCompagnie: NUM, courriel: courrielDe('ant2'), pin: PIN }), 'not-found');
+    await rejette(a.appeler('connexionWeb', { numeroCompagnie: NUM, courriel: courrielDe('ant2'), pin: PIN }), 'not-found');
+    assert.equal(await existe(`connexions_web/${a.auth.currentUser.uid}`), false);
+  });
+
+  test('une session qui survivrait au retrait est refusée par les fonctions et par les règles', async () => {
+    await semer('ant3', 'plus');
+    const a = await connecter(NUM, courrielDe('ant3'), PIN);
+    // On retire la fiche sans nettoyer les sessions (comme une panne en plein milieu).
+    await adminDb.collection('employees').doc('ant3').update({ actif: false });
+    await rejette(a.appeler('recalculerSemaineCourante'), 'permission-denied');
+    await rejette(a.appeler('enregistrerFeuilleTemps', { lundiDate: lundi(0), jours: [] }), 'permission-denied');
+    await assert.rejects(getDoc(doc(a.db, 'companies', cid)));
+    await assert.rejects(getDocs(query(collection(a.db, 'chantiers'), where('companyId', '==', cid))));
+  });
+
+  test('motif : liste fermée, « non-precise » par défaut, jamais de texte libre', async () => {
+    await semer('ant4'); await semer('ant5');
+    await retirer(owner, 'ant4');
+    assert.equal((await fiche('ant4')).motifRetrait, 'non-precise');
+    for (const motif of ['saisonnier', 'depart-volontaire', 'fin-contrat', 'absence-prolongee', 'autre', 'non-precise']) {
+      await adminDb.collection('employees').doc('ant5').set({
+        companyId: cid, nom: 'N', role: 'employe', estProprietaire: false, courriel: courrielDe('ant5'), pinHash: hacher(cid, PIN),
+      });
+      await retirer(owner, 'ant5', motif);
+      assert.equal((await fiche('ant5')).motifRetrait, motif);
+    }
+    await semer('ant6');
+    for (const mauvais of ['maladie : cancer', 'Saisonnier', 'saisonnier ', '', 123, true, ['autre'], { motif: 'autre' }]) {
+      await rejette(retirer(owner, 'ant6', mauvais), 'invalid-argument');
+    }
+    const intacte = await fiche('ant6');
+    assert.equal(intacte.actif, undefined, 'rien n\'est modifié par un motif refusé');
+    assert.equal(intacte.motifRetrait, undefined);
+    assert.ok(intacte.pinHash);
+  });
+
+  test('protections : soi-même, super-admin, admin par un admin, autre compagnie, non-admin', async () => {
+    await semer('ant7'); await semer('ant8', 'admin');
+    await rejette(retirer(owner, 'anowner'), 'failed-precondition');
+    await rejette(retirer(admin2, 'anadmin2'), 'failed-precondition');
+    await rejette(retirer(admin2, 'anowner'), 'failed-precondition');
+    await rejette(retirer(admin2, 'ant8'), 'permission-denied');
+    await rejette(retirer(autre, 'ant7'), 'not-found');
+    await rejette(retirer(owner, 'fantome'), 'not-found');
+    await rejette(retirer(plus, 'ant7'), 'permission-denied');
+    await rejette(retirer(await appareil(), 'ant7'), 'permission-denied');
+    for (const id of ['a/b', '../employees/ant7', '', null, 12, 'x'.repeat(200)]) {
+      await rejette(owner.appeler('retirerAccesEmploye', { employeeId: id }), 'invalid-argument');
+    }
+    assert.equal((await fiche('ant7')).actif, undefined);
+    assert.equal((await fiche('ant8')).actif, undefined);
+    assert.equal((await fiche('anowner')).actif, undefined);
+    // Le super-admin, lui, retire un admin.
+    await retirer(owner, 'ant8', 'fin-contrat');
+    assert.equal((await fiche('ant8')).actif, false);
+  });
+
+  test('déjà retiré : refusé, et la date de suppression ne change pas', async () => {
+    await semer('ant9');
+    await retirer(owner, 'ant9');
+    const avant = await fiche('ant9');
+    await rejette(retirer(owner, 'ant9', 'autre'), 'failed-precondition');
+    assert.deepEqual(await fiche('ant9'), avant);
+  });
+
+  test('un ancien employé ne revient pas par « NIP oublié », par un vieux lien ou par la récupération du numéro', async () => {
+    const courriel = 'ancien-lien@exemple.ca';
+    const { id: ancien } = await owner.appeler('enregistrerEmploye', { nom: 'Ancien Lien', courriel, role: 'plus' });
+    const lien = await lienRecu(courriel);
+    await retirer(owner, ancien);
+    const a = await appareil();
+    // NIP oublié : réponse neutre, aucun courriel, aucun code.
+    assert.deepEqual(await a.appeler('demanderReinitialisationNip', { numeroCompagnie: NUM, email: courriel }), { ok: true });
+    assert.equal(await existe(`reinitialisations_nip/${ancien}`), false);
+    // Un code qui aurait été créé avant le retrait ne sert à rien.
+    await adminDb.collection('reinitialisations_nip').doc(ancien).set({
+      codeHash: hacher(`reinit:${ancien}`, '123456'), essais: 0, expireLe: new Date(Date.now() + 600000),
+    });
+    await rejette(a.appeler('validerReinitialisationNip',
+      { numeroCompagnie: NUM, email: courriel, code: '123456', nouveauPin: '987654' }), 'permission-denied');
+    assert.equal((await fiche(ancien)).pinHash, undefined, 'aucun NIP n\'est recréé');
+    // Un vieux lien d'invitation.
+    await adminDb.collection('invitations_nip').doc(ancien).set({
+      jetonHash: createHash('sha256').update(lien.jeton).digest('hex'), expireLe: new Date(Date.now() + 600000),
+    });
+    assert.equal((await soumettreNip(lien, '246802')).statut, 400);
+    assert.equal(await existe(`invitations_nip/${ancien}`), true, 'le lien n\'est pas consommé');
+    assert.equal((await fiche(ancien)).pinHash, undefined);
+    // Récupération du numéro de compagnie : aucun courriel.
+    const avant = (await adminDb.collection('_courriels_emulateur').where('a', '==', courriel).get()).size;
+    await a.appeler('recupererNumeroCompagnie', { email: courriel });
+    assert.equal((await adminDb.collection('_courriels_emulateur').where('a', '==', courriel).get()).size, avant);
+  });
+
+  test('un ancien employé ne se modifie pas ; son courriel ne peut pas être repris', async () => {
+    await semer('ant11');
+    await retirer(owner, 'ant11');
+    const modif = { employeeId: 'ant11', nom: 'Autre nom', courriel: courrielDe('ant11'), role: 'employe' };
+    await assert.rejects(owner.appeler('enregistrerEmploye', modif), (e) => {
+      assert.equal(e.code, 'functions/failed-precondition');
+      assert.equal(e.message, MESSAGE_ANCIEN);
+      return true;
+    });
+    await assert.rejects(owner.appeler('enregistrerEmploye',
+      { nom: 'Doublon', courriel: courrielDe('ant11').toUpperCase(), role: 'employe' }), (e) => {
+      assert.equal(e.code, 'functions/already-exists');
+      assert.equal(e.message, MESSAGE_ANCIEN);
+      return true;
+    });
+    // Un courriel pris par un employé ACTIF garde son message habituel.
+    await assert.rejects(owner.appeler('enregistrerEmploye',
+      { nom: 'Doublon', courriel: courrielDe('anplus'), role: 'employe' }), (e) => {
+      assert.equal(e.code, 'functions/already-exists');
+      assert.match(e.message, /déjà utilisé par un autre employé/);
+      return true;
+    });
+    assert.equal((await fiche('ant11')).nom, 'Nom ant11');
+    assert.equal((await adminDb.collection('employees').where('courriel', '==', courrielDe('ant11')).get()).size, 1);
+  });
+
+  test('réactivation : nouveau NIP par lien, l\'ancien NIP ne revient jamais', async () => {
+    await semer('ant12', 'plus');
+    await retirer(owner, 'ant12', 'saisonnier');
+    const courriel = courrielDe('ant12');
+
+    const r = await reactiver(owner, 'ant12');
+    assert.deepEqual(r, { id: 'ant12', courrielEnvoye: true });
+    const f = await fiche('ant12');
+    assert.equal(f.actif, true);
+    assert.equal(f.retireLe, undefined);
+    assert.equal(f.supprimeApresLe, undefined);
+    assert.equal(f.motifRetrait, undefined);
+    assert.equal(f.pinHash, undefined, 'aucun NIP tant que le lien n\'est pas utilisé');
+    assert.equal(f.role, 'plus');
+
+    const msg = await dernierCourriel(courriel, 'Bon retour');
+    assert.equal(msg.sujet, 'Bon retour chez Anciens inc. — Chantier+');
+    assert.ok(msg.texte.includes('Bon retour !'));
+    assert.ok(msg.texte.includes(`Numéro de compagnie : ${NUM}`));
+    assert.ok(msg.texte.includes(`Courriel : ${courriel}`));
+    assert.ok(msg.texte.includes('valide 7 jours, une seule fois'));
+
+    // Avant le lien : aucune connexion, même avec l'ancien NIP.
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel, pin: PIN }), 'not-found');
+    const lien = await lienRecu(courriel, 'Bon retour');
+    assert.equal(lien.employeeId, 'ant12');
+    assert.equal((await soumettreNip(lien, '135791')).statut, 200);
+    assert.equal((await connecter(NUM, courriel, '135791')).profil.role, 'plus');
+    await rejette((await appareil()).appeler('connexionEmploye', { numeroCompagnie: NUM, courriel, pin: PIN }), 'not-found');
+  });
+
+  test('réactivation : seulement un ancien employé ; rôles, compagnie et limite respectés', async () => {
+    await semer('ant13'); await semer('ant14', 'admin'); await semer('ant15');
+    await rejette(reactiver(owner, 'ant13'), 'failed-precondition'); // encore actif
+    await retirer(owner, 'ant13'); await retirer(owner, 'ant14');
+    await rejette(reactiver(plus, 'ant13'), 'permission-denied');
+    await rejette(reactiver(await appareil(), 'ant13'), 'permission-denied');
+    await rejette(reactiver(autre, 'ant13'), 'not-found');
+    await rejette(reactiver(owner, 'fantome'), 'not-found');
+    await rejette(reactiver(admin2, 'ant14'), 'permission-denied'); // un admin : le super-admin seulement
+    for (const id of ['a/b', '', null, 'x'.repeat(200)]) {
+      await rejette(owner.appeler('reactiverEmploye', { employeeId: id }), 'invalid-argument');
+    }
+    assert.equal((await fiche('ant13')).actif, false);
+    assert.equal((await fiche('ant14')).actif, false);
+    assert.equal((await reactiver(admin2, 'ant13')).courrielEnvoye, true, 'un admin réactive un employé');
+    assert.equal((await reactiver(owner, 'ant14')).courrielEnvoye, true, 'le super-admin réactive un admin');
+
+    // 3 envois par heure et par employé ; un refus ne compte pas.
+    await retirer(owner, 'ant15');
+    for (let i = 0; i < 4; i++) await rejette(reactiver(owner, 'ant13'), 'failed-precondition');
+    await adminDb.collection('limites_connexion').doc('reactiver_ant15').set(
+      { compte: 3, debut: new Date(), expireLe: new Date(Date.now() + 3600 * 1000) });
+    await rejette(reactiver(owner, 'ant15'), 'resource-exhausted');
+    assert.equal((await fiche('ant15')).actif, false, 'rien n\'est modifié quand la limite est atteinte');
+  });
+
+  test('suppression immédiate de la fiche d\'un ancien employé (droit à l\'effacement)', async () => {
+    await semer('ant16');
+    await semerAcces('ant16');
+    await retirer(owner, 'ant16', 'autre');
+    assert.deepEqual(await owner.appeler('supprimerEmploye', { employeeId: 'ant16' }), { ok: true });
+    assert.equal(await existe('employees/ant16'), false);
+    assert.equal(await existe('invitations_nip/ant16'), false);
+    assert.equal(await existe('connexions_web/uid-web-ant16'), false);
+    await rejette(owner.appeler('supprimerEmploye', { employeeId: 'ant16' }), 'not-found');
+  });
+
+  test('supprimerEmploye garde ses protections', async () => {
+    await semer('ant17', 'admin');
+    await rejette(owner.appeler('supprimerEmploye', { employeeId: 'anowner' }), 'failed-precondition');
+    await rejette(owner.appeler('supprimerEmploye', { employeeId: 'ant17x' }), 'not-found');
+    await rejette(admin2.appeler('supprimerEmploye', { employeeId: 'ant17' }), 'permission-denied');
+    await rejette(plus.appeler('supprimerEmploye', { employeeId: 'ant17' }), 'permission-denied');
+    await rejette(autre.appeler('supprimerEmploye', { employeeId: 'ant17' }), 'not-found');
+    assert.equal(await existe('employees/ant17'), true);
+  });
+
+  test('purge automatique : seules les fiches échues sont supprimées, avec leurs accès', async () => {
+    const passe = new Date(Date.now() - 1000);
+    const futur = new Date(Date.now() + 30 * 24 * 3600 * 1000);
+    const ancien = (id, supprimeApresLe, extra = {}) => adminDb.collection('employees').doc(id).set({
+      companyId: cid, nom: `Nom ${id}`, role: 'employe', estProprietaire: false, courriel: courrielDe(id),
+      actif: false, retireLe: new Date(), supprimeApresLe, motifRetrait: 'saisonnier', ...extra,
+    });
+    await ancien('anp1', passe); await ancien('anp2', passe); await ancien('anp3', futur);
+    await ancien('anp4', passe, { companyId: cidB });
+    await semer('anp5'); // actif, sans échéance
+    await semer('anp6', 'employe', { actif: true });
+    await semerAcces('anp1');
+    await adminDb.collection('sessions').doc('uid-p1').set({ employeeId: 'anp1', companyId: cid });
+    const nettoyees = [];
+    const nettoyer = async (id) => {
+      nettoyees.push(id);
+      await adminDb.collection('sessions').where('employeeId', '==', id).get()
+        .then((s) => Promise.all(s.docs.map((d) => d.ref.delete())));
+      await adminDb.collection('invitations_nip').doc(id).delete();
+      await adminDb.collection('reinitialisations_nip').doc(id).delete();
+      await adminDb.collection('connexions_web').doc(`uid-web-${id}`).delete();
+    };
+
+    const total = await archivage.purgerAnciens({ db: adminDb, Timestamp, nettoyer });
+    assert.equal(total, 3, 'les trois fiches échues (dont celle d\'une autre compagnie)');
+    assert.deepEqual(nettoyees.sort(), ['anp1', 'anp2', 'anp4']);
+    for (const id of ['anp1', 'anp2', 'anp4']) assert.equal(await existe(`employees/${id}`), false, id);
+    for (const id of ['anp3', 'anp5', 'anp6']) assert.equal(await existe(`employees/${id}`), true, id);
+    assert.equal(await existe('invitations_nip/anp1'), false);
+    assert.equal(await existe('sessions/uid-p1'), false);
+    // Deuxième passage : rien à faire.
+    assert.equal(await archivage.purgerAnciens({ db: adminDb, Timestamp, nettoyer }), 0);
+    // Plus de 100 fiches échues : plusieurs lots.
+    for (let i = 0; i < 205; i++) await ancien(`anlot${i}`, passe);
+    assert.equal(await archivage.purgerAnciens({ db: adminDb, Timestamp, nettoyer }), 205);
+    assert.equal((await adminDb.collection('employees').where('actif', '==', false)
+      .where('supprimeApresLe', '<=', Timestamp.now()).get()).size, 0, 'plus aucune fiche échue');
+    assert.equal(await existe('employees/anp3'), true, 'la fiche non échue reste');
+  });
+
+  test('la fonction planifiée est publiée par le serveur', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../../functions/index.js', import.meta.url), 'utf8');
+    assert.match(source, /exports\.purgerAnciensEmployes = onSchedule\(/);
+    assert.match(source, /schedule: "every day 03:30"/);
+    assert.match(source, /nettoyer: \(employeeId\) => nettoyerAccesEmploye\(employeeId\)/);
+  });
+});
+
+// =============================================================================
 describe('Limites anti-force brute', () => {
   test('connexion : blocage après 10 échecs par IP', async () => {
     const a = await appareil();
@@ -1912,13 +2260,13 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
   // Compteurs anti-abus : semés juste avant l'appel (le beforeEach global les vide).
   async function semerLimites(cid) {
     for (const suffixe of ['admin', 'plus', 'emp']) {
-      for (const p of ['feuille', 'corrfeuille', 'recalcul', 'export', 'nip', 'assistant_h', 'connweb', 'renvoi']) {
+      for (const p of ['feuille', 'corrfeuille', 'recalcul', 'export', 'nip', 'assistant_h', 'connweb', 'renvoi', 'reactiver']) {
         await adminDb.collection('limites_connexion').doc(`${p}_${cid}-${suffixe}`).set({ compte: 1 });
       }
     }
     await adminDb.collection('limites_connexion').doc(`co_${cid}`).set({ compte: 1 });
     await adminDb.collection('limites_connexion').doc(`assistant_j_${cid}`).set({ compte: 1 });
-    assert.equal(await limitesDe(cid), 3 * 8 + 2);
+    assert.equal(await limitesDe(cid), 3 * 9 + 2);
   }
 
   const etatIntact = async (cid) => {
@@ -2012,7 +2360,7 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
     // La compagnie témoin et celle du Proprio n'ont pas bougé.
     await etatIntact(TEMOIN);
     assert.equal(await compter('sessions', TEMOIN), sessionsTemoin);
-    assert.equal(await limitesDe(TEMOIN), 3 * 8 + 2);
+    assert.equal(await limitesDe(TEMOIN), 3 * 9 + 2);
     assert.equal(await existe('config/proprio_app'), true);
     assert.equal((await adminDb.collection('companies').where('numero', '==', numeroS).get()).size, 1);
 

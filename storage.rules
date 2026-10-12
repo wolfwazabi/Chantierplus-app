@@ -46,6 +46,8 @@ service firebase.storage {
         && (!('expireLe' in s) || s.expireLe > request.time)
         && firestore.exists(/databases/(default)/documents/employees/$(s.employeeId))
         && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.companyId == companyId
+        // Ancien employé (accès retiré, fiche conservée un temps) : plus aucun accès.
+        && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.get('actif', true) != false
         && firestore.get(/databases/(default)/documents/employees/$(s.employeeId)).data.role in roles;
     }
 

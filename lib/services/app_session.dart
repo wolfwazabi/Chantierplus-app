@@ -74,6 +74,7 @@ class AppSession {
     if (!empDoc.exists || !companyDoc.exists) return;
 
     final emp = empDoc.data()!;
+    if (emp['actif'] == false) return; // ancien employé : accès retiré
     notifier.value = Employee(
       id: employeeId,
       companyId: companyId,
@@ -345,7 +346,8 @@ class AppSession {
         .doc(employeeId)
         .snapshots()
         .listen((snap) {
-          if (!snap.exists) deconnecter();
+          // Fiche supprimée ou employé retiré (actif == false) : déconnexion.
+          if (!snap.exists || snap.data()?['actif'] == false) deconnecter();
         }, onError: (_) => deconnecter());
     _ecouteCompagnie = _db
         .collection('companies')

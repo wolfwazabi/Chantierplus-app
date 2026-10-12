@@ -1,6 +1,20 @@
 {
   "indexes": [
     {
+      "collectionGroup": "employees",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "actif",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "supprimeApresLe",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "chantier_materiel",
       "queryScope": "COLLECTION",
       "fields": [

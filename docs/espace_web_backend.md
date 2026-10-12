@@ -28,6 +28,10 @@ supprimé (`resource-exhausted`) et il faut recommencer l'étape 1. Code absent 
 `sessions/{uid}` reçoit `canal: "web"` et `expireLe` (+12 h). Entre les deux étapes l'employé peut avoir
 été retiré, rétrogradé en « employé » ou sa compagnie bloquée : le serveur revérifie, sans session à la clé.
 
+Chaque erreur de l'étape 2 porte `details.raison` pour que le client n'ait pas à lire le texte :
+`code-invalide` (on peut réessayer), `code-expire`, `essais-epuises`, `session-invalide`,
+`role-refuse` (tout sauf `code-invalide` : retour à l'étape 1).
+
 Un retrait d'employé, un changement ou une réinitialisation de NIP effacent aussi ses codes en attente.
 La suppression d'une compagnie efface ses `connexions_web`.
 

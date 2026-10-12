@@ -167,7 +167,9 @@ async function contexteEmploye(request) {
     db.collection("companies").doc(session.companyId).get(),
     proprioAppId(),
   ]);
+  // actif === false : ancien employé (accès retiré, fiche conservée un temps).
   if (!empSnap.exists || empSnap.data().companyId !== session.companyId ||
+      empSnap.data().actif === false ||
       !compSnap.exists || compSnap.data().statut !== "approuvee") {
     throw new HttpsError("permission-denied", "Session invalide. Reconnectez-vous.");
   }

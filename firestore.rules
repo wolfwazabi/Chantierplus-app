@@ -87,6 +87,8 @@ service cloud.firestore {
         && (!('expireLe' in s) || s.expireLe > request.time)
         && exists(cheminEmploye(s.employeeId))
         && get(cheminEmploye(s.employeeId)).data.companyId == s.companyId
+        // Ancien employé (accès retiré, fiche conservée un temps) : plus aucun accès.
+        && get(cheminEmploye(s.employeeId)).data.get('actif', true) != false
         && get(cheminCompagnie(s.companyId)).data.statut == 'approuvee';
     }
 

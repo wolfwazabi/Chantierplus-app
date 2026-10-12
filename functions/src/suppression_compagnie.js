@@ -23,7 +23,7 @@ const COLLECTIONS_PAR_COMPAGNIE = [
 
 // Compteurs anti-abus (limites_connexion) liés à un employé ou à une compagnie.
 const LIMITES_PAR_EMPLOYE = ["feuille", "corrfeuille", "recalcul", "export", "nip", "assistant_h",
-  "connweb", "renvoi"];
+  "connweb", "renvoi", "reactiver"];
 const LIMITES_PAR_COMPAGNIE = ["co", "assistant_j"];
 
 const LOT_DOCUMENTS = 300;
