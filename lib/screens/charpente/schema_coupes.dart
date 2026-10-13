@@ -209,8 +209,9 @@ void _texte(
     var dxCorr = 0.0;
     if (rotation.abs() < math.pi / 4 || vertical) {
       if (gauche < 2) dxCorr = 2 - gauche;
-      if (gauche + largeur > limite.width - 2)
+      if (gauche + largeur > limite.width - 2) {
         dxCorr = limite.width - 2 - (gauche + largeur);
+      }
       var dyCorr = 0.0;
       if (pos.dy - hauteur / 2 < 2) dyCorr = 2 - (pos.dy - hauteur / 2);
       if (pos.dy + hauteur / 2 > limite.height - 2) {
