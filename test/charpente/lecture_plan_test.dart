@@ -1,4 +1,6 @@
 // Lecture d'un plan : la réponse du serveur, les valeurs à confirmer, les corrections, les chemins.
+import 'dart:convert';
+
 import 'package:construction_app/charpente/lecture_plan.dart';
 import 'package:construction_app/charpente/mur.dart';
 import 'package:construction_app/charpente/projet.dart';
@@ -81,6 +83,8 @@ void main() {
       expect(l.hypotheses, [
         'Entraxe des solives de 16 po supposé.',
         'Côté 0 = longueur du bas du plan.',
+        // Ajoutée par le serveur : les jeux ne sont jamais donnés par un plan.
+        'Jeux autour des portes et fenêtres : 1 po en largeur et 1 1/2 po en hauteur (valeurs courantes), en plus des dimensions du cadre.',
       ]);
       expect(l.projet.nom, 'Garage Tremblay');
       expect(l.projet.plancherActif, isTrue);
@@ -103,7 +107,7 @@ void main() {
       expect(cote1.single.largeurCadre, 24);
     });
 
-    test('les valeurs : 2 à confirmer, 2 à vérifier, 5 lues', () {
+    test('les valeurs : 2 à confirmer, 4 à vérifier, 8 lues', () {
       final l = LecturePlan.depuis(lectureGarage());
       expect(l.aConfirmer.map((v) => v.chemin).toSet(), {
         _f2Largeur,
@@ -111,9 +115,11 @@ void main() {
       });
       expect(l.aVerifier.map((v) => v.chemin).toSet(), {
         'murs.hauteur',
+        'murs.ouverturesContour.0.0.position',
         'murs.ouverturesContour.0.1.position',
+        'murs.ouverturesContour.1.0.position',
       });
-      expect(l.lues, hasLength(5));
+      expect(l.lues, hasLength(8));
       expect(l.lues.every((v) => v.verifiee), isTrue);
       expect(l.lues.first.lecture, '24\'-0"');
       expect(l.restantes, 2);
@@ -294,13 +300,10 @@ void main() {
 
     test('plancher, hauteur des murs, allège, position, entraxe', () {
       final r = lectureGarage();
-      (r['valeurs'] as List).addAll([
-        {'chemin': 'plancher.espacement', 'niveau': 'deduit'},
-        {
-          'chemin': 'murs.ouverturesContour.0.1.position',
-          'niveau': 'incertain',
-        },
-      ]);
+      (r['valeurs'] as List).add({
+        'chemin': 'plancher.espacement',
+        'niveau': 'deduit',
+      });
       var l = LecturePlan.depuis(r);
       l = l.modifier('plancher.forme.longueur', 300);
       l = l.modifier('murs.hauteur', 96);
@@ -544,14 +547,21 @@ void main() {
     });
 
     test('corriger une position garde la conversion', () {
-      final r = lectureGarage();
-      (r['valeurs'] as List).add({
-        'chemin': 'murs.ouverturesContour.0.0.position',
-        'niveau': 'incertain',
-      });
-      final l = LecturePlan.depuis(r)
+      final l = LecturePlan.depuis(lectureGarage())
           .modifier('murs.ouverturesContour.0.0.position', 100);
       expect(l.projet.murs.ouverturesContour[0]![0].position, 96.5);
+    });
+
+    test('une position plus petite que le retrait du mur reste à 0 (jamais négative)', () {
+      final l = LecturePlan.depuis(lectureGarage())
+          .modifier('murs.ouverturesContour.0.0.position', 2);
+      expect(l.valeurDe('murs.ouverturesContour.0.0.position'), 2);
+      expect(l.projet.murs.ouverturesContour[0]![0].position, 0);
+      // Le projet reste relisible (un brouillon enregistré ne devient pas illisible).
+      expect(
+        ProjetCharpente.fromJson(jsonDecode(jsonEncode(l.projet.toJson()))),
+        isA<ProjetCharpente>(),
+      );
     });
 
     test('murs libres, ou murs absents : aucune conversion', () {
@@ -606,6 +616,175 @@ void main() {
       ];
       final l = LecturePlan.depuis(r);
       expect(l.projet.murs.ouverturesContour[9]!.single.position, 50);
+    });
+  });
+
+  group('avertissements : ce que le calcul ignorerait en silence', () {
+    test('le garage : aucun', () {
+      expect(LecturePlan.depuis(lectureGarage()).avertissements, isEmpty);
+    });
+
+    test('une fenêtre sur un mur qui n\'existe pas est signalée', () {
+      final r = lectureGarage();
+      final o =
+          ((r['projet'] as Map)['murs'] as Map)['ouverturesContour'] as Map;
+      o['6'] = [
+        {
+          'type': 'fenetre',
+          'nom': 'F9',
+          'largeur': 36,
+          'hauteur': 48,
+          'allege': 36,
+          'position': 60,
+          'jeuLargeur': 1,
+          'jeuHauteur': 1.5,
+        },
+      ];
+      final a = LecturePlan.depuis(r).avertissements;
+      expect(a, hasLength(1));
+      expect(a.single, contains('Fenêtre F9'));
+      expect(a.single, contains('mur 7'));
+      expect(a.single, contains('4 murs'));
+      expect(a.single, contains('pas comptée'));
+    });
+
+    test('plusieurs ouvertures, plusieurs murs : une phrase chacune', () {
+      final r = lectureGarage();
+      final o =
+          ((r['projet'] as Map)['murs'] as Map)['ouverturesContour'] as Map;
+      Map<String, Object> porte(String nom) => {
+        'type': 'porte',
+        'nom': nom,
+        'largeur': 36,
+        'hauteur': 80,
+        'allege': 0,
+        'position': 60,
+        'jeuLargeur': 1,
+        'jeuHauteur': 1.5,
+      };
+      o['4'] = [porte('P4'), porte('P5')];
+      o['5'] = [porte('P6')];
+      expect(LecturePlan.depuis(r).avertissements, hasLength(3));
+    });
+
+    test('forme en L (6 murs) : le mur 5 existe, le 7 non', () {
+      final r = lectureGarage();
+      final p = r['projet'] as Map;
+      (p['plancher'] as Map)['forme'] = {
+        'type': 'points',
+        'points': [
+          [0, 0],
+          [240, 0],
+          [240, 120],
+          [120, 120],
+          [120, 240],
+          [0, 240],
+        ],
+      };
+      final o = (p['murs'] as Map)['ouverturesContour'] as Map;
+      final porte = {
+        'type': 'porte',
+        'nom': 'P',
+        'largeur': 36,
+        'hauteur': 80,
+        'allege': 0,
+        'position': 40,
+        'jeuLargeur': 1,
+        'jeuHauteur': 1.5,
+      };
+      o['4'] = [porte];
+      o['6'] = [porte];
+      final a = LecturePlan.depuis(r).avertissements;
+      expect(a, hasLength(1));
+      expect(a.single, contains('mur 7'));
+      expect(a.single, contains('6 murs'));
+    });
+
+    test(
+      'murs libres, murs absents ou forme impossible : aucun avertissement',
+      () {
+        final r = lectureGarage();
+        (r['projet'] as Map)['mursActifs'] = false;
+        expect(LecturePlan.depuis(r).avertissements, isEmpty);
+        final r2 = lectureGarage();
+        (((r2['projet'] as Map)['plancher']) as Map)['forme'] = {
+          'type': 'points',
+          'points': [
+            [0, 0],
+            [10, 0],
+            [20, 0],
+          ],
+        };
+        expect(LecturePlan.depuis(r2).avertissements, isEmpty);
+      },
+    );
+  });
+
+  group('porte devenue fenêtre', () {
+    LecturePlan avecType() {
+      final r = lectureGarage();
+      (r['valeurs'] as List).add({
+        'chemin': 'murs.ouverturesContour.0.1.type',
+        'niveau': 'incertain',
+      });
+      return LecturePlan.depuis(r);
+    }
+
+    test(
+      'l\'allège passe de 0 à 36 po (une fenêtre n\'est pas au plancher)',
+      () {
+        final l = avecType();
+        expect(l.valeurDe('murs.ouverturesContour.0.1.allege'), 0);
+        final m = l.modifier('murs.ouverturesContour.0.1.type', 'fenetre');
+        expect(m.valeurDe('murs.ouverturesContour.0.1.allege'), 36);
+        expect(
+          m.projet.murs.ouverturesContour[0]![1].type,
+          TypeOuverture.fenetre,
+        );
+        expect(m.projet.murs.ouverturesContour[0]![1].allege, 36);
+      },
+    );
+
+    test('une allège déjà donnée est conservée', () {
+      final r = lectureGarage();
+      (r['valeurs'] as List).add({
+        'chemin': 'murs.ouverturesContour.0.0.type',
+        'niveau': 'incertain',
+      });
+      final l = LecturePlan.depuis(r)
+          .modifier('murs.ouverturesContour.0.0.type', 'fenetre');
+      expect(l.valeurDe('murs.ouverturesContour.0.0.allege'), 36);
+    });
+
+    test('fenêtre devenue porte : le type change, rien d\'autre', () {
+      final r = lectureGarage();
+      (r['valeurs'] as List).add({
+        'chemin': 'murs.ouverturesContour.0.0.type',
+        'niveau': 'incertain',
+      });
+      final l = LecturePlan.depuis(r)
+          .modifier('murs.ouverturesContour.0.0.type', 'porte');
+      expect(l.projet.murs.ouverturesContour[0]![0].type, TypeOuverture.porte);
+    });
+  });
+
+  group('nom d\'une ouverture', () {
+    test('type et repère, ou type seul', () {
+      const f = Ouverture(
+        type: TypeOuverture.fenetre,
+        nom: ' F1 ',
+        largeurCadre: 30,
+        hauteurCadre: 40,
+        position: 50,
+      );
+      expect(nomOuverture(f), 'Fenêtre F1');
+      const p = Ouverture(
+        type: TypeOuverture.porte,
+        largeurCadre: 30,
+        hauteurCadre: 80,
+        position: 50,
+      );
+      expect(nomOuverture(p), 'Porte');
     });
   });
 

@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'geometrie.dart';
 import 'mur.dart';
 import 'projet.dart';
@@ -162,6 +164,26 @@ class LecturePlan {
   /// La valeur actuelle d'un chemin dans le projet.
   Object? valeurDe(String chemin) => lireChemin(projetJson, chemin);
 
+  /// Ce que le calcul ignorerait en silence, à montrer à l'utilisateur : portes et fenêtres placées
+  /// sur un mur qui n'existe pas dans la forme du plancher.
+  List<String> get avertissements {
+    final p = projet;
+    if (!p.mursActifs || p.murs.mode != ModeMurs.contour) return const [];
+    final int nombre;
+    try {
+      nombre = p.plancher.forme.construire().nombre;
+    } on FormeInvalide {
+      return const [];
+    }
+    return [
+      for (final e in p.murs.ouverturesContour.entries)
+        if (e.key >= nombre)
+          for (final o in e.value)
+            '${nomOuverture(o)} : le mur ${e.key + 1} n\'existe pas '
+                '(le plancher a $nombre murs) ; elle ne serait pas comptée.',
+    ];
+  }
+
   /// L'utilisateur confirme la valeur telle quelle.
   LecturePlan confirmer(String chemin) {
     if (!valeurs.any((v) => v.chemin == chemin)) return this;
@@ -195,7 +217,15 @@ class LecturePlan {
         throw const FormatException('valeur hors des bornes');
       }
     }
-    final json = _avecValeur(projetJson, chemin, valeur);
+    var json = _avecValeur(projetJson, chemin, valeur);
+    if (valeur == 'fenetre' && chemin.endsWith('.type')) {
+      // Une porte devenue fenêtre garde son allège de 0 : on prend la valeur courante (36 po).
+      final allege = chemin.replaceFirst(RegExp(r'\.type$'), '.allege');
+      final actuelle = lireChemin(json, allege);
+      if (actuelle is num && actuelle == 0) {
+        json = _avecValeur(json, allege, 36);
+      }
+    }
     return _avec(
       projetJson: json,
       projet: projetDepuisPlan(json),
@@ -246,7 +276,9 @@ ProjetCharpente projetDepuisPlan(Map<String, dynamic> json) {
       e.key: [
         for (final o in e.value)
           e.key < murs.length
-              ? o.avecPosition(o.position - murs[e.key].retraitDebut)
+              ? o.avecPosition(
+                  math.max(0, o.position - murs[e.key].retraitDebut),
+                )
               : o,
       ],
   };
@@ -453,6 +485,13 @@ String libelleChemin(Map<String, dynamic> projetJson, String chemin) {
     return '$nom — ${_champ(p[3])}';
   }
   return chemin;
+}
+
+/// « Fenêtre F1 », « Porte P2 », ou « Porte » sans repère.
+String nomOuverture(Ouverture o) {
+  final type = o.type == TypeOuverture.porte ? 'Porte' : 'Fenêtre';
+  final nom = o.nom.trim();
+  return nom.isEmpty ? type : '$type $nom';
 }
 
 /// « Fenêtre F1 », « Porte 2 »…

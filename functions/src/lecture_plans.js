@@ -23,6 +23,8 @@ const MODELE_PLANS = defineString("MODELE_PLANS", {default: "claude-sonnet-5-5"}
 
 const MAX_FICHIERS = 5;
 const MAX_OCTETS_FICHIER = 8 * 1024 * 1024;
+/** L'API refuse les images de plus de 5 Mo (un PDF peut aller jusqu'à MAX_OCTETS_FICHIER). */
+const MAX_OCTETS_IMAGE = 5 * 1024 * 1024;
 const MAX_OCTETS_TOTAL = 12 * 1024 * 1024;
 const MAX_PRECISIONS = 500;
 const MAX_VALEURS = 200;
@@ -76,6 +78,10 @@ function validerFichiers(brut) {
     if (!type) {
       throw new HttpsError("invalid-argument",
           `Le fichier « ${nom} » n'est ni un PDF ni une photo (JPEG, PNG ou WebP).`);
+    }
+    if (type.genre === "image" && octets > MAX_OCTETS_IMAGE) {
+      throw new HttpsError("invalid-argument",
+          `La photo « ${nom} » dépasse ${MAX_OCTETS_IMAGE / 1024 / 1024} Mo. Reprenez-la en plus petit.`);
     }
     total += octets;
     return {nom, mime: type.mime, genre: type.genre, octets, donnees: d};
@@ -185,7 +191,9 @@ function valeurAuChemin(projet, chemin) {
  */
 function listeBruteDuCote(ouverturesContour, cote) {
   if (!base.estObjet(ouverturesContour)) return undefined;
-  const trouvees = Object.entries(ouverturesContour).filter(([k]) => Number.isInteger(Number(k)) && Number(k) === cote);
+  // Une clé dont toutes les ouvertures sont écartées n'efface pas une clé précédente.
+  const trouvees = Object.entries(ouverturesContour).filter(([k, liste]) =>
+    Number.isInteger(Number(k)) && Number(k) === cote && base.ouverturesRetenues(liste).length > 0);
   return trouvees.length ? trouvees[trouvees.length - 1][1] : undefined;
 }
 
@@ -243,7 +251,8 @@ function normaliserValeurs(brutes, projet, brut) {
     // Une porte n'a pas d'allège (toujours 0).
     if (chemin.endsWith(".allege") && valeurAuChemin(projet, chemin.replace(/\.allege$/, ".type")) === "porte") continue;
 
-    let niveau = Object.prototype.hasOwnProperty.call(ORDRE_NIVEAU, v.niveau) ? v.niveau : "incertain";
+    let niveau = typeof v.niveau === "string" && Object.prototype.hasOwnProperty.call(ORDRE_NIVEAU, v.niveau) ?
+      v.niveau : "incertain";
     let raison = base.chaine(v.raison, 200);
     const lecture = base.chaine(v.lecture, 60);
     let valeurPlan = null;
@@ -271,8 +280,13 @@ function normaliserValeurs(brutes, projet, brut) {
   return parChemin;
 }
 
+/** La forme du plancher sert au plancher, et aux murs du contour même sans plancher. */
+const formeUtile = (projet) =>
+  projet.plancherActif === true || (projet.mursActifs === true && projet.murs.mode === "contour");
+
 /** Faux si la valeur ne sert pas dans ce projet (plancher ou murs absents, autre mode des murs). */
 function pertinent(chemin, projet) {
+  if (chemin.startsWith("plancher.forme.")) return formeUtile(projet);
   if (chemin.startsWith("plancher.")) return projet.plancherActif === true;
   if (!projet.mursActifs) return false;
   // En mode « libres », chaque mur a sa hauteur : celle du contour ne sert pas.
@@ -297,7 +311,7 @@ function valeursAbsentes(projet, brut) {
   const note = (chemin, raison) => manquantes.push({chemin, raison});
 
   const p = base.estObjet(brut?.plancher) ? brut.plancher : {};
-  if (projet.plancherActif) {
+  if (formeUtile(projet)) {
     const forme = p.forme;
     const formeLue = base.estObjet(forme) && ["rectangle", "cotes", "points"].includes(forme.type);
     if (!formeLue) {
@@ -353,6 +367,128 @@ function ajouterAbsentes(parChemin, projet, brut) {
   }
 }
 
+/** Toutes les longueurs et tous les angles qui décident du calcul : chacun doit avoir sa fiche. */
+function cheminsCritiques(projet) {
+  const chemins = [];
+  if (formeUtile(projet)) {
+    const f = projet.plancher.forme;
+    if (f.type === "rectangle") {
+      chemins.push("plancher.forme.longueur", "plancher.forme.largeur");
+    } else if (f.type === "cotes") {
+      f.cotes.forEach((_, i) => chemins.push(`plancher.forme.cotes.${i}`));
+      f.angles.forEach((_, i) => chemins.push(`plancher.forme.angles.${i}`));
+    } else if (f.type === "points") {
+      f.points.forEach((_, i) => chemins.push(`plancher.forme.points.${i}.0`, `plancher.forme.points.${i}.1`));
+    }
+  }
+  if (!projet.mursActifs) return chemins;
+  const ouverture = (prefixe, o) => {
+    chemins.push(`${prefixe}.largeur`, `${prefixe}.hauteur`);
+    if (o.type === "fenetre") chemins.push(`${prefixe}.allege`);
+    chemins.push(`${prefixe}.position`);
+  };
+  if (projet.murs.mode === "contour") {
+    chemins.push("murs.hauteur");
+    for (const [k, liste] of Object.entries(projet.murs.ouverturesContour)) {
+      liste.forEach((o, j) => ouverture(`murs.ouverturesContour.${k}.${j}`, o));
+    }
+  } else {
+    projet.murs.libres.forEach((m, i) => {
+      chemins.push(`murs.libres.${i}.longueur`, `murs.libres.${i}.hauteur`);
+      m.ouvertures.forEach((o, j) => ouverture(`murs.libres.${i}.ouvertures.${j}`, o));
+    });
+  }
+  return chemins;
+}
+
+const RAISON_SANS_COTE = "Aucune cote relevée sur le plan pour cette valeur : à confirmer.";
+
+/**
+ * Le garde-fou ne repose pas sur l'honnêteté du modèle : chaque longueur critique du projet doit
+ * avoir une fiche. Sans fiche : « incertain » (à confirmer). Marquée « lu » mais sans cote
+ * imprimée que le serveur ait pu comparer (cote absente, illisible pour lui, ou position, qui se
+ * calcule à partir d'autres cotes) : au moins « à vérifier ».
+ */
+function ajouterCouverture(parChemin, projet) {
+  for (const chemin of cheminsCritiques(projet)) {
+    const fiche = parChemin.get(chemin);
+    if (!fiche) {
+      parChemin.set(chemin, {chemin, niveau: "incertain", raison: RAISON_SANS_COTE, lecture: "", valeurPlan: null, verifiee: false});
+    } else if (fiche.niveau === "lu" && !fiche.verifiee) {
+      const note = chemin.endsWith(".position") ?
+        "La position se calcule à partir d'autres cotes : à vérifier." :
+        "Aucune cote imprimée comparable : à vérifier.";
+      parChemin.set(chemin, {...fiche, niveau: "deduit", raison: fiche.raison ? `${fiche.raison} ${note}` : note});
+    }
+  }
+}
+
+const brutNombre = (o, champ, min, max) => {
+  const v = o?.[champ];
+  return typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+};
+
+/**
+ * Les défauts que le filtre a pris en silence (section et entraxe des solives et des montants) :
+ * une fiche « à vérifier » chacun, qui se corrige. Une fiche du modèle n'est jamais remplacée.
+ * Retourne aussi les hypothèses que le texte du modèle n'aurait pas dites.
+ */
+function ajouterDefauts(parChemin, projet, brut) {
+  const defaut = (chemin, raison) => {
+    if (!parChemin.has(chemin) && pertinent(chemin, projet)) {
+      parChemin.set(chemin, {chemin, niveau: "deduit", raison, lecture: "", valeurPlan: null, verifiee: false});
+    }
+  };
+  const p = base.estObjet(brut?.plancher) ? brut.plancher : {};
+  if (projet.plancherActif) {
+    if (!SECTIONS_PLANCHER.includes(p.section)) {
+      defaut("plancher.section", `Section des solives non indiquée : ${projet.plancher.section} supposée.`);
+    }
+    if (!brutNombre(p, "espacement", 6, 48)) {
+      defaut("plancher.espacement", `Entraxe des solives non indiqué : ${projet.plancher.espacement} po supposé.`);
+    }
+  }
+  const params = base.estObjet(brut?.murs?.params) ? brut.murs.params : {};
+  if (projet.mursActifs) {
+    if (!SECTIONS_MURS.includes(params.section)) {
+      defaut("murs.params.section", `Section des montants non indiquée : ${projet.murs.params.section} supposée.`);
+    }
+    if (!brutNombre(params, "espacement", 6, 48)) {
+      defaut("murs.params.espacement", `Entraxe des montants non indiqué : ${projet.murs.params.espacement} po supposé.`);
+    }
+  }
+
+  const hypotheses = [];
+  // Jeux autour des portes et fenêtres : jamais dits par le plan, toujours des défauts.
+  const brutes = [];
+  const m = base.estObjet(brut?.murs) ? brut.murs : {};
+  if (projet.mursActifs && projet.murs.mode === "contour") {
+    for (const cle of Object.keys(projet.murs.ouverturesContour)) {
+      brutes.push(...base.ouverturesRetenues(listeBruteDuCote(m.ouverturesContour, Number(cle))).map(({o}) => o));
+    }
+  } else if (projet.mursActifs) {
+    for (const {m: mur} of base.mursLibresRetenus(m.libres)) brutes.push(...base.ouverturesRetenues(mur.ouvertures).map(({o}) => o));
+  }
+  if (brutes.some((o) => !brutNombre(o, "jeuLargeur", 0, 12) || !brutNombre(o, "jeuHauteur", 0, 12))) {
+    hypotheses.push("Jeux autour des portes et fenêtres : 1 po en largeur et 1 1/2 po en hauteur (valeurs courantes), " +
+      "en plus des dimensions du cadre.");
+  }
+  // Coins en sens horaire : l'application les remet dans le sens antihoraire, ce qui change le numéro des côtés.
+  const f = projet.plancher.forme;
+  if (formeUtile(projet) && f.type === "points") {
+    let aire = 0;
+    f.points.forEach(([x, y], i) => {
+      const [x2, y2] = f.points[(i + 1) % f.points.length];
+      aire += x * y2 - x2 * y;
+    });
+    if (aire < 0) {
+      hypotheses.push("Les coins du plancher étaient donnés dans le sens horaire : l'application les remet dans le sens " +
+        "antihoraire, le numéro des murs peut changer. Comparez avec l'aperçu 3D.");
+    }
+  }
+  return hypotheses;
+}
+
 // -----------------------------------------------------------------------------
 // Normalisation de la réponse du modèle
 // -----------------------------------------------------------------------------
@@ -360,8 +496,10 @@ function ajouterAbsentes(parChemin, projet, brut) {
 /**
  * Filtre la réponse du modèle. Retourne { explication, hypotheses, projet, valeurs, niveau,
  * echelle, confiance }. Lance failed-precondition si le document n'est pas un plan exploitable.
+ * `completer` : ajoute les fiches que le modèle n'a pas données (couverture des longueurs critiques,
+ * défauts) ; faux seulement pour tester le filtrage seul.
  */
-function normaliserLecture(entree) {
+function normaliserLecture(entree, {completer = true} = {}) {
   const e = base.estObjet(entree) ? entree : {};
   if (e.lisible !== false && !base.estObjet(e.projet)) {
     throw new HttpsError("failed-precondition",
@@ -393,12 +531,14 @@ function normaliserLecture(entree) {
 
   const parChemin = normaliserValeurs(e.valeurs, projet, base.estObjet(e.projet) ? e.projet : {});
   ajouterAbsentes(parChemin, projet, base.estObjet(e.projet) ? e.projet : {});
+  const automatiques = completer ? ajouterDefauts(parChemin, projet, base.estObjet(e.projet) ? e.projet : {}) : [];
+  if (completer) ajouterCouverture(parChemin, projet);
 
   const hypotheses = (Array.isArray(e.hypotheses) ? e.hypotheses : [])
       .map((h) => base.chaine(h, 300)).filter(Boolean).slice(0, 15);
   return {
     explication: base.chaine(e.explication, 800),
-    hypotheses: [...hypotheses, ...corrections],
+    hypotheses: [...hypotheses, ...automatiques, ...corrections],
     projet,
     valeurs: [...parChemin.values()],
     niveau: base.chaine(e.niveau, 80),
@@ -481,7 +621,8 @@ LONGUEURS
 
 PLANCHER
 - Un seul niveau à la fois : celui demandé dans les précisions ; sinon le plancher du rez-de-chaussée (ou le seul niveau du plan). Dis-le dans « niveau » et dans « hypotheses ».
-- Forme : les dimensions HORS TOUT de l'ossature du plancher. Rectangle : type « rectangle » (longueur = le plus grand côté). Forme en L ou à pans coupés : type « cotes » avec les côtés dans l'ordre, dans le sens antihoraire vu du dessus, et les angles INTÉRIEURS entre eux (k côtés, k-1 angles ; le dernier côté est calculé par l'application). Si les cotes ne suffisent pas à fermer la forme, dis-le : n'invente pas de côté.
+- Forme : les dimensions HORS TOUT de l'ossature du plancher. Rectangle : type « rectangle » (longueur = le plus grand côté ; le côté 0 est l'un des deux grands côtés, celui du bas si le plan est plus large que haut). Forme en L ou à pans coupés : type « cotes » avec les côtés dans l'ordre, dans le sens antihoraire vu du dessus, et les angles INTÉRIEURS entre eux (k côtés, k-1 angles ; le dernier côté est calculé par l'application), ou type « points » avec les coins dans le sens ANTIHORAIRE. Si les cotes ne suffisent pas à fermer la forme, dis-le : n'invente pas de côté.
+- Dans « hypotheses », dis toujours quel mur du plan est le côté 0 (ex. « Côté 0 = mur sud, face à la rue »), pour que l'utilisateur puisse comparer avec l'aperçu 3D.
 - Section et entraxe des solives, poutres : seulement si une note ou une coupe les indique (ex. « solives 2x10 @ 16" c/c ») ; sinon garde les défauts et liste-les dans « hypotheses ».
 
 MURS, PORTES ET FENÊTRES
@@ -501,7 +642,7 @@ CHEMINS pour « valeurs » (les indices comptent à partir de 0, dans les listes
   plancher.espacement · plancher.section · murs.hauteur · murs.params.espacement · murs.params.section
   murs.ouverturesContour.K.J.largeur | hauteur | allege | position | type (K = indice du côté, J = rang de l'ouverture dans la liste de ce côté)
   murs.libres.I.longueur | hauteur · murs.libres.I.ouvertures.J.largeur | hauteur | allege | position | type
-Donne une entrée pour : chaque cote de la forme du plancher, la hauteur des murs, la largeur et la hauteur de chaque porte et fenêtre, et toute autre valeur « deduit » ou « incertain ».
+Donne une entrée pour : chaque cote de la forme du plancher, la hauteur des murs, la largeur, la hauteur, l'allège (fenêtres) et la position de chaque porte et fenêtre, et toute autre valeur « deduit » ou « incertain ». Toute longueur du projet sans entrée sera marquée « incertain » par l'application : l'utilisateur devra la confirmer.
 
 Si les fichiers ne contiennent aucun plan exploitable, mets lisible à faux et explique pourquoi.
 Réponds toujours par l'appel de l'outil, en français.`;
@@ -548,7 +689,7 @@ async function lirePlan({fichiers, precisions, cle, url, modele, fetchImpl = fet
     fetchImpl,
     delaiMs,
     messageRequeteRefusee: "L'assistant n'a pas pu lire ces fichiers (PDF protégé par un mot de passe, " +
-      "trop de pages ou image illisible). Essayez avec des photos ou un PDF plus léger.",
+      "trop de pages, image trop lourde ou illisible). Essayez avec des photos ou un PDF plus léger.",
   });
   let corps;
   try {
@@ -577,7 +718,7 @@ async function lirePlan({fichiers, precisions, cle, url, modele, fetchImpl = fet
 
 module.exports = {
   MODELE_PLANS,
-  MAX_FICHIERS, MAX_OCTETS_FICHIER, MAX_OCTETS_TOTAL, MAX_PRECISIONS,
+  MAX_FICHIERS, MAX_OCTETS_FICHIER, MAX_OCTETS_IMAGE, MAX_OCTETS_TOTAL, MAX_PRECISIONS,
   validerFichiers, typeDeFichier, parserCote, genreDuChemin,
   construireRequetePlan, normaliserLecture, lirePlan,
   PROMPT_PLAN, SCHEMA_PLAN,

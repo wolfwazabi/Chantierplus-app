@@ -505,7 +505,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('À confirmer (2)'), findsOneWidget);
-      expect(find.text('À vérifier (2)'), findsOneWidget);
+      expect(find.text('À vérifier (4)'), findsOneWidget);
       expect(find.text('Hypothèses de l\'assistant'), findsOneWidget);
       expect(
         find.text('• Entraxe des solives de 16 po supposé.'),
@@ -516,7 +516,7 @@ void main() {
         find.text('1 porte et 2 fenêtres relevées au plan'),
         findsOneWidget,
       );
-      expect(find.text('Cotes lues sur le plan (5)'), findsOneWidget);
+      expect(find.text('Cotes lues sur le plan (8)'), findsOneWidget);
     });
 
     testWidgets('le résumé : plancher, chaque mur, chaque porte et fenêtre', (
@@ -719,11 +719,11 @@ void main() {
         expect(find.text('Plancher — longueur'), findsOneWidget);
         expect(
           find.text(
-            '${formatLongueur(288, metrique: false)} — plan : « 24\'-0" » (vérifié)',
+            '${formatLongueur(288, metrique: false)} — plan : « 24\'-0" » (conversion vérifiée)',
           ),
           findsOneWidget,
         );
-        expect(find.byIcon(Icons.check_circle_outline), findsNWidgets(5));
+        expect(find.byIcon(Icons.check_circle_outline), findsNWidgets(8));
       },
     );
   });
@@ -909,6 +909,46 @@ void main() {
         expect(find.text('Plan lu'), findsNothing);
       },
     );
+  });
+
+  group('avertissements', () {
+    testWidgets(
+      'une fenêtre sur un mur qui n\'existe pas : message rouge, jamais en silence',
+      (t) async {
+        final r = lectureGarage();
+        final o =
+            ((r['projet'] as Map)['murs'] as Map)['ouverturesContour'] as Map;
+        o['7'] = [
+          {
+            'type': 'fenetre',
+            'nom': 'F9',
+            'largeur': 36,
+            'hauteur': 48,
+            'allege': 36,
+            'position': 60,
+            'jeuLargeur': 1,
+            'jeuHauteur': 1.5,
+          },
+        ];
+        await _jusqueALaRevue(t, _Hote(), reponse: r);
+        expect(_cle('plan_avertissements'), findsOneWidget);
+        expect(find.textContaining('Fenêtre F9'), findsOneWidget);
+        expect(find.textContaining('mur 8'), findsOneWidget);
+      },
+    );
+
+    testWidgets('le garage : aucun avertissement', (t) async {
+      await _jusqueALaRevue(t, _Hote());
+      expect(_cle('plan_avertissements'), findsNothing);
+    });
+
+    testWidgets('l\'hypothèse sur les jeux est affichée', (t) async {
+      await _jusqueALaRevue(t, _Hote());
+      expect(
+        find.textContaining('Jeux autour des portes et fenêtres'),
+        findsOneWidget,
+      );
+    });
   });
 
   group('aperçu 3D et erreurs de calcul', () {

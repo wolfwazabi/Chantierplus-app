@@ -2,7 +2,8 @@
   "explication": "Garage de 24 pi × 20 pi. La toiture du plan est ignorée.",
   "hypotheses": [
     "Entraxe des solives de 16 po supposé.",
-    "Côté 0 = longueur du bas du plan."
+    "Côté 0 = longueur du bas du plan.",
+    "Jeux autour des portes et fenêtres : 1 po en largeur et 1 1/2 po en hauteur (valeurs courantes), en plus des dimensions du cadre."
   ],
   "projet": {
     "v": 1,
@@ -141,6 +142,14 @@
       "verifiee": true
     },
     {
+      "chemin": "murs.hauteur",
+      "niveau": "deduit",
+      "raison": "Coupe de mur : 2 lisses hautes et montants précoupés.",
+      "lecture": "8'-1 1/8\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
       "chemin": "murs.ouverturesContour.0.0.largeur",
       "niveau": "lu",
       "raison": "",
@@ -153,6 +162,30 @@
       "niveau": "lu",
       "raison": "",
       "lecture": "4'-0\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
+      "chemin": "murs.ouverturesContour.0.0.allege",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "3'-0\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
+      "chemin": "murs.ouverturesContour.0.0.position",
+      "niveau": "deduit",
+      "raison": "Bord du cadre à 4 pi 6 po, plus la demi-largeur.",
+      "lecture": "",
+      "valeurPlan": null,
+      "verifiee": false
+    },
+    {
+      "chemin": "murs.ouverturesContour.0.1.largeur",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "3'-0\"",
       "valeurPlan": null,
       "verifiee": true
     },
@@ -181,6 +214,14 @@
       "verifiee": false
     },
     {
+      "chemin": "murs.ouverturesContour.1.0.hauteur",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "3'-0\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
       "chemin": "murs.ouverturesContour.1.0.allege",
       "niveau": "incertain",
       "raison": "Allège illisible sur la coupe.",
@@ -189,12 +230,12 @@
       "verifiee": false
     },
     {
-      "chemin": "murs.hauteur",
+      "chemin": "murs.ouverturesContour.1.0.position",
       "niveau": "deduit",
-      "raison": "Coupe de mur : 2 lisses hautes et montants précoupés.",
-      "lecture": "8'-1 1/8\"",
+      "raison": "Centrée sur le mur, d'après le plan.",
+      "lecture": "",
       "valeurPlan": null,
-      "verifiee": true
+      "verifiee": false
     }
   ],
   "niveau": "Rez-de-chaussée, page 2",

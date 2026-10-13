@@ -46,16 +46,26 @@ l'assistant l'indique s'il en voit. Le dimensionnement structural n'est pas vér
   mm, cm, m) et compare : un écart de plus de 1/4 po marque la valeur « incertaine » et propose
   la valeur du plan (« Utiliser cette valeur »). Les conversions fausses d'un modèle sont ainsi
   attrapées.
-- **Les oublis deviennent des confirmations.** Une dimension de porte ou de fenêtre, la
-  position, la hauteur des murs ou une cote du plancher que le modèle n'a pas donnée n'est
-  jamais remplacée en silence par une valeur par défaut : elle est marquée « incertaine ».
+- **Le garde-fou ne repose pas sur le modèle.** Chaque longueur qui décide du calcul (cotes du
+  plancher, hauteur des murs, largeur, hauteur, allège et position de chaque porte et fenêtre,
+  murs libres) doit avoir sa fiche : sans fiche, elle est marquée « incertaine » (à confirmer) ;
+  donnée comme « lue » sans cote imprimée que le serveur ait pu comparer, elle passe au moins à
+  « à vérifier ». Une position se calcule à partir d'autres cotes : elle est toujours « à vérifier »
+  au mieux. Une dimension oubliée n'est jamais remplacée en silence par une valeur par défaut.
+- **Les défauts sont dits.** Section et entraxe des solives et des montants non donnés par le plan :
+  fiches « à vérifier » corrigeables ; les jeux autour des portes et fenêtres (1 po et 1 1/2 po)
+  sont annoncés dans les hypothèses ; des coins donnés dans le sens horaire aussi.
+- **Rien ne disparaît sans bruit.** Une porte ou fenêtre placée sur un mur qui n'existe pas dans la
+  forme du plancher est signalée en rouge (elle ne serait pas comptée).
 - **Position des portes et fenêtres.** Sur un plan elle se mesure du coin extérieur ; dans
   l'application, du début du mur (raccourci de 3 1/2 po là où il s'appuie sur le mur voisin).
   L'application fait cette conversion elle-même, avec la même géométrie que le calcul des murs.
 - Les fichiers sont vérifiés d'après leur **contenu réel** (PDF, JPEG, PNG, WebP), pas leur nom.
 - **Confidentialité** : le plan est envoyé à l'API d'IA pour la lecture ; Chantier+ ne le
   conserve pas. L'écran le dit avant l'envoi.
-- Limites : 6 lectures par heure et par employé, 30 par jour et par compagnie.
+- Limites : 6 lectures par heure et par employé, 30 par jour et par compagnie (réservation
+  atomique : des appels simultanés ne la dépassent pas). Une photo de plus de 5 Mo est refusée
+  (limite de l'API) ; un PDF peut aller jusqu'à 8 Mo.
 
 ## Côté serveur
 
@@ -80,6 +90,17 @@ la suppression d'une compagnie nettoie aussi ses compteurs `plan_h_` et `plan_j_
   `REGENERER_FIXTURE=1 npm run test:unitaires` (dans `tests/rules`).
 - Application : `test/charpente/lecture_plan_test.dart` (modèle, confirmation, positions),
   `test/lire_plan_screen_test.dart` (écran), `test/charpente/ecran_charpente_test.dart`.
+
+## Limites connues
+
+- « Conversion vérifiée » signifie que le serveur a retrouvé, en convertissant la cote imprimée, la
+  valeur du modèle ; pas que le plan a été lu correctement : c'est ce que la confirmation à la main
+  couvre.
+- L'attribution d'une porte ou fenêtre à un mur (le numéro du côté) dépend de l'orientation que le
+  modèle choisit ; il doit dire quel mur est le côté 0 (hypothèses). Comparer avec l'aperçu 3D.
+- Une porte changée en fenêtre dans la revue prend une allège de 36 po ; on la corrige alors dans la
+  fiche de l'ouverture au prochain calcul (Murs).
+- Le corps d'une requête peut atteindre environ 16 Mo : à confirmer en déploiement.
 
 ## Ce qui n'a PAS été testé
 

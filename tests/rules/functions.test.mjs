@@ -1626,7 +1626,15 @@ describe('Lecture de plans (admin et contremaître ; PDF et photos ; valeurs à 
     },
     valeurs: [
       { chemin: 'plancher.forme.longueur', lecture: '24\'-0"', niveau: 'lu' },
+      { chemin: 'plancher.forme.largeur', lecture: '20\'-0"', niveau: 'lu' },
+      { chemin: 'murs.hauteur', lecture: '8\'-1 1/8"', niveau: 'deduit' },
       { chemin: 'murs.ouverturesContour.0.0.largeur', lecture: '3\'-0"', niveau: 'lu' },
+      { chemin: 'murs.ouverturesContour.0.0.hauteur', lecture: '4\'-0"', niveau: 'lu' },
+      { chemin: 'murs.ouverturesContour.0.0.allege', lecture: '3\'-0"', niveau: 'lu' },
+      { chemin: 'murs.ouverturesContour.0.0.position', lecture: null, niveau: 'deduit' },
+      { chemin: 'murs.ouverturesContour.0.1.largeur', lecture: '3\'-0"', niveau: 'lu' },
+      { chemin: 'murs.ouverturesContour.0.1.hauteur', lecture: '6\'-8"', niveau: 'lu' },
+      { chemin: 'murs.ouverturesContour.0.1.position', lecture: null, niveau: 'deduit' },
     ],
     ...over,
   });
@@ -1663,13 +1671,19 @@ describe('Lecture de plans (admin et contremaître ; PDF et photos ; valeurs à 
     assert.equal(r.explication, 'Garage de 24 pi × 20 pi.');
     assert.equal(r.niveau, 'Rez-de-chaussée');
     assert.equal(r.confiance, 'elevee');
-    assert.deepEqual(r.hypotheses, ['Entraxe de 16 po supposé.']);
+    assert.equal(r.hypotheses[0], 'Entraxe de 16 po supposé.'); // puis celles que le serveur ajoute
     assert.equal(r.projet.v, 1);
     assert.deepEqual(r.projet.plancher.forme, { type: 'rectangle', longueur: 288, largeur: 240 });
     assert.equal(r.projet.murs.ouverturesContour['0'].length, 2);
-    assert.deepEqual(r.valeurs.map((v) => [v.chemin, v.niveau, v.verifiee]), [
-      ['plancher.forme.longueur', 'lu', true], ['murs.ouverturesContour.0.0.largeur', 'lu', true],
-    ]);
+    const fiche = (c) => r.valeurs.find((v) => v.chemin === c);
+    assert.deepEqual([fiche('plancher.forme.longueur').niveau, fiche('plancher.forme.longueur').verifiee], ['lu', true]);
+    assert.deepEqual([fiche('murs.ouverturesContour.0.0.largeur').niveau, fiche('murs.ouverturesContour.0.0.largeur').verifiee], ['lu', true]);
+    // Une position se calcule : au plus « à vérifier ». Rien d'incertain dans cette lecture.
+    assert.equal(fiche('murs.ouverturesContour.0.1.position').niveau, 'deduit');
+    assert.deepEqual(r.valeurs.filter((v) => v.niveau === 'incertain'), []);
+    // Section et entraxe des montants non donnés : défauts à vérifier, et hypothèse sur les jeux.
+    assert.equal(fiche('murs.params.section').niveau, 'deduit');
+    assert.ok(r.hypotheses.some((h) => h.startsWith('Jeux autour des portes et fenêtres')));
     assert.equal(recues.length, 1);
     assert.equal(recues[0].url, '/v1/messages');
     assert.equal(recues[0].entetes['x-api-key'], CLE_ATTENDUE);
@@ -1702,8 +1716,21 @@ describe('Lecture de plans (admin et contremaître ; PDF et photos ; valeurs à 
       }, { murs: { mode: 'contour', hauteur: 97.125, ouverturesContour: { 0: [{ type: 'porte', largeur: 36, hauteur: 80 }] } } })),
     };
     const r = await plus.appeler('lirePlanCharpente', donnees());
-    const incertains = r.valeurs.filter((v) => v.niveau === 'incertain').map((v) => v.chemin).sort();
-    assert.deepEqual(incertains, ['murs.ouverturesContour.0.0.hauteur', 'murs.ouverturesContour.0.0.position']);
+    const incertains = r.valeurs.filter((v) => v.niveau === 'incertain').map((v) => v.chemin);
+    // La fiche du modèle, la position oubliée, et les longueurs que le modèle n'a pas relevées.
+    for (const c of ['murs.ouverturesContour.0.0.hauteur', 'murs.ouverturesContour.0.0.position',
+      'murs.ouverturesContour.0.0.largeur', 'plancher.forme.longueur', 'murs.hauteur']) {
+      assert.ok(incertains.includes(c), c);
+    }
+    assert.ok(r.valeurs.every((v) => v.niveau !== 'incertain' || v.raison.length > 0));
+  });
+
+  test('« valeurs » vide : aucune longueur ne passe sans fiche à confirmer', async () => {
+    prochaine = { status: 200, corps: sortieModele(lecture({ valeurs: [] })) };
+    const r = await plus.appeler('lirePlanCharpente', donnees());
+    const incertains = r.valeurs.filter((v) => v.niveau === 'incertain').map((v) => v.chemin);
+    assert.ok(incertains.includes('plancher.forme.longueur') && incertains.includes('plancher.forme.largeur'));
+    assert.ok(incertains.includes('murs.ouverturesContour.0.1.largeur'));
   });
 
   test('employé, session absente : refusé, aucun appel à l\'API', async () => {
@@ -1750,7 +1777,9 @@ describe('Lecture de plans (admin et contremaître ; PDF et photos ; valeurs à 
     const r = await plus.appeler('lirePlanCharpente', donnees());
     assert.equal(r.projet.evil, undefined);
     assert.equal(r.projet.plancher.section, '2×10');
-    assert.deepEqual(r.valeurs.map((v) => v.chemin), ['plancher.forme.longueur']);
+    const chemins = r.valeurs.map((v) => v.chemin);
+    assert.ok(chemins.includes('plancher.forme.longueur'));
+    assert.ok(!chemins.includes('secret.cle') && !chemins.some((c) => c.includes('__proto__')));
   });
 
   test('erreurs de l\'API : messages clairs, aucune fuite de la clé ni du détail', async () => {
@@ -1791,6 +1820,20 @@ describe('Lecture de plans (admin et contremaître ; PDF et photos ; valeurs à 
     assert.equal(recues.length, 6, 'la 7e demande n\'atteint jamais l\'API');
     // Un autre employé n'est pas touché.
     await adm.appeler('lirePlanCharpente', donnees());
+  });
+
+  test('limite : 9 appels simultanés, seulement 6 atteignent l\'API', async () => {
+    const resultats = await Promise.allSettled(Array.from({ length: 9 }, () => plus.appeler('lirePlanCharpente', donnees())));
+    const refuses = resultats.filter((x) => x.status === 'rejected');
+    assert.equal(resultats.length - refuses.length, 6);
+    assert.equal(recues.length, 6, 'la limite tient même quand les appels arrivent ensemble');
+    for (const x of refuses) assert.equal(x.reason.code, 'functions/resource-exhausted');
+  });
+
+  test('photo de plus de 5 Mo : refusée avant l\'API', async () => {
+    const grosse = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(5 * 1024 * 1024, 1)]);
+    await rejette(plus.appeler('lirePlanCharpente', donnees({ fichiers: [fichier(grosse, 'grosse.jpg')] })), 'invalid-argument');
+    assert.equal(recues.length, 0);
   });
 
   test('limite : 30 lectures par jour pour toute la compagnie', async () => {

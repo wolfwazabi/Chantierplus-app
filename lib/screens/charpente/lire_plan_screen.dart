@@ -378,6 +378,12 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
+              if (l.avertissements.isNotEmpty)
+                BlocMessages(
+                  key: const ValueKey('plan_avertissements'),
+                  l.avertissements,
+                  erreur: true,
+                ),
               if (l.confiance == ConfianceLecture.faible)
                 const BlocMessages([
                   'Lecture peu sûre : comparez chaque valeur avec le plan avant d\'appliquer.',
@@ -713,7 +719,7 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 12, top: 2),
               child: Text(
-                '• ${_nomDeOuverture(o)} : ${formatLongueur(o.largeurCadre, metrique: metrique)} × '
+                '• ${nomOuverture(o)} : ${formatLongueur(o.largeurCadre, metrique: metrique)} × '
                 '${formatLongueur(o.hauteurCadre, metrique: metrique)}'
                 '${o.type == TypeOuverture.fenetre ? ', allège ${formatLongueur(o.allege, metrique: metrique)}' : ''}'
                 ', centrée à ${formatLongueur(o.position + m.spec.retraitDebut, metrique: metrique)} du coin',
@@ -782,7 +788,7 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
               subtitle: Text(
                 '${_texteValeur(l, v)}'
                 '${v.lecture.isEmpty ? '' : ' — plan : « ${v.lecture} »'}'
-                '${v.verifiee ? ' (vérifié)' : ''}',
+                '${v.verifiee ? ' (conversion vérifiée)' : ''}',
               ),
             ),
         ],
@@ -801,13 +807,6 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
         x is num ? '${formatNombre(x.toDouble(), decimales: 1)} po' : '—',
       GenreValeur.choix => x is String ? _libelleChoix(x) : '—',
     };
-  }
-
-  /// « Fenêtre F1 », « Porte P2 », ou « Porte » sans repère.
-  String _nomDeOuverture(Ouverture o) {
-    final type = o.type == TypeOuverture.porte ? 'Porte' : 'Fenêtre';
-    final nom = o.nom.trim();
-    return nom.isEmpty ? type : '$type $nom';
   }
 
   String _libelleChoix(String c) => switch (c) {

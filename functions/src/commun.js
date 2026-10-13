@@ -235,6 +235,25 @@ function limiteur(cle, max, fenetreMs) {
         }
       });
     },
+    /**
+     * Vérifie et compte en une seule transaction : des appels simultanés ne dépassent pas la limite
+     * (verifier() puis compter() laissent passer les appels parallèles).
+     */
+    async reserver() {
+      await db.runTransaction(async (t) => {
+        const snap = await t.get(ref);
+        const maintenant = Timestamp.now();
+        const expireLe = Timestamp.fromMillis(maintenant.toMillis() + fenetreMs);
+        const d = snap.exists ? snap.data() : null;
+        if (!d || !d.debut || maintenant.toMillis() - d.debut.toMillis() >= fenetreMs) {
+          t.set(ref, {compte: 1, debut: maintenant, expireLe});
+        } else if ((d.compte ?? 0) >= max) {
+          throw new HttpsError("resource-exhausted", "Trop de tentatives. Réessayez plus tard.");
+        } else {
+          t.update(ref, {compte: FieldValue.increment(1), expireLe});
+        }
+      });
+    },
     async reinitialiser() {
       await ref.delete();
     },

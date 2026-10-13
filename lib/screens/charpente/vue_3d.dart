@@ -588,9 +588,10 @@ class _Vue3DState extends State<Vue3D> {
             // descend pour la lire, et le dessin ne rapetisse jamais.
             child: LayoutBuilder(
               builder: (context, c) {
-                final hauteurVue = math.max(
-                  180.0,
-                  c.maxHeight - _hauteurApercu,
+                // Jamais plus haute que la place disponible (petit écran, paysage).
+                final hauteurVue = math.min(
+                  c.maxHeight,
+                  math.max(180.0, c.maxHeight - _hauteurApercu),
                 );
                 return ListView(
                   key: const ValueKey('vue_defilement'),
@@ -780,7 +781,9 @@ class _Details extends StatelessWidget {
                               fontSize: 16,
                             ),
                           ),
-                          TextSpan(text: '  ${i.court}'),
+                          // Le titre seul quand la mesure en bref n'est que ce titre.
+                          if (i.court != i.titre)
+                            TextSpan(text: '  ${i.court}'),
                         ],
                       ),
                       maxLines: 2,

@@ -434,6 +434,51 @@ void main() {
       expect(texte.data, anyOf(contains('mm'), contains(' m')));
     });
 
+    testWidgets(
+      'petite hauteur (paysage) : la vue 3D reste dans la place disponible',
+      (t) async {
+        t.view.physicalSize = const Size(1600, 520);
+        t.view.devicePixelRatio = 2;
+        addTearDown(t.view.reset);
+        await t.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SizedBox(
+                height: 260,
+                child: Vue3D(
+                  scene: _scene(),
+                  horloge: () => t.binding.clock.now(),
+                ),
+              ),
+            ),
+          ),
+        );
+        await t.pumpAndSettle();
+        expect(t.takeException(), isNull);
+        final liste = t.getRect(defilement());
+        final zone = t.getRect(_zone);
+        expect(zone.height, lessThanOrEqualTo(liste.height + 0.5));
+        expect(zone.height, greaterThan(20));
+        // Le dessin est toujours touchable et la pastille reste dans sa zone (ici, la fiche est
+        // sous le dessin, hors écran : on cherche la pastille plutôt que le rappel des gestes).
+        final rect = t.getRect(_zone);
+        for (var y = 0.2; y < 0.9 && pastille().evaluate().isEmpty; y += 0.1) {
+          for (
+            var x = 0.15;
+            x < 0.9 && pastille().evaluate().isEmpty;
+            x += 0.07
+          ) {
+            await t.tapAt(
+              Offset(rect.left + rect.width * x, rect.top + rect.height * y),
+            );
+            await t.pump(const Duration(seconds: 1));
+          }
+        }
+        expect(pastille(), findsOneWidget);
+        expect(t.getRect(pastille()).bottom, lessThanOrEqualTo(zone.bottom));
+      },
+    );
+
     testWidgets('onglet 3D de l\'écran Charpente : même comportement', (
       t,
     ) async {

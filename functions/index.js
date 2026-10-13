@@ -1693,10 +1693,11 @@ exports.lirePlanCharpente = onCall(
       // compagnie (30 par jour).
       const parHeure = limiteur(`plan_h_${ctx.employeeId}`, 6, HEURE);
       const parJour = limiteur(`plan_j_${ctx.companyId}`, 30, JOUR);
+      // Refus rapide, puis réservation atomique : des appels simultanés ne dépassent pas la limite.
       await parHeure.verifier();
       await parJour.verifier();
-      await parHeure.compter();
-      await parJour.compter();
+      await parHeure.reserver();
+      await parJour.reserver();
 
       try {
         const resultat = await lecturePlans.lirePlan({

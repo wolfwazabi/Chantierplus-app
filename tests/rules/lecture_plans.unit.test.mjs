@@ -67,6 +67,8 @@ const sortie = (over = {}, projetOver = {}) => ({
   ...over,
 });
 const valeur = (lecture, chemin) => lecture.valeurs.find((v) => v.chemin === chemin);
+// Le filtrage seul, sans les fiches que le serveur ajoute (couverture, défauts) : voir plus bas.
+const filtre = (entree) => lp.normaliserLecture(entree, { completer: false });
 
 // =================================================================================================
 describe('fichiers joints', () => {
@@ -224,7 +226,7 @@ describe('requête envoyée au modèle', () => {
 // =================================================================================================
 describe('normaliserLecture : le projet', () => {
   test('lecture complète : projet filtré, explication, niveau, confiance', () => {
-    const r = lp.normaliserLecture(sortie());
+    const r = filtre(sortie());
     assert.equal(r.projet.v, 1);
     assert.deepEqual(r.projet.plancher.forme, { type: 'rectangle', longueur: 288, largeur: 240 });
     assert.equal(r.projet.murs.ouverturesContour['0'].length, 2);
@@ -236,7 +238,7 @@ describe('normaliserLecture : le projet', () => {
   });
 
   test('les champs inconnus sont retirés (même filtre que l\'assistant)', () => {
-    const r = lp.normaliserLecture(sortie({}, { evil: 'curl x', plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, section: 'pirate', cle: 'sk-fuite' } }));
+    const r = filtre(sortie({}, { evil: 'curl x', plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, section: 'pirate', cle: 'sk-fuite' } }));
     assert.equal(r.projet.evil, undefined);
     assert.equal(r.projet.plancher.cle, undefined);
     assert.equal(r.projet.plancher.section, '2×10');
@@ -244,29 +246,29 @@ describe('normaliserLecture : le projet', () => {
   });
 
   test('document sans plan lisible : refusé avec la raison', () => {
-    rejetteSync(() => lp.normaliserLecture({ lisible: false, probleme: 'Photo trop floue.' }), 'failed-precondition', 'Photo trop floue.');
-    rejetteSync(() => lp.normaliserLecture({ lisible: false }), 'failed-precondition', 'plan de construction');
+    rejetteSync(() => filtre({ lisible: false, probleme: 'Photo trop floue.' }), 'failed-precondition', 'Photo trop floue.');
+    rejetteSync(() => filtre({ lisible: false }), 'failed-precondition', 'plan de construction');
   });
 
   test('ni plancher ni mur : refusé', () => {
-    rejetteSync(() => lp.normaliserLecture(sortie({}, { plancherActif: false, mursActifs: false })), 'failed-precondition', 'Aucun plancher ni mur');
-    rejetteSync(() => lp.normaliserLecture({}), 'failed-precondition');
-    rejetteSync(() => lp.normaliserLecture(null), 'failed-precondition');
+    rejetteSync(() => filtre(sortie({}, { plancherActif: false, mursActifs: false })), 'failed-precondition', 'Aucun plancher ni mur');
+    rejetteSync(() => filtre({}), 'failed-precondition');
+    rejetteSync(() => filtre(null), 'failed-precondition');
   });
 
   test('forme du plancher impossible à fermer : message propre au plan', () => {
-    rejetteSync(() => lp.normaliserLecture(sortie({}, { plancher: { forme: { type: 'cotes', cotes: [100, 100], angles: [] } } })),
+    rejetteSync(() => filtre(sortie({}, { plancher: { forme: { type: 'cotes', cotes: [100, 100], angles: [] } } })),
         'failed-precondition', 'forme du plancher');
   });
 
   test('confiance inconnue : « moyenne »', () => {
-    assert.equal(lp.normaliserLecture(sortie({ confiance: 'parfaite' })).confiance, 'moyenne');
-    assert.equal(lp.normaliserLecture(sortie({ confiance: 'faible' })).confiance, 'faible');
-    assert.equal(lp.normaliserLecture(sortie({ confiance: undefined })).confiance, 'moyenne');
+    assert.equal(filtre(sortie({ confiance: 'parfaite' })).confiance, 'moyenne');
+    assert.equal(filtre(sortie({ confiance: 'faible' })).confiance, 'faible');
+    assert.equal(filtre(sortie({ confiance: undefined })).confiance, 'moyenne');
   });
 
   test('textes bornés et nettoyés', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       explication: 'a'.repeat(2000), niveau: 'n'.repeat(500), echelle: 'e'.repeat(500),
       hypotheses: ['b\u0000\n' + 'c'.repeat(1000), '', 42, null, ...Array(30).fill('h')],
     }));
@@ -281,7 +283,7 @@ describe('normaliserLecture : le projet', () => {
 // =================================================================================================
 describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () => {
   test('cote lue et convertie correctement : marquée « vérifiée », niveau conservé', () => {
-    const r = lp.normaliserLecture(sortie());
+    const r = filtre(sortie());
     const v = valeur(r, 'plancher.forme.longueur');
     assert.equal(v.niveau, 'lu');
     assert.equal(v.verifiee, true);
@@ -295,7 +297,7 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
   });
 
   test('mauvaise conversion du modèle (24\'-0" donné comme 280 po) : « incertain », avec la valeur du plan', () => {
-    const r = lp.normaliserLecture(sortie({}, { plancher: { forme: { type: 'rectangle', longueur: 280, largeur: 240 } } }));
+    const r = filtre(sortie({}, { plancher: { forme: { type: 'rectangle', longueur: 280, largeur: 240 } } }));
     const v = valeur(r, 'plancher.forme.longueur');
     assert.equal(v.niveau, 'incertain');
     assert.equal(v.valeurPlan, 288);
@@ -304,7 +306,7 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
   });
 
   test('la raison du modèle est gardée après celle du serveur', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [{ chemin: 'plancher.forme.longueur', lecture: '25\'-0"', niveau: 'lu', raison: 'Chiffre en partie caché.' }],
     }));
     const v = valeur(r, 'plancher.forme.longueur');
@@ -314,7 +316,7 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
   });
 
   test('un quart de pouce d\'écart passe (arrondi du plan), plus que ça non', () => {
-    const lire = (po) => lp.normaliserLecture(sortie({
+    const lire = (po) => filtre(sortie({
       valeurs: [{ chemin: 'plancher.forme.longueur', lecture: '24\'-0"', niveau: 'lu' }],
     }, { plancher: { forme: { type: 'rectangle', longueur: po, largeur: 240 } } })).valeurs.find((x) => x.chemin === 'plancher.forme.longueur');
     assert.equal(lire(288.25).niveau, 'lu');
@@ -324,19 +326,19 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
   });
 
   test('cote en millimètres', () => {
-    const ok = lp.normaliserLecture(sortie({
+    const ok = filtre(sortie({
       valeurs: [{ chemin: 'plancher.forme.longueur', lecture: '7315 mm', niveau: 'lu' }],
     }, { plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 } } }));
     assert.equal(valeur(ok, 'plancher.forme.longueur').verifiee, true);
     // 7315 mm = 288.0 po ; une confusion mm → cm donnerait 28.8
-    const mal = lp.normaliserLecture(sortie({
+    const mal = filtre(sortie({
       valeurs: [{ chemin: 'plancher.forme.longueur', lecture: '7315 mm', niveau: 'lu' }],
     }, { plancher: { forme: { type: 'rectangle', longueur: 28.8, largeur: 240 } } }));
     assert.equal(valeur(mal, 'plancher.forme.longueur').niveau, 'incertain');
   });
 
   test('cote illisible pour le serveur (« 3040 », texte) : pas de comparaison, niveau du modèle conservé', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [
         { chemin: 'murs.ouverturesContour.0.0.largeur', lecture: '3040', niveau: 'deduit', raison: 'Code de fenêtre.' },
         { chemin: 'murs.ouverturesContour.0.0.hauteur', lecture: 'voir tableau', niveau: 'lu' },
@@ -350,7 +352,7 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
   });
 
   test('la position n\'est jamais comparée (elle se calcule à partir d\'autres cotes)', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [{ chemin: 'murs.ouverturesContour.0.0.position', lecture: '3\'-0"', niveau: 'deduit', raison: 'Bord + demi-largeur.' }],
     }));
     const v = valeur(r, 'murs.ouverturesContour.0.0.position');
@@ -359,7 +361,7 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
   });
 
   test('sans « lecture » : le niveau du modèle est gardé tel quel', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [{ chemin: 'plancher.forme.longueur', lecture: null, niveau: 'deduit', raison: 'Mesuré à l\'échelle.' }],
     }));
     const v = valeur(r, 'plancher.forme.longueur');
@@ -367,7 +369,7 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
   });
 
   test('angle, entraxe et choix : jamais comparés à une cote', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [
         { chemin: 'plancher.espacement', lecture: '16"', niveau: 'lu' },
         { chemin: 'plancher.section', lecture: '2x10', niveau: 'lu' },
@@ -381,7 +383,7 @@ describe('normaliserLecture : cotes imprimées vérifiées par le serveur', () =
 
 // =================================================================================================
 describe('normaliserLecture : chemins des valeurs', () => {
-  const avec = (valeurs, projetOver = {}) => lp.normaliserLecture(sortie({ valeurs }, projetOver));
+  const avec = (valeurs, projetOver = {}) => filtre(sortie({ valeurs }, projetOver));
   const chemins = (r) => r.valeurs.map((v) => v.chemin).sort();
 
   test('chemins inconnus, dangereux ou sans valeur : ignorés', () => {
@@ -430,7 +432,7 @@ describe('normaliserLecture : chemins des valeurs', () => {
   });
 
   test('forme « cotes » : côtés et angles', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [
         { chemin: 'plancher.forme.cotes.1', niveau: 'incertain' },
         { chemin: 'plancher.forme.angles.0', niveau: 'incertain' },
@@ -442,7 +444,7 @@ describe('normaliserLecture : chemins des valeurs', () => {
   });
 
   test('forme « points »', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [{ chemin: 'plancher.forme.points.2.1', niveau: 'incertain' }, { chemin: 'plancher.forme.points.3.0', niveau: 'incertain' }],
     }, { plancher: { forme: { type: 'points', points: [[0, 0], [240, 0], [240, 120]] } }, mursActifs: false }));
     assert.deepEqual(chemins(r), ['plancher.forme.points.2.1']);
@@ -458,11 +460,17 @@ describe('normaliserLecture : chemins des valeurs', () => {
     assert.deepEqual(r.valeurs, []);
   });
 
-  test('plancher non inclus : ses valeurs sont ignorées ; murs non inclus : celles des murs aussi', () => {
+  test('plancher non inclus : ses réglages sont ignorés, mais sa forme sert aux murs du contour', () => {
     const sansPlancher = avec([
       { chemin: 'plancher.forme.longueur', niveau: 'incertain' }, { chemin: 'murs.hauteur', niveau: 'incertain' },
+      { chemin: 'plancher.espacement', niveau: 'incertain' }, { chemin: 'plancher.section', niveau: 'incertain' },
     ], { plancherActif: false });
-    assert.deepEqual(chemins(sansPlancher), ['murs.hauteur']);
+    assert.deepEqual(chemins(sansPlancher), ['murs.hauteur', 'plancher.forme.longueur']);
+    // Murs libres sans plancher : la forme ne sert à rien.
+    const libres = avec([
+      { chemin: 'plancher.forme.longueur', niveau: 'incertain' }, { chemin: 'murs.libres.0.longueur', niveau: 'incertain' },
+    ], { plancherActif: false, murs: { mode: 'libres', libres: [{ nom: 'A', longueur: 120, hauteur: 96 }] } });
+    assert.deepEqual(chemins(libres), ['murs.libres.0.longueur']);
     const sansMurs = avec([
       { chemin: 'plancher.forme.longueur', niveau: 'incertain' }, { chemin: 'murs.hauteur', niveau: 'incertain' },
     ], { mursActifs: false });
@@ -470,7 +478,7 @@ describe('normaliserLecture : chemins des valeurs', () => {
   });
 
   test('murs libres : leurs chemins seulement, et pas ceux du contour', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [
         { chemin: 'murs.libres.0.longueur', niveau: 'incertain' },
         { chemin: 'murs.libres.0.ouvertures.0.largeur', niveau: 'deduit' },
@@ -533,7 +541,7 @@ describe('normaliserLecture : ouvertures écartées par le filtre (les indices s
     { type: 'fenetre', nom: 'F2', largeur: 24, hauteur: 36, allege: 40, position: 200 },
   ];
   const projetOver = { murs: { mode: 'contour', hauteur: 97.125, ouverturesContour: { 0: ouvertures } } };
-  const lire = (valeurs) => lp.normaliserLecture(sortie({ valeurs }, projetOver));
+  const lire = (valeurs) => filtre(sortie({ valeurs }, projetOver));
 
   test('le projet ne garde que les trois ouvertures valides', () => {
     const r = lire([]);
@@ -563,14 +571,14 @@ describe('normaliserLecture : ouvertures écartées par le filtre (les indices s
   });
 
   test('clé du côté écrite « 00 » ou « 0 » : même résultat', () => {
-    const r = lp.normaliserLecture(sortie({ valeurs: [{ chemin: 'murs.ouverturesContour.0.4.largeur', niveau: 'incertain' }] }, {
+    const r = filtre(sortie({ valeurs: [{ chemin: 'murs.ouverturesContour.0.4.largeur', niveau: 'incertain' }] }, {
       murs: { mode: 'contour', hauteur: 97.125, ouverturesContour: { '00': ouvertures } },
     }));
     assert.deepEqual(r.valeurs.map((v) => v.chemin), ['murs.ouverturesContour.0.1.largeur']);
   });
 
   test('murs libres écartés : les indices des murs et de leurs ouvertures se décalent aussi', () => {
-    const r = lp.normaliserLecture(sortie({
+    const r = filtre(sortie({
       valeurs: [
         { chemin: 'murs.libres.0.longueur', niveau: 'incertain' }, // écarté
         { chemin: 'murs.libres.2.longueur', lecture: '10\'-0"', niveau: 'lu' },
@@ -596,7 +604,7 @@ describe('normaliserLecture : ouvertures écartées par le filtre (les indices s
 
 // =================================================================================================
 describe('normaliserLecture : ce que le modèle n\'a pas donné devient « à confirmer »', () => {
-  const lire = (projetOver, valeurs = []) => lp.normaliserLecture(sortie({ valeurs }, projetOver));
+  const lire = (projetOver, valeurs = []) => filtre(sortie({ valeurs }, projetOver));
 
   test('position d\'une porte oubliée : « incertain » (le filtre aurait mis 48 po en silence)', () => {
     const r = lire({
@@ -673,6 +681,213 @@ describe('normaliserLecture : ce que le modèle n\'a pas donné devient « à co
 });
 
 // =================================================================================================
+describe('garde-fous qui ne dépendent pas du modèle (relecture indépendante)', () => {
+  const complet = (e) => lp.normaliserLecture(e);
+  const sans = (e) => lp.normaliserLecture(e, { completer: false });
+
+  test('« valeurs » vide : chaque longueur du projet devient à confirmer (rien ne passe en silence)', () => {
+    const r = complet(sortie({ valeurs: [] }));
+    const incertains = r.valeurs.filter((v) => v.niveau === 'incertain').map((v) => v.chemin).sort();
+    assert.deepEqual(incertains, [
+      'murs.hauteur',
+      'murs.ouverturesContour.0.0.allege', 'murs.ouverturesContour.0.0.hauteur', 'murs.ouverturesContour.0.0.largeur',
+      'murs.ouverturesContour.0.0.position', 'murs.ouverturesContour.0.1.hauteur', 'murs.ouverturesContour.0.1.largeur',
+      'murs.ouverturesContour.0.1.position',
+      'plancher.forme.largeur', 'plancher.forme.longueur',
+    ]);
+    assert.ok(r.valeurs.filter((v) => v.niveau === 'incertain').every((v) => v.raison.length > 0));
+    // Le filtrage seul n'ajoute rien (c'est le serveur qui complète).
+    assert.deepEqual(sans(sortie({ valeurs: [] })).valeurs, []);
+  });
+
+  test('l\'allège d\'une porte n\'est pas réclamée ; celle d\'une fenêtre l\'est', () => {
+    const chemins = complet(sortie({ valeurs: [] })).valeurs.map((v) => v.chemin);
+    assert.ok(chemins.includes('murs.ouverturesContour.0.0.allege'));
+    assert.ok(!chemins.includes('murs.ouverturesContour.0.1.allege'));
+  });
+
+  test('« lu » sans cote imprimée comparable : au moins « à vérifier »', () => {
+    const r = complet(sortie({
+      valeurs: [
+        { chemin: 'plancher.forme.longueur', niveau: 'lu' },
+        { chemin: 'plancher.forme.largeur', niveau: 'lu', lecture: 'voir détail' },
+        { chemin: 'murs.ouverturesContour.0.0.largeur', niveau: 'lu', lecture: '3\'-0"' },
+      ],
+    }));
+    for (const c of ['plancher.forme.longueur', 'plancher.forme.largeur']) {
+      const v = valeur(r, c);
+      assert.equal(v.niveau, 'deduit', c);
+      assert.equal(v.verifiee, false);
+      assert.ok(v.raison.includes('à vérifier'), v.raison);
+    }
+    // Une cote comparée et conforme reste « lu ».
+    assert.equal(valeur(r, 'murs.ouverturesContour.0.0.largeur').niveau, 'lu');
+  });
+
+  test('une position est au plus « à vérifier », même si le modèle dit « lu »', () => {
+    const r = complet(sortie({
+      valeurs: [{ chemin: 'murs.ouverturesContour.0.0.position', niveau: 'lu', lecture: '5\'-0"', raison: 'Cote du plan.' }],
+    }));
+    const v = valeur(r, 'murs.ouverturesContour.0.0.position');
+    assert.equal(v.niveau, 'deduit');
+    assert.ok(v.raison.startsWith('Cote du plan.') && v.raison.includes('à partir d\'autres cotes'));
+  });
+
+  test('un niveau « incertain » du modèle n\'est jamais adouci', () => {
+    const r = complet(sortie({
+      valeurs: [{ chemin: 'plancher.forme.longueur', niveau: 'incertain', raison: 'Flou.' }],
+    }));
+    assert.equal(valeur(r, 'plancher.forme.longueur').niveau, 'incertain');
+    assert.equal(valeur(r, 'plancher.forme.longueur').raison, 'Flou.');
+  });
+
+  test('forme « cotes » : chaque côté et chaque angle ont leur fiche', () => {
+    const r = complet(sortie({ valeurs: [] }, {
+      plancher: { forme: { type: 'cotes', cotes: [240, 120, 120, 120], angles: [90, 90, 270] }, espacement: 16, section: '2×10' },
+      mursActifs: false,
+    }));
+    const chemins = r.valeurs.map((v) => v.chemin).sort();
+    assert.deepEqual(chemins, [
+      'plancher.forme.angles.0', 'plancher.forme.angles.1', 'plancher.forme.angles.2',
+      'plancher.forme.cotes.0', 'plancher.forme.cotes.1', 'plancher.forme.cotes.2', 'plancher.forme.cotes.3',
+    ]);
+  });
+
+  test('forme « points » : chaque coordonnée a sa fiche', () => {
+    const r = complet(sortie({ valeurs: [] }, {
+      plancher: { forme: { type: 'points', points: [[0, 0], [240, 0], [240, 120]] }, espacement: 16, section: '2×10' },
+      mursActifs: false,
+    }));
+    assert.equal(r.valeurs.length, 6);
+    assert.ok(r.valeurs.every((v) => v.niveau === 'incertain' && /^plancher\.forme\.points\.\d\.[01]$/.test(v.chemin)));
+  });
+
+  test('murs seuls en mode contour : la forme du plancher est vérifiée et corrigeable', () => {
+    const r = complet(sortie({ valeurs: [] }, { plancherActif: false }));
+    assert.ok(valeur(r, 'plancher.forme.longueur'), 'longueur');
+    assert.ok(valeur(r, 'plancher.forme.largeur'), 'largeur');
+    assert.equal(valeur(r, 'plancher.forme.longueur').niveau, 'incertain');
+    // Les réglages du plancher, eux, n'y sont pas.
+    assert.equal(valeur(r, 'plancher.section'), undefined);
+    assert.equal(valeur(r, 'plancher.espacement'), undefined);
+  });
+
+  test('murs seuls et forme absente : le rectangle par défaut est à confirmer', () => {
+    const r = complet(sortie({ valeurs: [] }, { plancherActif: false, plancher: {} }));
+    assert.equal(valeur(r, 'plancher.forme.longueur').niveau, 'incertain');
+    assert.ok(valeur(r, 'plancher.forme.longueur').raison.includes('non trouvée'));
+  });
+
+  test('murs libres : longueur, hauteur et ouvertures de chaque mur', () => {
+    const r = complet(sortie({ valeurs: [] }, {
+      plancherActif: false,
+      murs: { mode: 'libres', libres: [{ nom: 'A', longueur: 120, hauteur: 96, ouvertures: [{ type: 'porte', largeur: 30, hauteur: 80, position: 60 }] }] },
+    }));
+    assert.deepEqual(r.valeurs.map((v) => v.chemin).sort(), [
+      'murs.libres.0.hauteur', 'murs.libres.0.longueur', 'murs.libres.0.ouvertures.0.hauteur',
+      'murs.libres.0.ouvertures.0.largeur', 'murs.libres.0.ouvertures.0.position',
+      // Section et entraxe des montants non donnés : défauts à vérifier.
+      'murs.params.espacement', 'murs.params.section',
+    ]);
+  });
+
+  test('section et entraxe pris par défaut : fiches « à vérifier » corrigeables', () => {
+    const r = complet(sortie({ valeurs: [] }, {
+      plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 } },
+    }));
+    const section = valeur(r, 'plancher.section');
+    assert.equal(section.niveau, 'deduit');
+    assert.ok(section.raison.includes('2×10'));
+    assert.equal(valeur(r, 'plancher.espacement').niveau, 'deduit');
+    assert.equal(valeur(r, 'murs.params.section').niveau, 'deduit');
+    assert.equal(valeur(r, 'murs.params.espacement').niveau, 'deduit');
+  });
+
+  test('section et entraxe donnés par le plan : aucune fiche en plus', () => {
+    const r = complet(sortie({ valeurs: [] }, {
+      plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, section: '2×8', espacement: 12 },
+      murs: {
+        mode: 'contour', hauteur: 97.125, params: { section: '2×6', espacement: 16 },
+        ouverturesContour: {},
+      },
+    }));
+    for (const c of ['plancher.section', 'plancher.espacement', 'murs.params.section', 'murs.params.espacement']) {
+      assert.equal(valeur(r, c), undefined, c);
+    }
+  });
+
+  test('une fiche du modèle sur la section n\'est pas écrasée par le défaut', () => {
+    const r = complet(sortie({
+      valeurs: [{ chemin: 'plancher.section', niveau: 'incertain', raison: 'Note illisible.' }],
+    }, { plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 } } }));
+    assert.equal(valeur(r, 'plancher.section').niveau, 'incertain');
+    assert.equal(valeur(r, 'plancher.section').raison, 'Note illisible.');
+  });
+
+  test('jeux des ouvertures non donnés : hypothèse automatique ; donnés : aucune', () => {
+    const sansJeux = complet(sortie());
+    assert.ok(sansJeux.hypotheses.some((h) => h.startsWith('Jeux autour des portes et fenêtres')));
+    const avecJeux = complet(sortie({}, {
+      murs: { mode: 'contour', hauteur: 97.125, ouverturesContour: { 0: [
+        { type: 'porte', largeur: 36, hauteur: 80, position: 60, jeuLargeur: 0, jeuHauteur: 0 },
+      ] } },
+    }));
+    assert.ok(!avecJeux.hypotheses.some((h) => h.startsWith('Jeux autour')));
+  });
+
+  test('coins en sens horaire : hypothèse automatique ; antihoraire : aucune', () => {
+    const horaire = complet(sortie({}, {
+      plancher: { forme: { type: 'points', points: [[0, 0], [0, 120], [240, 120], [240, 0]] } }, mursActifs: false,
+    }));
+    assert.ok(horaire.hypotheses.some((h) => h.includes('sens horaire')));
+    const anti = complet(sortie({}, {
+      plancher: { forme: { type: 'points', points: [[0, 0], [240, 0], [240, 120], [0, 120]] } }, mursActifs: false,
+    }));
+    assert.ok(!anti.hypotheses.some((h) => h.includes('sens horaire')));
+  });
+
+  test('« niveau » qui n\'est pas une chaîne : « incertain »', () => {
+    const r = sans(sortie({
+      valeurs: [{ chemin: 'plancher.forme.longueur', niveau: ['lu'] }, { chemin: 'plancher.forme.largeur', niveau: { lu: 1 } }],
+    }));
+    assert.equal(valeur(r, 'plancher.forme.longueur').niveau, 'incertain');
+    assert.equal(valeur(r, 'plancher.forme.largeur').niveau, 'incertain');
+  });
+
+  test('clés « 1 » puis « 01 » dont la dernière liste est vide : la liste pleine est gardée', () => {
+    const o = { type: 'fenetre', nom: 'F', largeur: 30, hauteur: 40, allege: 36, position: 50 };
+    const r = complet(sortie({
+      valeurs: [{ chemin: 'murs.ouverturesContour.1.0.largeur', lecture: '30"', niveau: 'lu' }],
+    }, { murs: { mode: 'contour', hauteur: 97.125, ouverturesContour: { 1: [o], '01': [{ type: 'lucarne' }] } } }));
+    assert.equal(r.projet.murs.ouverturesContour['1'].length, 1);
+    assert.equal(valeur(r, 'murs.ouverturesContour.1.0.largeur').verifiee, true);
+    assert.ok(valeur(r, 'murs.ouverturesContour.1.0.hauteur'), 'les autres valeurs de la fenêtre sont couvertes');
+  });
+
+  test('toute fiche renvoyée a un chemin permis, un niveau valide et une raison pour les « incertain »', () => {
+    for (const e of [sortie(), sortie({ valeurs: [] }), sortie({ valeurs: [{ chemin: 'plancher.section', niveau: 'lu' }] })]) {
+      for (const v of complet(e).valeurs) {
+        assert.ok(lp.genreDuChemin(v.chemin), v.chemin);
+        assert.ok(['lu', 'deduit', 'incertain'].includes(v.niveau));
+        if (v.niveau === 'incertain') assert.ok(v.raison.length > 0, v.chemin);
+      }
+    }
+  });
+});
+
+describe('fichiers : images de 5 Mo au plus', () => {
+  const entete = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+  test('une photo de plus de 5 Mo est refusée avec son nom ; un PDF de 6 Mo passe', () => {
+    const photo = Buffer.concat([entete, Buffer.alloc(lp.MAX_OCTETS_IMAGE, 1)]);
+    rejetteSync(() => lp.validerFichiers([fichier(photo, 'plan.jpg')]), 'invalid-argument', 'plan.jpg');
+    const juste = Buffer.concat([entete, Buffer.alloc(lp.MAX_OCTETS_IMAGE - entete.length, 1)]);
+    assert.equal(lp.validerFichiers([fichier(juste, 'ok.jpg')])[0].octets, lp.MAX_OCTETS_IMAGE);
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(6 * 1024 * 1024, 0x20)]);
+    assert.equal(lp.validerFichiers([fichier(pdf, 'gros.pdf')])[0].mime, 'application/pdf');
+  });
+});
+
+// =================================================================================================
 describe('lirePlan : appel de l\'API', () => {
   const fichiers = lp.validerFichiers([fichier(PDF, 'rdc.pdf')]);
   const CLE = 'sk-ant-cle-secrete-123';
@@ -687,7 +902,9 @@ describe('lirePlan : appel de l\'API', () => {
   test('lecture réussie : projet filtré', async () => {
     const r = await appeler(reponse(200, bonne()));
     assert.equal(r.projet.v, 1);
-    assert.equal(r.valeurs.length, 5);
+    // Chaque longueur critique du projet a sa fiche (celles du modèle, plus celles du serveur).
+    assert.ok(r.valeurs.length >= 5);
+    assert.ok(r.valeurs.every((v) => ['lu', 'deduit', 'incertain'].includes(v.niveau)));
   });
 
   test('la clé va dans l\'en-tête, jamais dans le corps ; le plan va dans le corps', async () => {
@@ -788,7 +1005,10 @@ describe('lirePlan : appel de l\'API', () => {
     const r = await appeler(reponse(200, bonne(piege)));
     assert.equal(r.projet.evil, undefined);
     assert.ok(!JSON.stringify(r.projet).includes(CLE));
-    assert.deepEqual(r.valeurs.map((v) => v.chemin), ['plancher.forme.longueur']);
+    const chemins = r.valeurs.map((v) => v.chemin);
+    assert.ok(chemins.includes('plancher.forme.longueur'));
+    assert.ok(!chemins.includes('secret.cle'));
+    assert.ok(chemins.every((c) => lp.genreDuChemin(c)), 'seuls des chemins permis sortent');
   });
 });
 
@@ -812,6 +1032,7 @@ const SORTIE_GARAGE = {
     murs: {
       mode: 'contour',
       hauteur: 97.125,
+      params: { section: '2×4', espacement: 16 },
       ouverturesContour: {
         0: [
           { type: 'fenetre', nom: 'F1', largeur: 36, hauteur: 48, allege: 36, position: 60 },
@@ -821,17 +1042,24 @@ const SORTIE_GARAGE = {
       },
     },
   },
+  // Chaque longueur du projet a sa fiche : le garde-fou ne repose pas sur le modèle.
   valeurs: [
     { chemin: 'plancher.forme.longueur', lecture: '24\'-0"', niveau: 'lu' },
     { chemin: 'plancher.forme.largeur', lecture: '20\'-0"', niveau: 'lu' },
+    { chemin: 'murs.hauteur', lecture: '8\'-1 1/8"', niveau: 'deduit', raison: 'Coupe de mur : 2 lisses hautes et montants précoupés.' },
+    // Mur 1 : fenêtre F1 et porte P1.
     { chemin: 'murs.ouverturesContour.0.0.largeur', lecture: '3\'-0"', niveau: 'lu' },
     { chemin: 'murs.ouverturesContour.0.0.hauteur', lecture: '4\'-0"', niveau: 'lu' },
+    { chemin: 'murs.ouverturesContour.0.0.allege', lecture: '3\'-0"', niveau: 'lu' },
+    { chemin: 'murs.ouverturesContour.0.0.position', lecture: null, niveau: 'deduit', raison: 'Bord du cadre à 4 pi 6 po, plus la demi-largeur.' },
+    { chemin: 'murs.ouverturesContour.0.1.largeur', lecture: '3\'-0"', niveau: 'lu' },
     { chemin: 'murs.ouverturesContour.0.1.hauteur', lecture: '6\'-8"', niveau: 'lu' },
     { chemin: 'murs.ouverturesContour.0.1.position', lecture: null, niveau: 'deduit', raison: 'Bord du cadre à 8 pi 6 po, plus la demi-largeur.' },
-    // Le modèle a lu 3'-0" mais écrit 24 po : le serveur le repère.
+    // Mur 2 : fenêtre F2. Le modèle a lu 3'-0" mais écrit 24 po : le serveur le repère.
     { chemin: 'murs.ouverturesContour.1.0.largeur', lecture: '3\'-0"', niveau: 'lu' },
+    { chemin: 'murs.ouverturesContour.1.0.hauteur', lecture: '3\'-0"', niveau: 'lu' },
     { chemin: 'murs.ouverturesContour.1.0.allege', lecture: null, niveau: 'incertain', raison: 'Allège illisible sur la coupe.' },
-    { chemin: 'murs.hauteur', lecture: '8\'-1 1/8"', niveau: 'deduit', raison: 'Coupe de mur : 2 lisses hautes et montants précoupés.' },
+    { chemin: 'murs.ouverturesContour.1.0.position', lecture: null, niveau: 'deduit', raison: 'Centrée sur le mur, d\'après le plan.' },
   ],
 };
 
@@ -843,12 +1071,15 @@ describe('contrat avec l\'application', () => {
     assert.deepEqual(JSON.parse(readFileSync(fichier, 'utf8')), lecture);
   });
 
-  test('la lecture du garage : 2 valeurs à confirmer, 2 à vérifier, 5 lues et vérifiées', () => {
+  test('la lecture du garage : 2 valeurs à confirmer, 4 à vérifier, 8 lues et vérifiées', () => {
     const { valeurs } = lp.normaliserLecture(SORTIE_GARAGE);
     const niveaux = (n) => valeurs.filter((v) => v.niveau === n).map((v) => v.chemin).sort();
     assert.deepEqual(niveaux('incertain'), ['murs.ouverturesContour.1.0.allege', 'murs.ouverturesContour.1.0.largeur']);
-    assert.deepEqual(niveaux('deduit'), ['murs.hauteur', 'murs.ouverturesContour.0.1.position']);
-    assert.equal(niveaux('lu').length, 5);
+    assert.deepEqual(niveaux('deduit'), [
+      'murs.hauteur', 'murs.ouverturesContour.0.0.position', 'murs.ouverturesContour.0.1.position',
+      'murs.ouverturesContour.1.0.position',
+    ]);
+    assert.equal(niveaux('lu').length, 8);
     assert.ok(valeurs.filter((v) => v.niveau === 'lu').every((v) => v.verifiee));
     assert.equal(valeurs.find((v) => v.chemin === 'murs.ouverturesContour.1.0.largeur').valeurPlan, 36);
   });
