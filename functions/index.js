@@ -27,6 +27,7 @@ const PAGE_CREER_NIP = require("./src/page_creer_nip");
 const assistantCharpente = require("./src/assistant_charpente");
 const suppression = require("./src/suppression_compagnie");
 const archivage = require("./src/anciens_employes");
+const nipPrive = require("./src/nip_prive");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
@@ -90,8 +91,9 @@ async function identifierParNip(request) {
       .limit(2)
       .get();
   // Un ancien employé (actif === false) n'a plus de NIP : même échec générique.
-  const employe = snap.size === 1 && snap.docs[0].data().actif !== false &&
-    egalConstant(snap.docs[0].data().pinHash, hacherNip(compagnie.id, pin)) ? snap.docs[0] : null;
+  const candidat = snap.size === 1 && snap.docs[0].data().actif !== false ? snap.docs[0] : null;
+  const hashNip = candidat ? await nipPrive.lireHash(db, candidat.id, candidat.data()) : null;
+  const employe = candidat && egalConstant(hashNip, hacherNip(compagnie.id, pin)) ? candidat : null;
   if (!employe) await echouer(limiteCompagnie);
 
   return {auth, employe, compagnie, limiteIp};
@@ -441,8 +443,11 @@ exports.inscrireCompagnie = onCall({secrets: SECRETS_NIP_COURRIEL}, async (reque
       courriel: emailAdmin,
       role: "admin",
       estProprietaire: true,
-      pinHash: hacherNip(companyRef.id, pinAdmin),
+      nipCree: true,
     });
+    t.set(nipPrive.refNip(db, employeRef.id), nipPrive.donneesNipPrive({
+      FieldValue, companyId: companyRef.id, hash: hacherNip(companyRef.id, pinAdmin),
+    }));
     return String(nouveau);
   });
 
@@ -635,17 +640,25 @@ exports.enregistrerEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (requ
 
     // Renvoi : seul le serveur peut garantir, au moment de l'écriture, que le NIP
     // n'a pas été créé entre-temps (il serait effacé par une réinitialisation).
-    if (renvoi && existant.pinHash != null) {
-      throw new HttpsError("failed-precondition", "Cet employé a déjà créé son NIP.");
+    if (renvoi) {
+      const prive = await t.get(nipPrive.refNip(db, ref.id));
+      if (nipPrive.nipExiste(existant, prive.exists ? prive.data() : null)) {
+        throw new HttpsError("failed-precondition", "Cet employé a déjà créé son NIP.");
+      }
     }
 
     const maj = {nom, courriel: adresse, role};
     if (existant) {
       // Réinitialisation : l'ancien NIP cesse de fonctionner immédiatement.
-      t.update(ref, invitationDemandee && !renvoi ? {...maj, pinHash: FieldValue.delete()} : maj);
+      if (invitationDemandee && !renvoi) {
+        t.update(ref, {...maj, ...nipPrive.champsNipEfface(FieldValue)});
+        t.delete(nipPrive.refNip(db, ref.id));
+      } else {
+        t.update(ref, maj);
+      }
     } else {
       // Pas de NIP tant que l'employé ne l'a pas créé avec son lien.
-      t.set(ref, {...maj, companyId: ctx.companyId, estProprietaire: false});
+      t.set(ref, {...maj, companyId: ctx.companyId, estProprietaire: false, nipCree: false});
     }
     return {...existant, ...maj};
   });
@@ -722,10 +735,10 @@ exports.creerNip = onRequest({secrets: SECRETS_NIP_COURRIEL}, async (req, res) =
       if (!inv.exists || !emp.exists || emp.data().actif === false) return null;
       const i = inv.data();
       if (i.expireLe.toMillis() < Date.now() || !egalConstant(i.jetonHash, hacherJeton(jeton))) return null;
-      t.update(empRef, {
-        pinHash: hacherNip(emp.data().companyId, nip),
-        pinModifieLe: FieldValue.serverTimestamp(),
-      });
+      t.update(empRef, nipPrive.champsNipEcrit(FieldValue));
+      t.set(nipPrive.refNip(db, employeeId), nipPrive.donneesNipPrive({
+        FieldValue, companyId: emp.data().companyId, hash: hacherNip(emp.data().companyId, nip),
+      }));
       t.delete(invRef); // usage unique
       return emp.data();
     });
@@ -766,6 +779,7 @@ async function nettoyerAccesEmploye(employeeId, saufUid = null) {
   await supprimerSessionsDe(employeeId, saufUid);
   await db.collection("reinitialisations_nip").doc(employeeId).delete();
   await db.collection("invitations_nip").doc(employeeId).delete();
+  await nipPrive.refNip(db, employeeId).delete();
 }
 
 /** Mêmes protections pour retirer, quel que soit le mode : jamais le super-admin ni le Proprio. */
@@ -795,6 +809,7 @@ exports.supprimerEmploye = onCall(async (request) => {
     }
     exigerCibleRetirable(ctx, employeeId, snap.data());
     t.delete(ref);
+    t.delete(nipPrive.refNip(db, employeeId));
   });
   await nettoyerAccesEmploye(employeeId);
   return {ok: true};
@@ -832,9 +847,9 @@ exports.retirerAccesEmploye = onCall(async (request) => {
       supprimeApresLe: Timestamp.fromDate(supprimeApresLe),
       motifRetrait: motif,
       // Le NIP est détruit : une réactivation passe toujours par un nouveau NIP.
-      pinHash: FieldValue.delete(),
-      pinModifieLe: FieldValue.delete(),
+      ...nipPrive.champsNipEfface(FieldValue),
     });
+    t.delete(nipPrive.refNip(db, employeeId));
   });
   await nettoyerAccesEmploye(employeeId);
   return {ok: true, supprimeApresLe: supprimeApresLe.toISOString()};
@@ -871,9 +886,9 @@ exports.reactiverEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (reques
       supprimeApresLe: FieldValue.delete(),
       motifRetrait: FieldValue.delete(),
       // Par précaution : jamais d'ancien NIP.
-      pinHash: FieldValue.delete(),
-      pinModifieLe: FieldValue.delete(),
+      ...nipPrive.champsNipEfface(FieldValue),
     });
+    t.delete(nipPrive.refNip(db, employeeId));
     return cible;
   });
   await limite.compter();
@@ -883,6 +898,17 @@ exports.reactiverEmploye = onCall({secrets: SECRETS_NIP_COURRIEL}, async (reques
     {id: employeeId, courrielEnvoye: true} :
     {id: employeeId, courrielEnvoye: false, lienInvitation: lien};
 });
+
+/**
+ * Déplace chaque nuit les NIP restés dans `employees` vers `employees_prive` (migration :
+ * sans effet une fois tout déplacé, à retirer ensuite). Journalise seulement un nombre.
+ */
+exports.migrerNipsPrives = onSchedule(
+    {schedule: "every day 04:00", timeZone: "America/Toronto", timeoutSeconds: 300},
+    async () => {
+      const nombre = await nipPrive.migrerNipsPrives({db, FieldValue});
+      logger.info("NIP déplacés vers l'espace privé", {nombre});
+    });
 
 /** Chaque nuit : supprime les anciens employés dont les 24 mois sont écoulés. */
 exports.purgerAnciensEmployes = onSchedule(
@@ -1402,14 +1428,17 @@ exports.changerNip = onCall({secrets: SECRETS_NIP_COURRIEL}, async (request) => 
   await limite.compter();
 
   const e = ctx.employe;
-  if (!egalConstant(e.pinHash, hacherNip(ctx.companyId, actuel))) {
+  const hashActuel = await nipPrive.lireHash(db, ctx.employeeId, e);
+  if (!egalConstant(hashActuel, hacherNip(ctx.companyId, actuel))) {
     throw new HttpsError("permission-denied", "NIP actuel invalide.");
   }
 
-  await db.collection("employees").doc(ctx.employeeId).update({
-    pinHash: hacherNip(ctx.companyId, nouveau),
-    pinModifieLe: FieldValue.serverTimestamp(),
-  });
+  const lot = db.batch();
+  lot.set(nipPrive.refNip(db, ctx.employeeId), nipPrive.donneesNipPrive({
+    FieldValue, companyId: ctx.companyId, hash: hacherNip(ctx.companyId, nouveau),
+  }));
+  lot.update(db.collection("employees").doc(ctx.employeeId), nipPrive.champsNipEcrit(FieldValue));
+  await lot.commit();
   // Déconnecte les autres appareils.
   await supprimerSessionsDe(ctx.employeeId, ctx.uid);
 
@@ -1549,10 +1578,10 @@ exports.validerReinitialisationNip = onCall({secrets: SECRETS_NIP_COURRIEL}, asy
       return false;
     }
     t.delete(resetRef);
-    t.update(employe.ref, {
-      pinHash: hacherNip(compagnie.id, nouveau),
-      pinModifieLe: FieldValue.serverTimestamp(),
-    });
+    t.update(employe.ref, nipPrive.champsNipEcrit(FieldValue));
+    t.set(nipPrive.refNip(db, employe.id), nipPrive.donneesNipPrive({
+      FieldValue, companyId: compagnie.id, hash: hacherNip(compagnie.id, nouveau),
+    }));
     return true;
   });
   if (!valide) throw invalide();

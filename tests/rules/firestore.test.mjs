@@ -1406,7 +1406,7 @@ describe('Collections serveur uniquement', () => {
     for (const uid of ['uid-adminA', 'uid-superA']) {
       const d = ctxDe(uid);
       for (const chemin of ['compteurs/companies', 'limites_connexion/x', 'companies_prive/A',
-        'reinitialisations_nip/empA', 'invitations_nip/empA', 'connexions_web/uid-adminA', 'appareils_web/x', 'config/securite',
+        'reinitialisations_nip/empA', 'invitations_nip/empA', 'connexions_web/uid-adminA', 'appareils_web/x', 'employees_prive/empA', 'config/securite',
         'journal_suppressions/A']) {
         await assertFails(getDoc(doc(d, chemin)));
         await assertFails(setDoc(doc(d, chemin), { a: 1 }));

@@ -16,6 +16,7 @@ import { lundi } from './helpers.mjs';
 import { initializeApp as initAdmin } from 'firebase-admin/app';
 import { FieldValue, Timestamp, getFirestore as getAdminDb } from 'firebase-admin/firestore';
 import archivage from '../../functions/src/anciens_employes.js';
+import nipPrive from '../../functions/src/nip_prive.js';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import yauzl from 'yauzl';
 import ExcelJS from 'exceljs';
@@ -112,6 +113,13 @@ async function nipViaLien(courriel, nip, sujet = 'Bienvenue') {
   return nip;
 }
 
+/** NIP haché d'un employé : l'espace privé d'abord, puis l'ancien champ (transition). */
+const nipHashDe = async (id) => {
+  const prive = await adminDb.collection('employees_prive').doc(id).get();
+  const fiche = (await adminDb.collection('employees').doc(id).get()).data();
+  return prive.data()?.pinHash ?? fiche?.pinHash;
+};
+
 const viderLimites = async () =>
   Promise.all((await adminDb.collection('limites_connexion').get()).docs.map((d) => d.ref.delete()));
 
@@ -167,7 +175,9 @@ describe('Proprio de l\'app, inscription et approbation', () => {
     assert.equal(p.role, 'admin');
     assert.equal(p.courriel, 'proprio@exemple.ca');
     assert.equal(p.pin, undefined, 'le NIP ne doit jamais être stocké en clair');
-    assert.equal(p.pinHash, hacher(companyId, '123456'));
+    assert.equal(p.pinHash, undefined, 'le NIP haché n\'est plus sur la fiche que les admins lisent');
+    assert.equal(p.nipCree, true);
+    assert.equal(await nipHashDe(emps.docs[0].id), hacher(companyId, '123456'));
     assert.ok(await dernierCourriel('proprio@exemple.ca', numero), 'courriel de confirmation attendu');
   });
 
@@ -259,6 +269,7 @@ describe('Création d\'employés : courriel de confirmation et lien pour créer 
     assert.equal(lien.employeeId, jeanId);
     const fiche = (await adminDb.collection('employees').doc(jeanId).get()).data();
     assert.equal(fiche.pinHash, undefined, 'pas de NIP tant que l\'employé ne l\'a pas créé');
+    assert.equal(fiche.nipCree, false);
     assert.equal(fiche.estProprietaire, false);
     // Le jeton n'est stocké qu'en empreinte.
     const inv = (await adminDb.collection('invitations_nip').doc(jeanId).get()).data();
@@ -298,7 +309,9 @@ describe('Création d\'employés : courriel de confirmation et lien pour créer 
     assert.equal(r.corps.courriel, 'jean@exemple.ca');
     nipJean = '246802';
     const fiche = (await adminDb.collection('employees').doc(jeanId).get()).data();
-    assert.equal(fiche.pinHash, hacher(companyId, nipJean));
+    assert.equal(fiche.pinHash, undefined);
+    assert.equal(fiche.nipCree, true);
+    assert.equal(await nipHashDe(jeanId), hacher(companyId, nipJean));
     assert.ok(await dernierCourriel('jean@exemple.ca', 'NIP a été créé'));
     await connecter(numero, 'jean@exemple.ca', nipJean);
     assert.equal((await soumettreNip(lien, '135791')).statut, 400, 'usage unique');
@@ -384,7 +397,7 @@ describe('Renvoi de l\'invitation à un employé sans NIP (enregistrerEmploye { 
     assert.equal((await soumettreNip(ancien, '246802')).statut, 400, 'ancien lien refusé');
     const r = await soumettreNip(await lienRecu(COURRIEL, 'Rappel'), '246802');
     assert.equal(r.statut, 200);
-    assert.equal((await fiche()).pinHash, hacher(companyId, '246802'));
+    assert.equal(await nipHashDe(id), hacher(companyId, '246802'));
   });
 
   test('refusé si l\'employé a déjà son NIP : rien n\'est modifié, sa session continue', async () => {
@@ -408,7 +421,7 @@ describe('Renvoi de l\'invitation à un employé sans NIP (enregistrerEmploye { 
     await sa.appeler('enregistrerEmploye',
       { employeeId: autre, nom: 'Sans NIP', courriel: 'sansnip@exemple.ca', role: 'employe', renvoiInvitation: true });
     assert.equal((await adminDb.collection('sessions').doc('uid-fantome-renvoi').get()).exists, true);
-    assert.equal((await fiche(autre)).pinHash, undefined);
+    assert.equal(await nipHashDe(autre), undefined);
     // La réinitialisation, elle, coupe les sessions.
     await sa.appeler('enregistrerEmploye',
       { employeeId: autre, nom: 'Sans NIP', courriel: 'sansnip@exemple.ca', role: 'employe', reinitialiserNip: true });
@@ -1926,9 +1939,10 @@ describe('Anciens employés : retrait avec fiche conservée (24 mois), réactiva
     assert.ok(f.retireLe);
     assert.ok(Math.abs(f.supprimeApresLe.toMillis() - echeance.getTime()) < 1000, 'la date est celle de la fiche');
     assert.equal(f.pinHash, undefined, 'le NIP est détruit');
+    assert.equal(await existe('employees_prive/ant1'), false, 'au nouvel emplacement aussi');
     assert.equal(f.pinModifieLe, undefined);
     assert.deepEqual(Object.keys(f).sort(),
-      ['actif', 'companyId', 'courriel', 'estProprietaire', 'motifRetrait', 'nom', 'retireLe', 'role', 'supprimeApresLe'],
+      ['actif', 'companyId', 'courriel', 'estProprietaire', 'motifRetrait', 'nipCree', 'nom', 'retireLe', 'role', 'supprimeApresLe'],
       'aucun autre renseignement n\'est conservé');
     assert.equal(f.nom, 'Nom ant1');
     assert.equal(f.courriel, courrielDe('ant1'));
@@ -1947,6 +1961,7 @@ describe('Anciens employés : retrait avec fiche conservée (24 mois), réactiva
     await semer('ant2', 'plus');
     await retirer(owner, 'ant2');
     await adminDb.collection('employees').doc('ant2').update({ pinHash: hacher(cid, PIN) });
+    await adminDb.collection('employees_prive').doc('ant2').set({ pinHash: hacher(cid, PIN), companyId: cid });
     const a = await appareil();
     await rejette(a.appeler('connexionEmploye', { numeroCompagnie: NUM, courriel: courrielDe('ant2'), pin: PIN }), 'not-found');
     await rejette(a.appeler('connexionWeb', { numeroCompagnie: NUM, courriel: courrielDe('ant2'), pin: PIN }), 'not-found');
@@ -2029,14 +2044,14 @@ describe('Anciens employés : retrait avec fiche conservée (24 mois), réactiva
     });
     await rejette(a.appeler('validerReinitialisationNip',
       { numeroCompagnie: NUM, email: courriel, code: '123456', nouveauPin: '987654' }), 'permission-denied');
-    assert.equal((await fiche(ancien)).pinHash, undefined, 'aucun NIP n\'est recréé');
+    assert.equal(await nipHashDe(ancien), undefined, 'aucun NIP n\'est recréé');
     // Un vieux lien d'invitation.
     await adminDb.collection('invitations_nip').doc(ancien).set({
       jetonHash: createHash('sha256').update(lien.jeton).digest('hex'), expireLe: new Date(Date.now() + 600000),
     });
     assert.equal((await soumettreNip(lien, '246802')).statut, 400);
     assert.equal(await existe(`invitations_nip/${ancien}`), true, 'le lien n\'est pas consommé');
-    assert.equal((await fiche(ancien)).pinHash, undefined);
+    assert.equal(await nipHashDe(ancien), undefined);
     // Récupération du numéro de compagnie : aucun courriel.
     const avant = (await adminDb.collection('_courriels_emulateur').where('a', '==', courriel).get()).size;
     await a.appeler('recupererNumeroCompagnie', { email: courriel });
@@ -2081,7 +2096,7 @@ describe('Anciens employés : retrait avec fiche conservée (24 mois), réactiva
     assert.equal(f.retireLe, undefined);
     assert.equal(f.supprimeApresLe, undefined);
     assert.equal(f.motifRetrait, undefined);
-    assert.equal(f.pinHash, undefined, 'aucun NIP tant que le lien n\'est pas utilisé');
+    assert.equal(await nipHashDe('ant12'), undefined, 'aucun NIP tant que le lien n\'est pas utilisé');
     assert.equal(f.role, 'plus');
 
     const msg = await dernierCourriel(courriel, 'Bon retour');
@@ -2445,7 +2460,7 @@ describe("Appareil de confiance (30 jours) : le code par courriel n'est plus dem
     assert.equal((await demander(await appareil(), 'ap-chg@exemple.ca', { jetonAppareil: j1 })).etape, 'connecte');
     assert.deepEqual(await chg.appeler('changerNip', { nipActuel: PIN, nouveauNip: '135790' }), { ok: true });
     assert.equal((await appareils('apchg')).length, 0, 'tous ses appareils sont retirés (même celui de la session en cours)');
-    await adminDb.collection('employees').doc('apchg').update({ pinHash: hacher(cid, PIN) });
+    await adminDb.collection('employees_prive').doc('apchg').set({ pinHash: hacher(cid, PIN), companyId: cid });
     await refuse('ap-chg@exemple.ca', j1); await refuse('ap-chg@exemple.ca', j1b);
 
     // 2. Réinitialisation du NIP par l'admin.
@@ -2456,7 +2471,7 @@ describe("Appareil de confiance (30 jours) : le code par courriel n'est plus dem
     await proprio.appeler('enregistrerEmploye',
       { employeeId: 'aprei', nom: 'Rei', courriel: 'ap-rei@exemple.ca', role: 'plus', reinitialiserNip: true });
     assert.equal((await appareils('aprei')).length, 0);
-    await adminDb.collection('employees').doc('aprei').update({ pinHash: hacher(cid, PIN) });
+    await adminDb.collection('employees_prive').doc('aprei').set({ pinHash: hacher(cid, PIN), companyId: cid });
     await refuse('ap-rei@exemple.ca', j2);
 
     // 3. Retrait avec fiche conservée, puis suppression de la fiche.
@@ -2562,6 +2577,252 @@ describe("Appareil de confiance (30 jours) : le code par courriel n'est plus dem
 });
 
 // =============================================================================
+describe('NIP haché : espace privé (employees_prive), indicateur nipCree et migration', () => {
+  const NUM = '330001'; const cid = 'np-compagnie'; const PIN = '482915';
+  const courrielDe = (id) => `${id}@exemple.ca`;
+  const uidDe = (a) => a.auth.currentUser.uid;
+  const fiche = async (id) => (await adminDb.collection('employees').doc(id).get()).data();
+  const prive = async (id) => (await adminDb.collection('employees_prive').doc(id).get()).data();
+  const existe = async (chemin) => (await adminDb.doc(chemin).get()).exists;
+  let owner;
+
+  /** Un employé avec NIP à l'ANCIEN emplacement (avant la migration). */
+  const semerAncien = (id, role = 'plus', extra = {}) => adminDb.collection('employees').doc(id).set({
+    companyId: cid, nom: `Nom ${id}`, role, estProprietaire: false, courriel: courrielDe(id),
+    pinHash: hacher(cid, PIN), ...extra,
+  });
+  /** Un employé avec NIP au NOUVEL emplacement. */
+  async function semerNouveau(id, role = 'plus', nip = PIN) {
+    await adminDb.collection('employees').doc(id).set({
+      companyId: cid, nom: `Nom ${id}`, role, estProprietaire: false, courriel: courrielDe(id), nipCree: true,
+    });
+    await adminDb.collection('employees_prive').doc(id).set({ pinHash: hacher(cid, nip), companyId: cid });
+  }
+
+  before(async () => {
+    await adminDb.collection('companies').doc(cid).set(
+      { numero: NUM, nomEntreprise: 'Privé inc.', statut: 'approuvee', reglesPaie: {} });
+    await adminDb.collection('employees').doc('npowner').set({
+      companyId: cid, nom: 'Owner', role: 'admin', estProprietaire: true, courriel: courrielDe('npowner'), nipCree: true,
+    });
+    await adminDb.collection('employees_prive').doc('npowner').set({ pinHash: hacher(cid, PIN), companyId: cid });
+    owner = await connecter(NUM, courrielDe('npowner'), PIN);
+  });
+
+  // La migration agit sur TOUTE la base : on part d'un état propre (tout ce que les autres
+  // blocs de ce fichier ont semé à l'ancien emplacement est déplacé une première fois).
+  const migrerTout = () => nipPrive.migrerNipsPrives({ db: adminDb, FieldValue });
+
+  test('inscription : le NIP du super-admin est dans l\'espace privé, jamais sur la fiche', async () => {
+    const a = await appareil();
+    const { numero: n } = await a.appeler('inscrireCompagnie',
+      inscription({ nomEntreprise: 'Nouvelle inc.', emailAdmin: 'nouvelle@exemple.ca', pinAdmin: '135791' }));
+    const comp = (await adminDb.collection('companies').where('numero', '==', n).get()).docs[0];
+    const emp = (await adminDb.collection('employees').where('companyId', '==', comp.id).get()).docs[0];
+    assert.equal(emp.data().pinHash, undefined);
+    assert.equal(emp.data().nipCree, true);
+    const p = await prive(emp.id);
+    assert.equal(p.pinHash, hacher(comp.id, '135791'));
+    assert.equal(p.companyId, comp.id);
+    assert.ok(p.pinModifieLe);
+    await comp.ref.update({ statut: 'approuvee' });
+    assert.equal((await connecter(n, 'nouvelle@exemple.ca', '135791')).profil.role, 'admin');
+  });
+
+  test('connexion : lit le NIP privé ; l\'ancien emplacement marche encore (transition)', async () => {
+    await semerNouveau('npnew'); await semerAncien('npold');
+    assert.equal((await connecter(NUM, courrielDe('npnew'), PIN)).profil.id, 'npnew');
+    assert.equal((await connecter(NUM, courrielDe('npold'), PIN)).profil.id, 'npold');
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: courrielDe('npnew'), pin: '000000' }), 'not-found');
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: courrielDe('npold'), pin: '000000' }), 'not-found');
+  });
+
+  test('l\'espace privé a la priorité : un vieux pinHash sur la fiche ne donne pas accès', async () => {
+    await semerAncien('npprio');
+    await adminDb.collection('employees_prive').doc('npprio').set({ pinHash: hacher(cid, '864209'), companyId: cid });
+    await connecter(NUM, courrielDe('npprio'), '864209');
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: courrielDe('npprio'), pin: PIN }), 'not-found');
+  });
+
+  test('un admin ne peut ni lire ni écrire employees_prive, et ne reçoit plus aucun pinHash', async () => {
+    await semerNouveau('npvis');
+    await assert.rejects(getDoc(doc(owner.db, 'employees_prive', 'npvis')));
+    await assert.rejects(getDocs(collection(owner.db, 'employees_prive')));
+    await assert.rejects(getDocs(query(collection(owner.db, 'employees_prive'), where('companyId', '==', cid))));
+    await assert.rejects(setDoc(doc(owner.db, 'employees_prive', 'npvis'), { pinHash: 'x', companyId: cid }));
+    await assert.rejects(updateDoc(doc(owner.db, 'employees_prive', 'npvis'), { pinHash: 'x' }));
+    const liste = await getDocs(query(collection(owner.db, 'employees'), where('companyId', '==', cid)));
+    assert.ok(liste.size > 0);
+    const vu = liste.docs.find((d) => d.id === 'npvis').data();
+    assert.equal(vu.pinHash, undefined, 'le hachage n\'est plus dans le document que les admins lisent');
+    assert.equal(vu.nipCree, true);
+  });
+
+  test('création du NIP par le lien : espace privé + nipCree, rien d\'autre sur la fiche', async () => {
+    const { id } = await owner.appeler('enregistrerEmploye', { nom: 'Lien Privé', courriel: 'lien-prive@exemple.ca', role: 'plus' });
+    assert.equal((await fiche(id)).nipCree, false);
+    assert.equal(await existe(`employees_prive/${id}`), false);
+    assert.equal((await soumettreNip(await lienRecu('lien-prive@exemple.ca'), '246802')).statut, 200);
+    const f = await fiche(id);
+    assert.equal(f.nipCree, true);
+    assert.equal(f.pinHash, undefined);
+    assert.equal(f.pinModifieLe, undefined);
+    const p = await prive(id);
+    assert.equal(p.pinHash, hacher(cid, '246802'));
+    assert.equal(p.companyId, cid);
+    assert.equal((await connecter(NUM, 'lien-prive@exemple.ca', '246802')).profil.id, id);
+  });
+
+  test('changement de NIP : ancien refusé, nouveau accepté, tout reste dans l\'espace privé', async () => {
+    await semerNouveau('npchg');
+    const e = await connecter(NUM, courrielDe('npchg'), PIN);
+    await rejette(e.appeler('changerNip', { nipActuel: '000000', nouveauNip: '135790' }), 'permission-denied');
+    assert.deepEqual(await e.appeler('changerNip', { nipActuel: PIN, nouveauNip: '135790' }), { ok: true });
+    assert.equal((await prive('npchg')).pinHash, hacher(cid, '135790'));
+    assert.equal((await fiche('npchg')).pinHash, undefined);
+    assert.equal((await fiche('npchg')).nipCree, true);
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: courrielDe('npchg'), pin: PIN }), 'not-found');
+    await connecter(NUM, courrielDe('npchg'), '135790');
+  });
+
+  test('changement de NIP d\'un employé pas encore migré : le NIP passe dans l\'espace privé', async () => {
+    await semerAncien('npmig');
+    const e = await connecter(NUM, courrielDe('npmig'), PIN);
+    await e.appeler('changerNip', { nipActuel: PIN, nouveauNip: '864209' });
+    const f = await fiche('npmig');
+    assert.equal(f.pinHash, undefined, 'l\'ancien champ disparaît');
+    assert.equal(f.nipCree, true);
+    assert.equal((await prive('npmig')).pinHash, hacher(cid, '864209'));
+    await connecter(NUM, courrielDe('npmig'), '864209');
+  });
+
+  test('NIP oublié mené à terme : espace privé mis à jour', async () => {
+    await semerAncien('npoub');
+    const a = await appareil();
+    await a.appeler('demanderReinitialisationNip', { numeroCompagnie: NUM, email: courrielDe('npoub') });
+    const code = extraire((await dernierCourriel(courrielDe('npoub'), 'réinitialisation')).texte, 'Votre code de réinitialisation');
+    await a.appeler('validerReinitialisationNip', { numeroCompagnie: NUM, email: courrielDe('npoub'), code, nouveauPin: '975310' });
+    assert.equal((await prive('npoub')).pinHash, hacher(cid, '975310'));
+    assert.equal((await fiche('npoub')).pinHash, undefined);
+    assert.equal((await fiche('npoub')).nipCree, true);
+    await connecter(NUM, courrielDe('npoub'), '975310');
+  });
+
+  test('réinitialisation par l\'admin, retrait, réactivation, suppression : le NIP est détruit aux deux endroits', async () => {
+    // Réinitialisation.
+    await semerNouveau('nprei'); await semerAncien('nprei2');
+    for (const id of ['nprei', 'nprei2']) {
+      await owner.appeler('enregistrerEmploye', { employeeId: id, nom: `Nom ${id}`, courriel: courrielDe(id), role: 'plus', reinitialiserNip: true });
+      const f = await fiche(id);
+      assert.equal(f.nipCree, false, id);
+      assert.equal(f.pinHash, undefined, id);
+      assert.equal(await existe(`employees_prive/${id}`), false, id);
+      await rejette((await appareil()).appeler('connexionEmploye',
+        { numeroCompagnie: NUM, courriel: courrielDe(id), pin: PIN }), 'not-found');
+    }
+    // Retrait avec fiche conservée, puis réactivation (jamais l'ancien NIP).
+    await semerNouveau('npret');
+    await owner.appeler('retirerAccesEmploye', { employeeId: 'npret' });
+    assert.equal((await fiche('npret')).nipCree, false);
+    assert.equal(await existe('employees_prive/npret'), false);
+    await owner.appeler('reactiverEmploye', { employeeId: 'npret' });
+    assert.equal((await fiche('npret')).nipCree, false);
+    assert.equal(await existe('employees_prive/npret'), false);
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: courrielDe('npret'), pin: PIN }), 'not-found');
+    // Suppression de la fiche.
+    await semerNouveau('npsup');
+    await owner.appeler('supprimerEmploye', { employeeId: 'npsup' });
+    assert.equal(await existe('employees/npsup'), false);
+    assert.equal(await existe('employees_prive/npsup'), false);
+  });
+
+  test('renvoi d\'invitation : refusé si le NIP existe à l\'un ou l\'autre endroit (ou nipCree)', async () => {
+    const renvoi = (id) => owner.appeler('enregistrerEmploye',
+      { employeeId: id, nom: `Nom ${id}`, courriel: courrielDe(id), role: 'plus', renvoiInvitation: true });
+    await semerNouveau('nprv1'); await semerAncien('nprv2');
+    await adminDb.collection('employees').doc('nprv3').set({
+      companyId: cid, nom: 'Nom nprv3', role: 'plus', estProprietaire: false, courriel: courrielDe('nprv3'), nipCree: true,
+    });
+    await adminDb.collection('employees').doc('nprv4').set({
+      companyId: cid, nom: 'Nom nprv4', role: 'plus', estProprietaire: false, courriel: courrielDe('nprv4'), nipCree: false,
+    });
+    for (const id of ['nprv1', 'nprv2', 'nprv3']) await rejette(renvoi(id), 'failed-precondition');
+    assert.equal((await renvoi('nprv4')).courrielEnvoye, true, 'sans NIP : renvoi permis');
+    assert.equal(await existe('employees_prive/nprv1'), true, 'rien n\'est effacé par un renvoi refusé');
+  });
+
+  test('migration : copie puis retire l\'ancien champ, sans déconnecter personne ; idempotente', async () => {
+    await migrerTout();
+    const horodatage = new Date('2026-03-05T12:00:00Z');
+    await semerAncien('npm1', 'plus', { pinModifieLe: horodatage });
+    await semerAncien('npm2', 'employe');
+    await semerAncien('npm3', 'admin');
+    // Déjà dans l'espace privé : le NIP privé (plus récent) n'est JAMAIS écrasé par l'ancien.
+    await semerAncien('npm4');
+    await adminDb.collection('employees_prive').doc('npm4').set({ pinHash: hacher(cid, '864209'), companyId: cid });
+    // Sans NIP, ou ancien champ vide : rien à migrer.
+    await adminDb.collection('employees').doc('npm5').set({
+      companyId: cid, nom: 'Sans NIP', role: 'employe', estProprietaire: false, courriel: courrielDe('npm5'), nipCree: false,
+    });
+    await adminDb.collection('employees').doc('npm6').set({
+      companyId: cid, nom: 'Vide', role: 'employe', estProprietaire: false, courriel: courrielDe('npm6'), pinHash: '',
+    });
+    // Des sessions ouvertes avant la migration.
+    const avant = await connecter(NUM, courrielDe('npm1'), PIN);
+
+    const nombre = await nipPrive.migrerNipsPrives({ db: adminDb, FieldValue, taille: 2 });
+    assert.equal(nombre, 4, 'npm1 à npm4 (quatre fiches, en plusieurs pages de 2)');
+
+    for (const id of ['npm1', 'npm2', 'npm3', 'npm4']) {
+      const f = await fiche(id);
+      assert.equal(f.pinHash, undefined, id);
+      assert.equal(f.pinModifieLe, undefined, id);
+      assert.equal(f.nipCree, true, id);
+      assert.equal((await prive(id)).companyId, cid, id);
+    }
+    assert.equal((await prive('npm1')).pinHash, hacher(cid, PIN));
+    assert.equal((await prive('npm1')).pinModifieLe.toMillis(), horodatage.getTime(), 'la date du NIP est conservée');
+    assert.equal((await prive('npm4')).pinHash, hacher(cid, '864209'), 'jamais écrasé par l\'ancien emplacement');
+    assert.equal((await fiche('npm5')).nipCree, false);
+    assert.equal(await existe('employees_prive/npm5'), false);
+    assert.equal((await fiche('npm6')).pinHash, '', 'un champ vide n\'est pas touché');
+    assert.equal(await existe('employees_prive/npm6'), false);
+
+    // Personne n'est déconnecté, et tout le monde peut encore se connecter.
+    assert.ok((await getDoc(doc(avant.db, 'companies', cid))).exists(), 'session ouverte avant : toujours valide');
+    for (const id of ['npm1', 'npm2', 'npm3']) assert.equal((await connecter(NUM, courrielDe(id), PIN)).profil.id, id);
+    await connecter(NUM, courrielDe('npm4'), '864209');
+    await rejette((await appareil()).appeler('connexionEmploye',
+      { numeroCompagnie: NUM, courriel: courrielDe('npm4'), pin: PIN }), 'not-found');
+
+    // Deuxième passage : rien à faire.
+    assert.equal(await migrerTout(), 0);
+  });
+
+  test('migration : plus de 100 fiches (plusieurs pages), toutes déplacées', async () => {
+    await migrerTout();
+    for (let i = 0; i < 130; i++) await semerAncien(`npl${i}`, 'employe');
+    assert.equal(await migrerTout(), 130);
+    assert.equal((await adminDb.collection('employees').where('pinHash', '>', '').get())
+      .docs.filter((d) => d.data().companyId === cid).length, 0);
+    assert.equal((await prive('npl129')).pinHash, hacher(cid, PIN));
+    assert.equal((await connecter(NUM, courrielDe('npl77'), PIN)).profil.id, 'npl77');
+  });
+
+  test('la migration planifiée est publiée par le serveur', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../../functions/index.js', import.meta.url), 'utf8');
+    assert.match(source, /exports\.migrerNipsPrives = onSchedule\(/);
+    assert.match(source, /nipPrive\.migrerNipsPrives\(\{db, FieldValue\}\)/);
+  });
+});
+
+// =============================================================================
 describe('Limites anti-force brute', () => {
   test('connexion : blocage après 10 échecs par IP', async () => {
     const a = await appareil();
@@ -2589,7 +2850,7 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
   const NUM_CIBLE = '770001'; const NUM_TEMOIN = '770002';
   const bucket = () => getAdminStorage(adminApp).bucket(BUCKET);
   const COLLECTIONS = ['chantiers', 'chantier_photos', 'chantier_travaux', 'chantier_materiel',
-    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'materiel_general_vus', 'liste_achats', 'connexions_web', 'appareils_web', 'feuilles_temps'];
+    'chantier_extras', 'chantier_commandes', 'chantier_documents', 'materiel_general_vus', 'liste_achats', 'connexions_web', 'appareils_web', 'employees_prive', 'feuilles_temps'];
 
   const existe = async (chemin) => (await adminDb.doc(chemin).get()).exists;
   const compter = async (collection, cid) =>

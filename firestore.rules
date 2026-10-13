@@ -178,6 +178,11 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // NIP hachés des employés : serveur seulement (jamais lisibles par les admins).
+    match /employees_prive/{doc=**} {
+      allow read, write: if false;
+    }
+
     // Appareils de confiance de l'espace web (empreinte du jeton, dates) : serveur seulement.
     match /appareils_web/{doc=**} {
       allow read, write: if false;

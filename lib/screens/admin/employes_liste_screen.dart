@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../models/ancien_employe.dart';
+import '../../models/nip_employe.dart';
 import '../../services/app_session.dart';
 import '../../services/fiches_employes.dart';
 import '../../services/fonctions.dart';
@@ -220,7 +221,7 @@ class EmployesListeScreen extends StatelessWidget {
                             ),
                           ),
                           // Pas encore de NIP : lien d'invitation non utilisé.
-                          if (data['pinHash'] == null)
+                          if (!nipCree(data))
                             const Text(
                               'Invitation en attente : NIP pas encore créé',
                               style: TextStyle(

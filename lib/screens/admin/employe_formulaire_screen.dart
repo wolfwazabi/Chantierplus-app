@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../models/nip_employe.dart';
 import '../../services/app_session.dart';
 import '../../services/fonctions.dart';
 import '../../widgets/lien_invitation.dart';
@@ -51,7 +52,7 @@ class _EmployeFormulaireScreenState extends State<EmployeFormulaireScreen> {
       widget.donneesExistantes?['estProprietaire'] == true;
 
   /// Pas encore de NIP : l'employé n'a pas utilisé son lien d'invitation.
-  bool get _nipPasCree => widget.donneesExistantes?['pinHash'] == null;
+  bool get _nipPasCree => !nipCree(widget.donneesExistantes ?? const {});
 
   @override
   void initState() {
