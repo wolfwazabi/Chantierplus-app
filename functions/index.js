@@ -1679,7 +1679,8 @@ exports.assistantCharpente = onCall(
 // d'appliquer. Les plans ne sont pas conservés : ils servent à cet appel seulement.
 // Accès : admin et contremaître. Même clé d'API (ANTHROPIC_API_KEY) que l'assistant.
 exports.lirePlanCharpente = onCall(
-    {secrets: [assistantCharpente.ANTHROPIC_API_KEY], timeoutSeconds: 240, memory: "1GiB"},
+    // Mémoire : les pages des plans sont rendues en grand (environ 4200 px) avant l'envoi.
+    {secrets: [assistantCharpente.ANTHROPIC_API_KEY], timeoutSeconds: 300, memory: "2GiB"},
     async (request) => {
       verifierAppCheck(request, "lirePlanCharpente");
       const ctx = await contexteEmploye(request);
@@ -1706,6 +1707,7 @@ exports.lirePlanCharpente = onCall(
           cle: assistantCharpente.ANTHROPIC_API_KEY.value(),
           url: assistantCharpente.URL_API_ANTHROPIC.value(),
           modele: lecturePlans.MODELE_PLANS.value(),
+          journal: (message) => logger.warn("Lecture de plan : rendu", {message}),
         });
         logger.info("Lecture de plan", {
           companyId: ctx.companyId,

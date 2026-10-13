@@ -505,7 +505,7 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('À confirmer (2)'), findsOneWidget);
-      expect(find.text('À vérifier (4)'), findsOneWidget);
+      expect(find.text('À vérifier (5)'), findsOneWidget);
       expect(find.text('Hypothèses de l\'assistant'), findsOneWidget);
       expect(
         find.text('• Entraxe des solives de 16 po supposé.'),
@@ -909,6 +909,75 @@ void main() {
         expect(find.text('Plan lu'), findsNothing);
       },
     );
+  });
+
+  group('poutres, pieux et étriers', () {
+    Map<String, dynamic> avecPoutres() {
+      final r = lectureGarage();
+      (((r['projet'] as Map)['plancher']) as Map)['poutres'] = {
+        'nombre': 2,
+        'plis': 3,
+        'section': '2×8',
+        'pieux': 3,
+        'retraitPieux': 12,
+        'hauteurPatte': 0,
+      };
+      (r['valeurs'] as List).addAll([
+        {
+          'chemin': 'plancher.poutres.pieux',
+          'niveau': 'incertain',
+          'raison': 'Pieux cachés par la cote.',
+        },
+      ]);
+      return r;
+    }
+
+    testWidgets('pieux par poutre : un nombre entier, corrigé puis confirmé', (
+      t,
+    ) async {
+      final hote = _Hote();
+      await _jusqueALaRevue(t, hote, reponse: avecPoutres());
+      expect(find.text('Plancher — pieux par poutre'), findsOneWidget);
+      await t.enterText(_champ('plancher.poutres.pieux'), '4');
+      await t.pumpAndSettle();
+      for (final c in ['plancher.poutres.pieux', _f2Largeur, _f2Allege]) {
+        await t.tap(_cle('confirmer_$c'));
+        await t.pumpAndSettle();
+      }
+      await t.tap(_cle('plan_appliquer'));
+      await t.pumpAndSettle();
+      expect(hote.projet!.plancher.poutres!.pieuxParPoutre, 4);
+    });
+
+    testWidgets('étriers : liste Aucun / Un bout / Deux bouts', (t) async {
+      final hote = _Hote();
+      await _jusqueALaRevue(t, hote);
+      final carte = _cle('valeur_plancher.etriers');
+      expect(
+        find.descendant(
+          of: carte,
+          matching: find.text('Plancher — étriers de solive'),
+        ),
+        findsOneWidget,
+      );
+      await t.tap(
+        find.descendant(
+          of: carte,
+          matching: find.byType(DropdownButtonFormField<String>),
+        ),
+      );
+      await t.pumpAndSettle();
+      expect(find.text('Un bout'), findsWidgets);
+      await t.tap(find.text('Un bout').last);
+      await t.pumpAndSettle();
+      for (final c in [_f2Largeur, _f2Allege]) {
+        await t.tap(_cle('confirmer_$c'));
+        await t.pumpAndSettle();
+      }
+      await t.tap(_cle('plan_appliquer'));
+      await t.pumpAndSettle();
+      expect(hote.projet!.plancher.etriers.name, 'unBout');
+    });
   });
 
   group('avertissements', () {

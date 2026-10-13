@@ -23,8 +23,9 @@ enum NiveauValeur {
 
 enum ConfianceLecture { elevee, moyenne, faible }
 
-/// Ce qu'une valeur est : une longueur (pouces), un angle (degrés), un nombre (entraxe) ou un choix.
-enum GenreValeur { longueur, angle, nombre, choix }
+/// Ce qu'une valeur est : une longueur (pouces), un angle (degrés), un nombre (entraxe), un
+/// nombre entier (poutres, plis, pieux) ou un choix.
+enum GenreValeur { longueur, angle, nombre, entier, choix }
 
 /// Une valeur relevée sur le plan, retrouvée dans le projet par son [chemin] (ex. :
 /// `plancher.forme.longueur`, `murs.ouverturesContour.0.1.largeur`).
@@ -217,6 +218,13 @@ class LecturePlan {
         throw const FormatException('valeur hors des bornes');
       }
     }
+    if (genre == GenreValeur.entier) {
+      final n = valeur as num;
+      if ((n - n.round()).abs() > 1e-9) {
+        throw const FormatException('nombre entier attendu');
+      }
+      valeur = n.round();
+    }
     var json = _avecValeur(projetJson, chemin, valeur);
     if (valeur == 'fenetre' && chemin.endsWith('.type')) {
       // Une porte devenue fenêtre garde son allège de 0 : on prend la valeur courante (36 po).
@@ -301,6 +309,14 @@ GenreValeur? genreDuChemin(String chemin) {
   if (chemin == 'plancher.section' || chemin == 'murs.params.section') {
     return GenreValeur.choix;
   }
+  // Structure d'un plancher sur pieux : poutres, pieux, étriers.
+  if (chemin == 'plancher.etriers' || chemin == 'plancher.poutres.section') {
+    return GenreValeur.choix;
+  }
+  if (RegExp(r'^plancher\.poutres\.(nombre|plis|pieux)$').hasMatch(chemin)) {
+    return GenreValeur.entier;
+  }
+  if (chemin == 'plancher.poutres.retraitPieux') return GenreValeur.longueur;
   if (RegExp(r'^plancher\.forme\.angles\.\d{1,2}$').hasMatch(chemin)) {
     return GenreValeur.angle;
   }
@@ -320,7 +336,12 @@ GenreValeur? genreDuChemin(String chemin) {
 
 /// Les choix permis d'un chemin de genre « choix ».
 List<String> choixDuChemin(String chemin) {
-  if (chemin == 'plancher.section') return const ['2×6', '2×8', '2×10', '2×12'];
+  if (chemin == 'plancher.section' || chemin == 'plancher.poutres.section') {
+    return const ['2×6', '2×8', '2×10', '2×12'];
+  }
+  if (chemin == 'plancher.etriers') {
+    return const ['aucun', 'unBout', 'deuxBouts'];
+  }
   if (chemin == 'murs.params.section') return const ['2×4', '2×6'];
   if (chemin.endsWith('.type')) return const ['porte', 'fenetre'];
   return const [];
@@ -334,7 +355,14 @@ List<String> choixDuChemin(String chemin) {
       return (0.01, 359.99);
     case GenreValeur.nombre:
       return (6, 48);
+    case GenreValeur.entier:
+      return switch (chemin) {
+        'plancher.poutres.nombre' => (1, 6),
+        'plancher.poutres.plis' => (1, 5),
+        _ => (2, 10), // pieux par poutre
+      };
     case GenreValeur.longueur:
+      if (chemin == 'plancher.poutres.retraitPieux') return (0, 120);
       // Un coin du plancher peut avoir une coordonnée négative.
       if (chemin.startsWith('plancher.forme.points.')) {
         return (-pouceMaxSaisie, pouceMaxSaisie);
@@ -457,6 +485,18 @@ String libelleChemin(Map<String, dynamic> projetJson, String chemin) {
       return 'Murs — entraxe des montants';
     case 'murs.params.section':
       return 'Murs — section des montants';
+    case 'plancher.etriers':
+      return 'Plancher — étriers de solive';
+    case 'plancher.poutres.nombre':
+      return 'Plancher — nombre de poutres';
+    case 'plancher.poutres.plis':
+      return 'Plancher — plis de chaque poutre';
+    case 'plancher.poutres.section':
+      return 'Plancher — section des poutres';
+    case 'plancher.poutres.pieux':
+      return 'Plancher — pieux par poutre';
+    case 'plancher.poutres.retraitPieux':
+      return 'Plancher — premier pieu (distance du bord)';
   }
   if (chemin.startsWith('plancher.forme.cotes.')) {
     return 'Plancher — côté ${int.parse(p[3]) + 1}';

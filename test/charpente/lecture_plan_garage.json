@@ -236,6 +236,14 @@
       "lecture": "",
       "valeurPlan": null,
       "verifiee": false
+    },
+    {
+      "chemin": "plancher.etriers",
+      "niveau": "deduit",
+      "raison": "Étriers non indiqués : deux bouts supposé.",
+      "lecture": "",
+      "valeurPlan": null,
+      "verifiee": false
     }
   ],
   "niveau": "Rez-de-chaussée, page 2",

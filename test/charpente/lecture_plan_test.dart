@@ -33,11 +33,21 @@ const _cheminsPermis = [
   'murs.libres.5.hauteur',
   'murs.libres.1.ouvertures.0.largeur',
   'murs.libres.1.ouvertures.3.type',
+  'plancher.etriers',
+  'plancher.poutres.nombre',
+  'plancher.poutres.plis',
+  'plancher.poutres.section',
+  'plancher.poutres.pieux',
+  'plancher.poutres.retraitPieux',
 ];
 const _cheminsRefuses = [
   '',
   'plancher',
-  'plancher.etriers',
+  'plancher.entremises',
+  'plancher.poutres',
+  'plancher.poutres.hauteurPatte',
+  'plancher.poutres.x',
+  'plancher.coteMaison',
   'plancher.forme',
   'plancher.forme.type',
   'plancher.forme.points.0',
@@ -107,7 +117,7 @@ void main() {
       expect(cote1.single.largeurCadre, 24);
     });
 
-    test('les valeurs : 2 à confirmer, 4 à vérifier, 8 lues', () {
+    test('les valeurs : 2 à confirmer, 5 à vérifier, 8 lues', () {
       final l = LecturePlan.depuis(lectureGarage());
       expect(l.aConfirmer.map((v) => v.chemin).toSet(), {
         _f2Largeur,
@@ -118,6 +128,7 @@ void main() {
         'murs.ouverturesContour.0.0.position',
         'murs.ouverturesContour.0.1.position',
         'murs.ouverturesContour.1.0.position',
+        'plancher.etriers',
       });
       expect(l.lues, hasLength(8));
       expect(l.lues.every((v) => v.verifiee), isTrue);
@@ -169,7 +180,7 @@ void main() {
       () {
         final r = lectureGarage();
         r['valeurs'] = [
-          {'chemin': 'plancher.etriers', 'niveau': 'incertain'},
+          {'chemin': 'plancher.entremises', 'niveau': 'incertain'},
           {
             'chemin': 'murs.ouverturesContour.0.9.largeur',
             'niveau': 'incertain',
@@ -765,6 +776,141 @@ void main() {
       final l = LecturePlan.depuis(r)
           .modifier('murs.ouverturesContour.0.0.type', 'porte');
       expect(l.projet.murs.ouverturesContour[0]![0].type, TypeOuverture.porte);
+    });
+  });
+
+  group('structure du plancher : poutres, pieux, étriers', () {
+    LecturePlan avecPoutres() {
+      final r = lectureGarage();
+      (((r['projet'] as Map)['plancher']) as Map)['poutres'] = {
+        'nombre': 2,
+        'plis': 3,
+        'section': '2×8',
+        'pieux': 3,
+        'retraitPieux': 12,
+        'hauteurPatte': 0,
+      };
+      (r['valeurs'] as List).addAll([
+        for (final c in ['nombre', 'plis', 'section', 'pieux', 'retraitPieux'])
+          {'chemin': 'plancher.poutres.$c', 'niveau': 'incertain'},
+      ]);
+      return LecturePlan.depuis(r);
+    }
+
+    test('genres, choix et bornes', () {
+      expect(genreDuChemin('plancher.poutres.nombre'), GenreValeur.entier);
+      expect(genreDuChemin('plancher.poutres.plis'), GenreValeur.entier);
+      expect(genreDuChemin('plancher.poutres.pieux'), GenreValeur.entier);
+      expect(
+        genreDuChemin('plancher.poutres.retraitPieux'),
+        GenreValeur.longueur,
+      );
+      expect(genreDuChemin('plancher.poutres.section'), GenreValeur.choix);
+      expect(genreDuChemin('plancher.etriers'), GenreValeur.choix);
+      expect(choixDuChemin('plancher.etriers'), [
+        'aucun',
+        'unBout',
+        'deuxBouts',
+      ]);
+      expect(choixDuChemin('plancher.poutres.section'), [
+        '2×6',
+        '2×8',
+        '2×10',
+        '2×12',
+      ]);
+      expect(bornesDuChemin('plancher.poutres.nombre'), (1.0, 6.0));
+      expect(bornesDuChemin('plancher.poutres.plis'), (1.0, 5.0));
+      expect(bornesDuChemin('plancher.poutres.pieux'), (2.0, 10.0));
+      expect(bornesDuChemin('plancher.poutres.retraitPieux'), (0.0, 120.0));
+    });
+
+    test('le garage : étriers à vérifier', () {
+      final l = LecturePlan.depuis(lectureGarage());
+      expect(l.valeurDe('plancher.etriers'), 'deuxBouts');
+      expect(l.aVerifier.map((v) => v.chemin), contains('plancher.etriers'));
+    });
+
+    test('corriger un entier : il reste un entier dans le projet', () {
+      final l = avecPoutres()
+          .modifier('plancher.poutres.pieux', 4.0)
+          .modifier('plancher.poutres.nombre', 1)
+          .modifier('plancher.poutres.plis', 2);
+      expect(l.valeurDe('plancher.poutres.pieux'), 4);
+      expect(l.valeurDe('plancher.poutres.pieux'), isA<int>());
+      expect(l.projet.plancher.poutres!.pieuxParPoutre, 4);
+      expect(l.projet.plancher.poutres!.nombre, 1);
+      expect(l.projet.plancher.poutres!.plis, 2);
+    });
+
+    test('entier non entier ou hors bornes : refusé', () {
+      final l = avecPoutres();
+      expect(
+        () => l.modifier('plancher.poutres.pieux', 3.5),
+        throwsFormatException,
+      );
+      expect(
+        () => l.modifier('plancher.poutres.pieux', 1),
+        throwsFormatException,
+      );
+      expect(
+        () => l.modifier('plancher.poutres.nombre', 7),
+        throwsFormatException,
+      );
+      expect(
+        () => l.modifier('plancher.poutres.plis', 0),
+        throwsFormatException,
+      );
+      expect(l.valeurDe('plancher.poutres.pieux'), 3);
+    });
+
+    test('section des poutres, premier pieu, étriers', () {
+      final r = lectureGarage();
+      (((r['projet'] as Map)['plancher']) as Map)['poutres'] = {
+        'nombre': 2,
+        'plis': 3,
+        'section': '2×8',
+        'pieux': 3,
+        'retraitPieux': 12,
+        'hauteurPatte': 0,
+      };
+      (r['valeurs'] as List).addAll([
+        {'chemin': 'plancher.poutres.section', 'niveau': 'incertain'},
+        {'chemin': 'plancher.poutres.retraitPieux', 'niveau': 'incertain'},
+      ]);
+      final l = LecturePlan.depuis(r)
+          .modifier('plancher.poutres.section', '2×10')
+          .modifier('plancher.poutres.retraitPieux', 18)
+          .modifier('plancher.etriers', 'unBout');
+      expect(l.projet.plancher.poutres!.section.nom, '2×10');
+      expect(l.projet.plancher.poutres!.retraitPieux, 18);
+      expect(l.projet.plancher.etriers.name, 'unBout');
+      expect(
+        () => l.modifier('plancher.etriers', 'troisBouts'),
+        throwsFormatException,
+      );
+    });
+
+    test('libellés', () {
+      final l = avecPoutres();
+      String libelle(String c) => libelleChemin(l.projetJson, c);
+      expect(libelle('plancher.etriers'), 'Plancher — étriers de solive');
+      expect(
+        libelle('plancher.poutres.nombre'),
+        'Plancher — nombre de poutres',
+      );
+      expect(
+        libelle('plancher.poutres.plis'),
+        'Plancher — plis de chaque poutre',
+      );
+      expect(
+        libelle('plancher.poutres.section'),
+        'Plancher — section des poutres',
+      );
+      expect(libelle('plancher.poutres.pieux'), 'Plancher — pieux par poutre');
+      expect(
+        libelle('plancher.poutres.retraitPieux'),
+        'Plancher — premier pieu (distance du bord)',
+      );
     });
   });
 

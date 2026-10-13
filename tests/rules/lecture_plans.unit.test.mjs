@@ -388,7 +388,7 @@ describe('normaliserLecture : chemins des valeurs', () => {
 
   test('chemins inconnus, dangereux ou sans valeur : ignorés', () => {
     const r = avec([
-      { chemin: 'plancher.etriers', niveau: 'incertain' },
+      { chemin: 'plancher.entremises', niveau: 'incertain' },
       { chemin: '__proto__.polluer', niveau: 'incertain' },
       { chemin: 'constructor.prototype.x', niveau: 'incertain' },
       { chemin: 'plancher.forme.longueur.x', niveau: 'incertain' },
@@ -748,6 +748,7 @@ describe('garde-fous qui ne dépendent pas du modèle (relecture indépendante)'
     }));
     const chemins = r.valeurs.map((v) => v.chemin).sort();
     assert.deepEqual(chemins, [
+      'plancher.etriers', // à vérifier : déduits ou supposés
       'plancher.forme.angles.0', 'plancher.forme.angles.1', 'plancher.forme.angles.2',
       'plancher.forme.cotes.0', 'plancher.forme.cotes.1', 'plancher.forme.cotes.2', 'plancher.forme.cotes.3',
     ]);
@@ -758,8 +759,9 @@ describe('garde-fous qui ne dépendent pas du modèle (relecture indépendante)'
       plancher: { forme: { type: 'points', points: [[0, 0], [240, 0], [240, 120]] }, espacement: 16, section: '2×10' },
       mursActifs: false,
     }));
-    assert.equal(r.valeurs.length, 6);
-    assert.ok(r.valeurs.every((v) => v.niveau === 'incertain' && /^plancher\.forme\.points\.\d\.[01]$/.test(v.chemin)));
+    const forme = r.valeurs.filter((v) => v.chemin.startsWith('plancher.forme.'));
+    assert.equal(forme.length, 6);
+    assert.ok(forme.every((v) => v.niveau === 'incertain' && /^plancher\.forme\.points\.\d\.[01]$/.test(v.chemin)));
   });
 
   test('murs seuls en mode contour : la forme du plancher est vérifiée et corrigeable', () => {
@@ -872,6 +874,77 @@ describe('garde-fous qui ne dépendent pas du modèle (relecture indépendante)'
         if (v.niveau === 'incertain') assert.ok(v.raison.length > 0, v.chemin);
       }
     }
+  });
+});
+
+describe('structure du plancher : poutres, pieux, étriers', () => {
+  const complet = (e) => lp.normaliserLecture(e);
+  const poutres = { nombre: 2, plis: 3, section: '2×8', pieux: 3, retraitPieux: 12, hauteurPatte: 0 };
+  const avec = (valeurs, over = {}) => complet(sortie({ valeurs }, {
+    plancher: { forme: { type: 'rectangle', longueur: 180, largeur: 168 }, espacement: 16, section: '2×8', etriers: 'unBout', coteMaison: 2, poutres, ...over },
+    mursActifs: false,
+  }));
+
+  test('genres et choix', () => {
+    assert.equal(lp.genreDuChemin('plancher.poutres.nombre'), 'entier');
+    assert.equal(lp.genreDuChemin('plancher.poutres.plis'), 'entier');
+    assert.equal(lp.genreDuChemin('plancher.poutres.pieux'), 'entier');
+    assert.equal(lp.genreDuChemin('plancher.poutres.retraitPieux'), 'longueur');
+    assert.equal(lp.genreDuChemin('plancher.poutres.section'), 'choix');
+    assert.equal(lp.genreDuChemin('plancher.etriers'), 'choix');
+    assert.deepEqual(lp.choixDuChemin('plancher.etriers'), ['aucun', 'unBout', 'deuxBouts']);
+    assert.deepEqual(lp.choixDuChemin('plancher.poutres.section'), ['2×6', '2×8', '2×10', '2×12']);
+  });
+
+  test('poutres lues sans fiche : chacune de leurs valeurs est à confirmer', () => {
+    const r = avec([]);
+    for (const c of ['nombre', 'plis', 'section', 'pieux', 'retraitPieux']) {
+      assert.equal(valeur(r, `plancher.poutres.${c}`).niveau, 'incertain', c);
+    }
+  });
+
+  test('poutres « lues » : à vérifier ; premier pieu comparé à sa cote imprimée', () => {
+    const r = avec([
+      { chemin: 'plancher.poutres.nombre', niveau: 'lu', lecture: '2 poutres' },
+      { chemin: 'plancher.poutres.plis', niveau: 'lu', lecture: 'POUTRE 3-2x8' },
+      { chemin: 'plancher.poutres.section', niveau: 'lu', lecture: 'POUTRE 3-2x8' },
+      { chemin: 'plancher.poutres.pieux', niveau: 'lu' },
+      { chemin: 'plancher.poutres.retraitPieux', niveau: 'lu', lecture: '1\'-0"' },
+    ]);
+    assert.equal(valeur(r, 'plancher.poutres.nombre').niveau, 'deduit');
+    assert.ok(valeur(r, 'plancher.poutres.nombre').raison.includes('À vérifier sur le plan'));
+    assert.equal(valeur(r, 'plancher.poutres.retraitPieux').niveau, 'lu');
+    assert.equal(valeur(r, 'plancher.poutres.retraitPieux').verifiee, true);
+  });
+
+  test('premier pieu mal converti : à confirmer, avec la valeur du plan', () => {
+    const r = avec([{ chemin: 'plancher.poutres.retraitPieux', niveau: 'lu', lecture: '1\'-6"' }]);
+    const v = valeur(r, 'plancher.poutres.retraitPieux');
+    assert.equal(v.niveau, 'incertain');
+    assert.equal(v.valeurPlan, 18);
+  });
+
+  test('sans poutres : aucune fiche de poutre', () => {
+    const r = avec([], { poutres: null });
+    assert.ok(!r.valeurs.some((v) => v.chemin.startsWith('plancher.poutres.')));
+  });
+
+  test('étriers : toujours une fiche à vérifier, déduits ou supposés', () => {
+    const lus = avec([]);
+    assert.equal(valeur(lus, 'plancher.etriers').niveau, 'deduit');
+    assert.ok(valeur(lus, 'plancher.etriers').raison.includes('Déduit de la structure'));
+    const supposes = avec([], { etriers: undefined });
+    assert.equal(valeur(supposes, 'plancher.etriers').niveau, 'deduit');
+    assert.ok(valeur(supposes, 'plancher.etriers').raison.includes('deux bouts supposé'));
+    // Une fiche du modèle n'est pas remplacée.
+    const modele = avec([{ chemin: 'plancher.etriers', niveau: 'incertain', raison: 'Détail illisible.' }]);
+    assert.equal(valeur(modele, 'plancher.etriers').niveau, 'incertain');
+    assert.equal(valeur(modele, 'plancher.etriers').raison, 'Détail illisible.');
+  });
+
+  test('plancher non inclus : ni poutres ni étriers', () => {
+    const r = complet(sortie({ valeurs: [] }, { plancherActif: false, plancher: { forme: { type: 'rectangle', longueur: 180, largeur: 168 }, poutres } }));
+    assert.ok(!r.valeurs.some((v) => v.chemin.startsWith('plancher.poutres.') || v.chemin === 'plancher.etriers'));
   });
 });
 
@@ -1071,13 +1144,13 @@ describe('contrat avec l\'application', () => {
     assert.deepEqual(JSON.parse(readFileSync(fichier, 'utf8')), lecture);
   });
 
-  test('la lecture du garage : 2 valeurs à confirmer, 4 à vérifier, 8 lues et vérifiées', () => {
+  test('la lecture du garage : 2 valeurs à confirmer, 5 à vérifier, 8 lues et vérifiées', () => {
     const { valeurs } = lp.normaliserLecture(SORTIE_GARAGE);
     const niveaux = (n) => valeurs.filter((v) => v.niveau === n).map((v) => v.chemin).sort();
     assert.deepEqual(niveaux('incertain'), ['murs.ouverturesContour.1.0.allege', 'murs.ouverturesContour.1.0.largeur']);
     assert.deepEqual(niveaux('deduit'), [
       'murs.hauteur', 'murs.ouverturesContour.0.0.position', 'murs.ouverturesContour.0.1.position',
-      'murs.ouverturesContour.1.0.position',
+      'murs.ouverturesContour.1.0.position', 'plancher.etriers',
     ]);
     assert.equal(niveaux('lu').length, 8);
     assert.ok(valeurs.filter((v) => v.niveau === 'lu').every((v) => v.verifiee));
@@ -1094,9 +1167,12 @@ const CHEMINS_PERMIS = [
   'murs.ouverturesContour.0.0.largeur', 'murs.ouverturesContour.3.12.hauteur', 'murs.ouverturesContour.1.2.allege',
   'murs.ouverturesContour.1.2.position', 'murs.ouverturesContour.1.2.type',
   'murs.libres.0.longueur', 'murs.libres.5.hauteur', 'murs.libres.1.ouvertures.0.largeur', 'murs.libres.1.ouvertures.3.type',
+  'plancher.etriers', 'plancher.poutres.nombre', 'plancher.poutres.plis', 'plancher.poutres.section', 'plancher.poutres.pieux',
+  'plancher.poutres.retraitPieux',
 ];
 const CHEMINS_REFUSES = [
-  '', 'plancher', 'plancher.etriers', 'plancher.forme', 'plancher.forme.type', 'plancher.forme.points.0', 'plancher.forme.points.0.2',
+  '', 'plancher', 'plancher.entremises', 'plancher.poutres', 'plancher.poutres.hauteurPatte', 'plancher.poutres.x',
+  'plancher.coteMaison', 'plancher.forme', 'plancher.forme.type', 'plancher.forme.points.0', 'plancher.forme.points.0.2',
   'plancher.forme.cotes.', 'plancher.forme.cotes.123', 'plancher.forme.longueur.x', 'murs', 'murs.mode', 'murs.params', 'murs.params.linteau',
   'murs.ouverturesContour', 'murs.ouverturesContour.0', 'murs.ouverturesContour.0.0', 'murs.ouverturesContour.0.0.nom',
   'murs.ouverturesContour.0.0.jeuLargeur', 'murs.ouverturesContour.0.0.largeur.x', 'murs.ouverturesContour.123.0.largeur',

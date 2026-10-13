@@ -28,7 +28,7 @@ Future<Map<String, dynamic>> appelLecturePlanParDefaut(
     for (final f in fichiers) {'nom': f.nom, 'donnees': base64Encode(f.octets)},
   ],
   if (precisions.isNotEmpty) 'precisions': precisions,
-}, const Duration(seconds: 260));
+}, const Duration(seconds: 320));
 
 enum _Etape { choix, analyse, revue }
 
@@ -646,6 +646,7 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
         );
       case GenreValeur.angle:
       case GenreValeur.nombre:
+      case GenreValeur.entier:
         final (min, max) = bornesDuChemin(chemin);
         return ChampNombre(
           key: ValueKey('champ_$chemin'),
@@ -653,7 +654,12 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
           valeur: valeur is num ? valeur.toDouble() : 0,
           min: min,
           max: max,
-          suffixe: genre == GenreValeur.angle ? '°' : 'po',
+          decimales: genre == GenreValeur.entier ? 0 : 1,
+          suffixe: switch (genre) {
+            GenreValeur.angle => '°',
+            GenreValeur.entier => null,
+            _ => 'po',
+          },
           onChange: (x) => _corriger(chemin, x),
         );
       case GenreValeur.choix:
@@ -805,6 +811,7 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
       GenreValeur.angle => x is num ? formatAngle(x.toDouble()) : '—',
       GenreValeur.nombre =>
         x is num ? '${formatNombre(x.toDouble(), decimales: 1)} po' : '—',
+      GenreValeur.entier => x is num ? '${x.round()}' : '—',
       GenreValeur.choix => x is String ? _libelleChoix(x) : '—',
     };
   }
@@ -812,6 +819,9 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
   String _libelleChoix(String c) => switch (c) {
     'porte' => 'Porte',
     'fenetre' => 'Fenêtre',
+    'aucun' => 'Aucun',
+    'unBout' => 'Un bout',
+    'deuxBouts' => 'Deux bouts',
     _ => c,
   };
 
