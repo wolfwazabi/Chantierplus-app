@@ -868,6 +868,15 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     assert.equal(f.jours[0].verrouille, true);
     assert.ok(Date.parse(f.jours[0].modifieApresVerrouillageLe) > Date.now() - 60_000);
     assert.equal(f.totalHeures, 8.75);
+    // Historique : l'employé lui-même, avant/après, même instant que la trace de la journée.
+    assert.deepEqual(f.corrections, [{
+      jour: 0, le: f.jours[0].modifieApresVerrouillageLe, par: 'ft-emp', parRole: 'employe',
+      changements: [{ champ: 'heureFinMinutes', avant: 15 * 60, apres: 16 * 60 }],
+      heuresAvant: 7.75, heuresApres: 8.75,
+    }]);
+    // Renvoi identique : rien de plus dans l'historique.
+    await envoyer(emp, [jour({ heureFinMinutes: 16 * 60 })]);
+    assert.equal((await feuilleDe('ft-emp')).corrections.length, 1);
   });
 
   test('l\'admin liste les feuilles de sa compagnie, pas celles d\'une autre', async () => {
@@ -987,6 +996,25 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
       const f = await feuilleDe('ft-emp', SEMAINE);
       assert.equal(f.jours[0].verrouille, true);
       assert.ok(Date.parse(f.jours[0].modifieApresVerrouillageLe) > Date.now() - 60_000);
+      // Historique : l'admin qui a corrigé (identifiant et rôle, pas de nom), avant/après.
+      assert.deepEqual(f.corrections, [{
+        jour: 0, le: f.jours[0].modifieApresVerrouillageLe, par: 'ft-adm', parRole: 'admin',
+        changements: [{ champ: 'heureFinMinutes', avant: 15 * 60, apres: 16 * 60 }],
+        heuresAvant: 7.75, heuresApres: 8.75,
+      }]);
+      // Puis changement de chantier par l'admin : ajouté à la suite, avec les noms.
+      await adminDb.collection('chantiers').doc('ft-chA2').set({ companyId: cid, nom: 'Chantier Bêta', adresse: '3 rue C' });
+      await corriger(adm, 'ft-emp', [jour({ heureFinMinutes: 16 * 60, chantierId: 'ft-chA2' })]);
+      const g = await feuilleDe('ft-emp', SEMAINE);
+      assert.equal(g.corrections.length, 2);
+      assert.deepEqual(g.corrections[0], f.corrections[0]);
+      assert.deepEqual(g.corrections[1].changements,
+        [{ champ: 'chantierNom', avant: 'Chantier Alpha', apres: 'Chantier Bêta' }]);
+      assert.ok(!JSON.stringify(g.corrections).includes('Alex'), 'aucun nom de personne (Loi 25)');
+      // L'employé lit sa feuille, historique compris ; il ne peut pas l'écrire lui-même.
+      const lue = (await getDoc(doc(emp.db, 'feuilles_temps', `ft-emp_${SEMAINE}`))).data();
+      assert.deepEqual(lue.corrections, g.corrections);
+      await assert.rejects(updateDoc(doc(emp.db, 'feuilles_temps', `ft-emp_${SEMAINE}`), { corrections: [] }));
     });
 
     test('une journée envoyée vide n\'efface pas des heures déjà soumises', async () => {

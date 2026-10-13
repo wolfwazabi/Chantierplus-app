@@ -951,7 +951,7 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
 
   return calculerEtEnregistrerFeuille({
     ctx, cible: {id: ctx.employeeId, nom: ctx.employe.nom}, lundiDate, jours, maintenant,
-    acteur: {id: ctx.employeeId, nom: ctx.employe.nom},
+    acteur: {id: ctx.employeeId, nom: ctx.employe.nom, role: ctx.employe.role},
   });
 });
 
@@ -977,6 +977,8 @@ function exigerSemaineOuverte(lundiDate, maintenant) {
  * `acteur` : qui enregistre (l'employé lui-même, ou l'admin qui corrige). La feuille
  * garde la date de sa création et le dernier acteur : le fil « Activité » de l'admin
  * s'en sert (« Heures entrées par … », « Changements apportés aux heures par … »).
+ * Chaque journée déjà soumise puis modifiée s'ajoute à l'historique `corrections`
+ * (identifiant et rôle de l'auteur, avant/après) : voir calculerFeuille.
  */
 async function calculerEtEnregistrerFeuille({
   ctx, cible, lundiDate, jours, maintenant, reglesDeLaSemaine = false, acteur,
@@ -1010,6 +1012,7 @@ async function calculerEtEnregistrerFeuille({
     const calcul = calculerFeuille({
       jours, nomsChantiers, archives, regles, existante, semaineFigee,
       maintenantIso: new Date(maintenant).toISOString(),
+      acteur: {id: acteur.id, role: acteur.role},
     });
     t.set(ref, {
       companyId: ctx.companyId,
@@ -1018,6 +1021,8 @@ async function calculerEtEnregistrerFeuille({
       employeeNom: cible.nom,
       lundiDate,
       jours: calcul.jours,
+      // Historique des corrections (journées déjà soumises puis modifiées), écrit par le serveur.
+      ...(calcul.corrections ? {corrections: calcul.corrections} : {}),
       totalHeures: calcul.totalHeures,
       totalHeuresTravaillees: calcul.totalHeuresTravaillees,
       totalVoyagementPaye: calcul.totalVoyagementPaye,
@@ -1079,7 +1084,7 @@ exports.corrigerFeuilleTemps = onCall(async (request) => {
   return calculerEtEnregistrerFeuille({
     ctx, cible: {id: snap.id, nom: snap.data().nom || ""}, lundiDate, jours, maintenant,
     reglesDeLaSemaine: true,
-    acteur: {id: ctx.employeeId, nom: ctx.employe.nom},
+    acteur: {id: ctx.employeeId, nom: ctx.employe.nom, role: ctx.employe.role},
   });
 });
 

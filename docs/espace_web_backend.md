@@ -59,6 +59,23 @@ déjà enregistrée, les règles de paie copiées dans la feuille servent à rec
 les règles d'aujourd'hui. La semaine courante et la suivante utilisent les règles actuelles.
 Une journée envoyée vide n'efface jamais une journée déjà soumise.
 
+**Historique des corrections** (`corrections`, écrit par le serveur seulement, ici comme dans
+`enregistrerFeuilleTemps`) : chaque journée déjà soumise puis modifiée ajoute une entrée
+`{jour, le, par, parRole, changements, heuresAvant, heuresApres}` :
+
+- `jour` : index de la journée (0 = lundi) ; `le` : même ISO que `jours[jour].modifieApresVerrouillageLe` ;
+- `par` / `parRole` : `employeeId` et rôle de l'**appelant** (l'admin qui corrige, ou l'employé
+  lui-même) ; aucun nom de personne (Loi 25) ;
+- `changements` : `[{champ, avant, apres}]` pour `chantierNom` (les noms ; comparé aussi par
+  identifiant), `estAucun`, `heureDebutMinutes`, `heureFinMinutes`, `pauseMatin`, `diner`,
+  `tempsVoyagementMinutes` ; un champ absent d'une ancienne journée vaut sa valeur par défaut
+  (pas de faux changement) ;
+- `heuresAvant` / `heuresApres` : heures travaillées de la journée (`null` si non travaillée).
+
+Champ absent tant qu'aucune correction n'a eu lieu ; renvoi identique = rien d'ajouté ; au plus
+60 entrées (les plus anciennes partent). Les feuilles individuelles (écrites par l'app) n'en ont pas.
+Lisible par l'employé (sa feuille) et par l'admin ; aucun client ne peut l'écrire.
+
 ## 4. Renvoi d'invitation : `enregistrerEmploye` avec `renvoiInvitation: true`
 
 Pour un employé qui n'a pas encore créé son NIP : un nouveau lien (7 jours, une seule fois) remplace

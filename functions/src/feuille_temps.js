@@ -215,9 +215,13 @@ function lireJours(jours) {
  * des règles de paie ne réécrit jamais le passé, même si la feuille est
  * renvoyée en entier. Une journée modifiée est recalculée avec les règles
  * actuelles.
+ *
+ * `acteur` ({id, role}) : qui enregistre. Chaque journée déjà soumise puis modifiée ajoute
+ * une entrée à l'historique `corrections` de la feuille (ce qui a changé, avant et après,
+ * et l'effet sur les heures payées) ; l'auteur n'y est que par son identifiant (Loi 25).
  */
 function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, existante, maintenantIso,
-  semaineFigee = false}) {
+  semaineFigee = false, acteur = null}) {
   let minutesTravail = 0;
   let minutesVoyage = 0;
   let joursRecalcules = 0;
@@ -225,6 +229,7 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
   let heuresConservees = 0;
   let voyageConserve = 0;
   const anciens = Array.isArray(existante?.jours) ? existante.jours : [];
+  const nouvellesCorrections = [];
 
   const sortie = jours.map((j, i) => {
     // Une journée envoyée vide n'efface JAMAIS une journée déjà enregistrée :
@@ -279,9 +284,23 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
       verrouille: rempli,
     };
     // Trace des corrections d'une journée déjà soumise.
-    const stamp = ancien?.verrouille === true && changement(ancien, contenu) ?
-      maintenantIso : ancien?.modifieApresVerrouillageLe;
+    const corrigee = ancien?.verrouille === true && changement(ancien, contenu);
+    const stamp = corrigee ? maintenantIso : ancien?.modifieApresVerrouillageLe;
     if (typeof stamp === "string") contenu.modifieApresVerrouillageLe = stamp;
+    if (corrigee && acteur) {
+      const changements = changementsDuJour(ancien, contenu);
+      if (changements.length) {
+        nouvellesCorrections.push({
+          jour: i,
+          le: maintenantIso,
+          par: acteur.id,
+          parRole: acteur.role ?? null,
+          changements,
+          heuresAvant: ancien.heuresTravaillees ?? null,
+          heuresApres: contenu.heuresTravaillees ?? null,
+        });
+      }
+    }
     return contenu;
   });
 
@@ -294,8 +313,12 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
 
   const travail = minutesTravail / 60 + heuresConservees;
   const voyage = minutesVoyage / 60 + voyageConserve;
+  const anciennesCorrections = Array.isArray(existante?.corrections) ? existante.corrections : [];
+  const corrections = [...anciennesCorrections, ...nouvellesCorrections].slice(-MAX_CORRECTIONS);
   return {
     jours: sortie,
+    // Absent tant qu'aucune correction n'a eu lieu.
+    ...(corrections.length ? {corrections} : {}),
     totalHeuresTravaillees: arrondir(travail),
     totalVoyagementPaye: arrondir(voyage),
     totalHeures: arrondir(travail + voyage),
@@ -379,9 +402,33 @@ function changement(ancien, nouveau) {
   return CHAMPS_SAISIE.some((c) => (ancien[c] ?? null) !== (nouveau[c] ?? null));
 }
 
+/** Corrections gardées dans une feuille : les plus anciennes partent au-delà. */
+const MAX_CORRECTIONS = 60;
+
+/** Champs d'une journée montrés dans l'historique (le chantier par son nom, lisible). */
+const CHAMPS_CORRECTION = ["chantierNom", "estAucun", "heureDebutMinutes", "heureFinMinutes",
+  "pauseMatin", "diner", "tempsVoyagementMinutes"];
+/** Valeurs implicites d'une ancienne journée (champ absent = valeur par défaut, pas un changement). */
+const DEFAUTS_CORRECTION = {estAucun: false, pauseMatin: true, diner: true};
+
+/** Ce qui a changé dans une journée : [{champ, avant, apres}]. */
+function changementsDuJour(ancien, nouveau) {
+  const valeur = (j, c) => j[c] ?? DEFAUTS_CORRECTION[c] ?? null;
+  const changements = [];
+  for (const champ of CHAMPS_CORRECTION) {
+    const different = champ === "chantierNom" ?
+      // Le chantier se compare par son identifiant ; l'historique garde les noms.
+      (ancien.chantierId ?? null) !== (nouveau.chantierId ?? null) || valeur(ancien, champ) !== valeur(nouveau, champ) :
+      valeur(ancien, champ) !== valeur(nouveau, champ);
+    if (different) changements.push({champ, avant: valeur(ancien, champ), apres: valeur(nouveau, champ)});
+  }
+  return changements;
+}
+
 module.exports = {
   FUSEAU_ECHEANCE, NOMS_JOURS, REGLES_DEFAUT,
   reglesPaieDepuis, minutesTravaillees, minutesVoyagementPayees,
   analyserLundi, echeanceSemaine, lundiCourant,
   lireJour, lireJours, calculerFeuille, recalculerFeuille,
+  MAX_CORRECTIONS, changementsDuJour,
 };

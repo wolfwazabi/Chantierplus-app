@@ -193,6 +193,108 @@ describe('Trace des corrections après soumission', () => {
   });
 });
 
+describe('Historique des corrections (avant / après, auteur)', () => {
+  const ADMIN = { id: 'adm-1', role: 'admin' };
+  const LE = '2026-01-06T12:00:00.000Z';
+  const avecActeur = (jours, existante, acteur = ADMIN, regles = defaut) => ft.calculerFeuille({
+    jours: ft.lireJours(jours), nomsChantiers: NOMS, regles, existante, maintenantIso: LE, acteur,
+  });
+  const soumise = (jours) => ({ jours: calcul(jours).jours });
+
+  test('heure de fin corrigée par un admin : une entrée complète', () => {
+    const r = avecActeur([jour({ heureFinMinutes: H(16) })], soumise([jour()]));
+    assert.deepEqual(r.corrections, [{
+      jour: 0, le: LE, par: 'adm-1', parRole: 'admin',
+      changements: [{ champ: 'heureFinMinutes', avant: H(15), apres: H(16) }],
+      heuresAvant: r.corrections[0].heuresAvant, heuresApres: r.corrections[0].heuresApres,
+    }]);
+    // L'effet sur la paie : une heure de plus.
+    const c = r.corrections[0];
+    assert.equal(c.heuresApres - c.heuresAvant, 1);
+    assert.equal(c.heuresAvant, calcul([jour()]).jours[0].heuresTravaillees);
+    // Même instant que la trace de la journée.
+    assert.equal(r.jours[0].modifieApresVerrouillageLe, c.le);
+  });
+
+  test('changement de chantier : les noms, pas les identifiants', () => {
+    const r = avecActeur([jour({ chantierId: 'ch2' })], soumise([jour()]));
+    assert.deepEqual(r.corrections[0].changements, [{ champ: 'chantierNom', avant: 'Chantier 1', apres: 'Chantier 2' }]);
+  });
+
+  test('journée devenue « non travaillée » : le chantier, le statut et les heures', () => {
+    const r = avecActeur([{ estAucun: true }], soumise([jour()]));
+    const champs = r.corrections[0].changements.map((c) => c.champ);
+    assert.ok(champs.includes('estAucun') && champs.includes('chantierNom'));
+    assert.deepEqual(r.corrections[0].changements.find((c) => c.champ === 'estAucun'), { champ: 'estAucun', avant: false, apres: true });
+    assert.equal(r.corrections[0].heuresApres, null);
+  });
+
+  test('pauses et voyagement', () => {
+    const regles = ft.reglesPaieDepuis({ voyagementActif: true });
+    const avant = { jours: ft.calculerFeuille({ jours: ft.lireJours([jour({ tempsVoyagementMinutes: 30 })]), nomsChantiers: NOMS, regles, maintenantIso: LE }).jours };
+    const r = avecActeur([jour({ diner: false, tempsVoyagementMinutes: 60 })], avant, ADMIN, regles);
+    assert.deepEqual(r.corrections[0].changements, [
+      { champ: 'diner', avant: true, apres: false },
+      { champ: 'tempsVoyagementMinutes', avant: 30, apres: 60 },
+    ]);
+  });
+
+  test('l\'employé qui corrige sa propre journée : c\'est lui l\'auteur', () => {
+    const r = avecActeur([jour({ heureDebutMinutes: H(8) })], soumise([jour()]), { id: 'emp-7', role: 'employe' });
+    assert.equal(r.corrections[0].par, 'emp-7');
+    assert.equal(r.corrections[0].parRole, 'employe');
+  });
+
+  test('plusieurs journées corrigées en un envoi : une entrée chacune, dans l\'ordre', () => {
+    const r = avecActeur([jour({ heureFinMinutes: H(16) }), jour({ heureFinMinutes: H(14) })], soumise([jour(), jour()]));
+    assert.deepEqual(r.corrections.map((c) => c.jour), [0, 1]);
+  });
+
+  test('rien de changé, ou journée jamais soumise : pas d\'entrée (et pas de champ)', () => {
+    assert.equal(avecActeur([jour()], soumise([jour()])).corrections, undefined);
+    // Première saisie de la journée : ce n'est pas une correction.
+    assert.equal(avecActeur([jour()], undefined).corrections, undefined);
+    assert.equal(avecActeur([jour(), jour()], soumise([jour()])).corrections, undefined);
+  });
+
+  test('l\'historique existant est gardé et le nouvel ajouté à la fin', () => {
+    const existante = { ...soumise([jour()]), corrections: [{ jour: 0, le: '2026-01-02T00:00:00.000Z', par: 'x', parRole: 'admin', changements: [], heuresAvant: 7, heuresApres: 7.5 }] };
+    const inchangee = avecActeur([jour()], existante);
+    assert.deepEqual(inchangee.corrections, existante.corrections);
+    const r = avecActeur([jour({ heureFinMinutes: H(16) })], existante);
+    assert.equal(r.corrections.length, 2);
+    assert.equal(r.corrections[0].par, 'x');
+    assert.equal(r.corrections[1].par, 'adm-1');
+  });
+
+  test('au plus 60 entrées : les plus anciennes partent', () => {
+    const vieilles = Array.from({ length: ft.MAX_CORRECTIONS }, (_, i) => ({ jour: 0, le: `ancienne-${i}`, par: 'x', changements: [] }));
+    const r = avecActeur([jour({ heureFinMinutes: H(16) }), jour({ heureFinMinutes: H(14) })], { ...soumise([jour(), jour()]), corrections: vieilles });
+    assert.equal(r.corrections.length, ft.MAX_CORRECTIONS);
+    assert.equal(r.corrections[0].le, 'ancienne-2');
+    assert.equal(r.corrections.at(-1).jour, 1);
+  });
+
+  test('ancienne journée sans champs de pause : pas de faux changement', () => {
+    const vieille = { ...calcul([jour()]).jours[0] };
+    delete vieille.pauseMatin;
+    delete vieille.diner;
+    const r = avecActeur([jour({ heureFinMinutes: H(16) })], { jours: [vieille] });
+    assert.deepEqual(r.corrections[0].changements.map((c) => c.champ), ['heureFinMinutes']);
+  });
+
+  test('sans auteur connu : la trace de la journée, mais pas d\'entrée', () => {
+    const r = calcul([jour({ heureFinMinutes: H(16) })], defaut, soumise([jour()]));
+    assert.equal(r.jours[0].modifieApresVerrouillageLe, LE);
+    assert.equal(r.corrections, undefined);
+  });
+
+  test('aucun nom de personne dans l\'historique (Loi 25)', () => {
+    const r = avecActeur([jour({ heureFinMinutes: H(16) })], soumise([jour()]), { id: 'adm-1', role: 'admin', nom: 'Alex Admin' });
+    assert.ok(!JSON.stringify(r.corrections).includes('Alex'));
+  });
+});
+
 describe('Une journée vide n\'efface jamais une journée enregistrée', () => {
   const enregistree = () => calcul([jour(), jour({ heureFinMinutes: H(16) })]);
 
