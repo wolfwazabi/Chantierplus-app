@@ -71,7 +71,10 @@ class ResultatDecoupe {
 /// Coupe [pieces] dans des planches de longueurs [stocks] (en pouces) en
 /// minimisant la longueur totale achetée : placement « du plus long au plus
 /// court » dans la meilleure planche déjà entamée, puis chaque planche est
-/// ramenée à la plus courte longueur commerciale qui contient ses coupes.
+/// ramenée à la plus courte longueur commerciale qui contient ses coupes. À longueur
+/// totale égale (ou moindre), des planches à la mesure de chaque pièce remplacent une
+/// longue planche à recouper : dix solives de 10 pi se commandent en dix 10 pi, pas en
+/// cinq 20 pi.
 ///
 /// [uneParPlanche] : pièces (déjà dans [pieces]) qui prennent chacune leur
 /// propre planche, la plus courte qui les contient (les montants : on achète
@@ -141,6 +144,19 @@ ResultatDecoupe decouperPlanches(
   for (final (_, b) in boites) {
     final n = besoin(b);
     final stock = longueurs.firstWhere((s) => s + tol >= n, orElse: () => max);
+    if (b.length > 1) {
+      // Une planche à la mesure de chaque pièce, si ça ne coûte pas plus de bois.
+      final seules = [
+        for (final p in b)
+          longueurs.firstWhere((s) => s + tol >= p.longueur, orElse: () => max),
+      ];
+      if (seules.fold(0.0, (a, s) => a + s) <= stock + tol) {
+        for (var i = 0; i < b.length; i++) {
+          planches.add(PlancheCommandee(seules[i], [b[i]]));
+        }
+        continue;
+      }
+    }
     planches.add(PlancheCommandee(stock, b));
   }
   planches.sort((a, b) {

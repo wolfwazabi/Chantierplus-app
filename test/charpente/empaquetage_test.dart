@@ -36,10 +36,10 @@ void main() {
         decouperPlanches([_p('a', 83), _p('b', 83)], _stocks).parLongueur,
         {168: 1},
       );
-      // 84 + 84 + 1/8 = 168,125 > 14' → 16'.
+      // 100 + 100 + 1/8 = 200,125 > 16' → 18' (deux 10' feraient 20' : plus de bois).
       expect(
-        decouperPlanches([_p('a', 84), _p('b', 84)], _stocks).parLongueur,
-        {192: 1},
+        decouperPlanches([_p('a', 100), _p('b', 100)], _stocks).parLongueur,
+        {216: 1},
       );
       // Sans trait de scie : 14' suffit.
       expect(
@@ -49,6 +49,26 @@ void main() {
           trait: 0,
         ).parLongueur,
         {168: 1},
+      );
+    });
+
+    test('à longueur égale, des planches à la mesure des pièces', () {
+      // Dix solives de 10 pi moins les rives (117 po) : dix 10 pi, pas cinq 20 pi.
+      final dix = decouperPlanches([
+        for (var i = 0; i < 10; i++) _p('s$i', 117),
+      ], _stocks);
+      expect(dix.parLongueur, {120: 10});
+      expect(dix.longueurTotale, 1200);
+      expect(dix.planches.every((p) => p.pieces.length == 1), isTrue);
+      // Deux pièces de 7 pi : deux 8 pi plutôt qu'une 16 pi (même bois).
+      expect(
+        decouperPlanches([_p('a', 84), _p('b', 84)], _stocks).parLongueur,
+        {96: 2},
+      );
+      // Jamais plus de bois pour autant : 11' + 5' reste une 18' (12' + 8' = 20').
+      expect(
+        decouperPlanches([_p('a', 132), _p('b', 60)], _stocks).longueurTotale,
+        216,
       );
     });
 
@@ -98,7 +118,8 @@ void main() {
       'une pièce par planche : deux montants = deux 8 pi, pas une 16 pi',
       () {
         final pieces = [_p('a', 92.625), _p('b', 92.625)];
-        expect(decouperPlanches(pieces, _stocks).parLongueur, {192: 1});
+        // Même sans la règle : deux 8 pi coûtent autant de bois qu'une 16 pi.
+        expect(decouperPlanches(pieces, _stocks).parLongueur, {96: 2});
         expect(
           decouperPlanches(
             pieces,
