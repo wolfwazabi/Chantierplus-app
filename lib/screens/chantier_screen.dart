@@ -20,6 +20,7 @@ import 'extras/extras_tab.dart';
 import 'liste_entrees_tab.dart';
 import '../services/theme_compagnie.dart';
 import '../widgets/photos_multiples.dart';
+import '../widgets/actualiser.dart';
 
 class ChantierScreen extends StatefulWidget {
   /// Tests : remplace la lecture des chantiers dans Firestore.
@@ -127,8 +128,8 @@ class _ChantierScreenState extends State<ChantierScreen> {
           );
         }
 
-        return StreamBuilder<List<Chantier>>(
-          stream:
+        return FluxActualisable<List<Chantier>>(
+          creerFlux: () =>
               widget.fluxChantiers ??
               FirebaseFirestore.instance
                   .collection('chantiers')
@@ -148,9 +149,8 @@ class _ChantierScreenState extends State<ChantierScreen> {
               return const Center(child: CircularProgressIndicator());
             }
 
-            final chantiers = [
-              ...snapshot.data!.where((c) => !c.archive),
-            ]..sort((a, b) => a.nom.compareTo(b.nom));
+            final chantiers = [...snapshot.data!.where((c) => !c.archive)]
+              ..sort((a, b) => a.nom.compareTo(b.nom));
 
             if (chantiers.isEmpty) {
               return const Center(
@@ -245,7 +245,10 @@ class _ChantierScreenState extends State<ChantierScreen> {
                             'Général : le matériel dont vous avez besoin pour la '
                             'remorque ou sans chantier précis.',
                             key: ValueKey('aide_general'),
-                            style: TextStyle(fontSize: 12, color: Colors.black54),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.black54,
+                            ),
                           ),
                         ),
                       ],
@@ -520,8 +523,8 @@ class _PhotosTabState extends State<_PhotosTab> {
             child: LinearProgressIndicator(value: _progression),
           ),
         Expanded(
-          child: StreamBuilder<QuerySnapshot>(
-            stream: FirebaseFirestore.instance
+          child: FluxActualisable<QuerySnapshot>(
+            creerFlux: () => FirebaseFirestore.instance
                 .collection('chantier_photos')
                 .where('companyId', isEqualTo: widget.companyId)
                 .where('chantierId', isEqualTo: widget.chantierId)

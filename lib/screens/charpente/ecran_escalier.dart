@@ -40,7 +40,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
   // Mode « à partir de ce que je connais » : 2 données ou plus, le calcul trouve le
   // reste avec les girons et contremarches idéals du Code.
   bool _modeDonnees = false;
-  Set<DonneeEscalier> _connues = {DonneeEscalier.hauteur, DonneeEscalier.course};
+  Set<DonneeEscalier> _connues = {
+    DonneeEscalier.hauteur,
+    DonneeEscalier.course,
+  };
   double _dHauteur = 108;
   double _dCourse = 144;
   double _dGiron = 10.25;
@@ -98,7 +101,11 @@ class _EcranEscalierState extends State<EcranEscalier> {
         String? erreur;
         try {
           if (_modeDonnees) {
-            sol = resoudreEscalier(_donnees(), usage: _usage, metrique: metrique);
+            sol = resoudreEscalier(
+              _donnees(),
+              usage: _usage,
+              metrique: metrique,
+            );
           }
           res = calculerEscalier(_spec(metrique, sol), metrique: metrique);
         } on EscalierInvalide catch (e) {
@@ -109,7 +116,11 @@ class _EcranEscalierState extends State<EcranEscalier> {
           children: [
             ..._formulaire(),
             if (erreur != null)
-              BlocMessages([erreur], erreur: true, key: const ValueKey('escalier_erreur'))
+              BlocMessages(
+                [erreur],
+                erreur: true,
+                key: const ValueKey('escalier_erreur'),
+              )
             else if (res != null)
               ..._resultats(res, metrique, sol),
           ],
@@ -163,7 +174,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
         key: const ValueKey('escalier_usage'),
         showSelectedIcon: false,
         segments: const [
-          ButtonSegment(value: UsageEscalier.prive, label: Text('Privé (logement)')),
+          ButtonSegment(
+            value: UsageEscalier.prive,
+            label: Text('Privé (logement)'),
+          ),
           ButtonSegment(value: UsageEscalier.commun, label: Text('Commun')),
         ],
         selected: {_usage},
@@ -175,7 +189,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
           key: const ValueKey('escalier_mode'),
           showSelectedIcon: false,
           segments: const [
-            ButtonSegment(value: ModeCourse.gironFixe, label: Text('Giron voulu')),
+            ButtonSegment(
+              value: ModeCourse.gironFixe,
+              label: Text('Giron voulu'),
+            ),
             ButtonSegment(
               value: ModeCourse.courseDisponible,
               label: Text('Course disponible'),
@@ -198,8 +215,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
           ChampLongueur(
             key: const ValueKey('escalier_course'),
             label: 'Course horizontale disponible',
-            aide:
-                'De la face de la 1re contremarche à la face du plancher du haut.',
+            aide: 'De la face de la 1re contremarche à la face du plancher du haut.',
             valeur: _course,
             min: 4,
             max: 1200,
@@ -431,7 +447,11 @@ class _EcranEscalierState extends State<EcranEscalier> {
 
   // ------------------------------------------------------------------ Résultats
 
-  List<Widget> _resultats(ResultatEscalier r, bool metrique, SolutionEscalier? sol) {
+  List<Widget> _resultats(
+    ResultatEscalier r,
+    bool metrique,
+    SolutionEscalier? sol,
+  ) {
     String l(double po) => formatLongueur(po, metrique: metrique);
     String mm(double po) => '${formatNombre(poucesEnMm(po), decimales: 1)} mm';
     final s = r.spec;
@@ -441,10 +461,9 @@ class _EcranEscalierState extends State<EcranEscalier> {
         erreur: true,
         key: const ValueKey('escalier_erreurs'),
       ),
-      BlocMessages(
-        [for (final v in r.avertissements) v.message],
-        key: const ValueKey('escalier_avertissements'),
-      ),
+      BlocMessages([
+        for (final v in r.avertissements) v.message,
+      ], key: const ValueKey('escalier_avertissements')),
       if (sol != null) ...[
         const TitreSection('Trouvé à partir de vos données'),
         _carteSolution(sol, metrique),
@@ -463,14 +482,20 @@ class _EcranEscalierState extends State<EcranEscalier> {
             'giron ${l(r.giron)}  (${mm(r.giron)})',
             fort: true,
           ),
-          _Ligne('Profondeur de la marche', '${l(r.profondeurMarche)}  (giron + nez)'),
+          _Ligne(
+            'Profondeur de la marche',
+            '${l(r.profondeurMarche)}  (giron + nez)',
+          ),
           _Ligne('Course horizontale', l(r.course)),
           _Ligne('Pente', formatAngle(r.angle)),
         ],
       ),
       if (sol != null && sol.autresChoix.isNotEmpty) ...[
         const SizedBox(height: 8),
-        Text('Autres choix conformes', style: Theme.of(context).textTheme.labelLarge),
+        Text(
+          'Autres choix conformes',
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
         const SizedBox(height: 4),
         Wrap(
           spacing: 6,
@@ -493,7 +518,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
         ),
       ] else if (sol == null && r.variantes.isNotEmpty) ...[
         const SizedBox(height: 8),
-        Text('Autres choix conformes', style: Theme.of(context).textTheme.labelLarge),
+        Text(
+          'Autres choix conformes',
+          style: Theme.of(context).textTheme.labelLarge,
+        ),
         const SizedBox(height: 4),
         Wrap(
           spacing: 6,
@@ -537,13 +565,22 @@ class _EcranEscalierState extends State<EcranEscalier> {
       _Carte(
         cle: 'escalier_coupes',
         lignes: [
-          _Ligne('Pied', 'coupe de niveau de ${l(r.coupePied)} sur le plancher'),
+          _Ligne(
+            'Pied',
+            'coupe de niveau de ${l(r.coupePied)} sur le plancher',
+          ),
           _Ligne(
             'Coupe d\'aplomb du bas',
             '${l(r.hauteurDepart)} de haut  (contremarche − épaisseur de la marche)',
           ),
-          _Ligne('Tête', 'coupe d\'aplomb de ${l(r.coupeTete)} contre la poutre du haut'),
-          _Ligne('Pointe du haut', '${l(r.hauteurPointeHaute)} au-dessus du plancher du bas'),
+          _Ligne(
+            'Tête',
+            'coupe d\'aplomb de ${l(r.coupeTete)} contre la poutre du haut',
+          ),
+          _Ligne(
+            'Pointe du haut',
+            '${l(r.hauteurPointeHaute)} au-dessus du plancher du bas',
+          ),
           _Ligne(
             'Angles (depuis la coupe d\'équerre)',
             'aplomb ${formatAngle(r.anglePlomb)} · niveau ${formatAngle(r.angleNiveau)}',
@@ -567,10 +604,21 @@ class _EcranEscalierState extends State<EcranEscalier> {
             children: [
               TableRow(
                 children: [
-                  for (final t in const ['Marche', 'Dessus', 'Siège du limon', 'Course'])
+                  for (final t in const [
+                    'Marche',
+                    'Dessus',
+                    'Siège du limon',
+                    'Course',
+                  ])
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                      child: Text(
+                        t,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
                     ),
                 ],
               ),
@@ -612,7 +660,9 @@ class _EcranEscalierState extends State<EcranEscalier> {
             await Clipboard.setData(
               ClipboardData(text: texteEscalier(r, metrique: metrique)),
             );
-            messager.showSnackBar(const SnackBar(content: Text('Calcul copié.')));
+            messager.showSnackBar(
+              const SnackBar(content: Text('Calcul copié.')),
+            );
           },
         ),
       ),
@@ -667,7 +717,9 @@ class _Carte extends StatelessWidget {
                       TextSpan(
                         text: l.titre,
                         style: TextStyle(
-                          fontWeight: l.fort ? FontWeight.w700 : FontWeight.w500,
+                          fontWeight: l.fort
+                              ? FontWeight.w700
+                              : FontWeight.w500,
                         ),
                       ),
                       TextSpan(text: '  ${l.valeur}'),

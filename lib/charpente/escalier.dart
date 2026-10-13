@@ -168,7 +168,8 @@ class SpecEscalier {
     this.largeur = 36,
     this.usage = UsageEscalier.prive,
     this.mode = ModeCourse.gironFixe,
-    this.giron = 10.25, // 260 mm : 10 po (254 mm) serait 1 mm sous le minimum du Code
+    this.giron =
+        10.25, // 260 mm : 10 po (254 mm) serait 1 mm sous le minimum du Code
     this.courseDisponible = 120,
     this.contremarcheSouhaitee = 7.25,
     this.nombreContremarches,
@@ -256,7 +257,12 @@ class LigneTrace {
   final double hauteurDessus;
   final double hauteurSiege;
   final double course;
-  const LigneTrace(this.marche, this.hauteurDessus, this.hauteurSiege, this.course);
+  const LigneTrace(
+    this.marche,
+    this.hauteurDessus,
+    this.hauteurSiege,
+    this.course,
+  );
 }
 
 /// Autre nombre de contremarches possible, avec ce qu'il donnerait.
@@ -481,7 +487,9 @@ int _choisirNombre(SpecEscalier s) {
   double ecart(int n) => (h / n - s.contremarcheSouhaitee).abs();
   candidats.sort((a, b) {
     final c = ecart(a).compareTo(ecart(b));
-    return c != 0 ? c : b.compareTo(a); // à égalité : la plus petite contremarche
+    return c != 0
+        ? c
+        : b.compareTo(a); // à égalité : la plus petite contremarche
   });
   return candidats.first;
 }
@@ -512,10 +520,9 @@ ResultatEscalier _calculer(SpecEscalier s, int n, bool metrique) {
   // Profil. Les pointes des dents sont toutes sur la droite de pente R/G passant
   // par (0, R − t) : c'est le dessus de la planche. Le dessous lui est parallèle,
   // à la profondeur de la planche, mesurée à 90°.
-  final pointes = [
-    for (var k = 0; k < n; k++) Pt(k * g, (k + 1) * r - t),
-  ];
-  final cTop = (r - t) * cosT; // abscisse de la normale (−sin, cos) sur le dessus
+  final pointes = [for (var k = 0; k < n; k++) Pt(k * g, (k + 1) * r - t)];
+  final cTop =
+      (r - t) * cosT; // abscisse de la normale (−sin, cos) sur le dessus
   final xBas = (prof - cTop) / sinT; // où le dessous coupe le plancher (y = 0)
   final coupeTete = prof / cosT;
   final basTete = Pt(course, h - t - coupeTete);
@@ -528,7 +535,9 @@ ResultatEscalier _calculer(SpecEscalier s, int n, bool metrique) {
       ..add(Pt(k * g, k * r - t)) // fond de l'entaille : siège k (fin)
       ..add(pointes[k]);
   }
-  profil..add(basTete)..add(finDessous);
+  profil
+    ..add(basTete)
+    ..add(finDessous);
 
   // Étendue de la planche le long de la pente (sommets du contour, sans les
   // fonds d'entaille qui sont à l'intérieur).
@@ -651,7 +660,8 @@ List<Verification> _verifier({
   final genre = prive ? 'escalier privé' : 'escalier commun';
 
   // Contremarche.
-  if (rMm < lim.contremarcheMin - _tolMm || rMm > lim.contremarcheMax + _tolMm) {
+  if (rMm < lim.contremarcheMin - _tolMm ||
+      rMm > lim.contremarcheMax + _tolMm) {
     v.add(
       Verification(
         'contremarche',
@@ -725,7 +735,8 @@ List<Verification> _verifier({
   // Uniformité du traçage arrondi.
   final adjMm = poucesEnMm(ecartAdjacent);
   final voleeMm = poucesEnMm(ecartVolee);
-  if (adjMm > uniformiteAdjacenteMm + _tolMm || voleeMm > uniformiteVoleeMm + _tolMm) {
+  if (adjMm > uniformiteAdjacenteMm + _tolMm ||
+      voleeMm > uniformiteVoleeMm + _tolMm) {
     v.add(
       Verification(
         'uniformite',

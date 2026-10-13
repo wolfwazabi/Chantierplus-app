@@ -8,7 +8,8 @@ import 'package:construction_app/models/materiel_general.dart';
 import 'package:construction_app/services/liste_achats_source.dart';
 import 'package:construction_app/services/materiel_general_source.dart';
 
-DateTime tTest(int jour, [int heure = 8]) => DateTime.utc(2026, 10, jour, heure);
+DateTime tTest(int jour, [int heure = 8]) =>
+    DateTime.utc(2026, 10, jour, heure);
 
 EntreeMateriel entreeTest(
   String id, {
@@ -40,11 +41,43 @@ EntreeMateriel entreeTest(
 
 /// Trois équipes : plusA (3 demandes dont 1 obtenue), plusB « Bernard » (1), adminA (1).
 List<EntreeMateriel> jeuTest() => [
-  entreeTest('a1', auteur: 'plusA', nom: 'Plus A', ajout: tTest(1, 9), texte: 'Sangles'),
-  entreeTest('a2', auteur: 'plusA', nom: 'Plus A', ajout: tTest(2, 9), texte: 'Cordes', complete: true),
-  entreeTest('a3', auteur: 'plusA', nom: 'Plus A', ajout: tTest(3, 9), texte: 'Clous 3 po', quantite: '2 boîtes'),
-  entreeTest('b1', auteur: 'plusB', nom: 'Bernard', ajout: tTest(2, 10), texte: 'Bâche'),
-  entreeTest('c1', auteur: 'adminA', nom: 'Admin A', ajout: tTest(1, 11), texte: 'Marteau'),
+  entreeTest(
+    'a1',
+    auteur: 'plusA',
+    nom: 'Plus A',
+    ajout: tTest(1, 9),
+    texte: 'Sangles',
+  ),
+  entreeTest(
+    'a2',
+    auteur: 'plusA',
+    nom: 'Plus A',
+    ajout: tTest(2, 9),
+    texte: 'Cordes',
+    complete: true,
+  ),
+  entreeTest(
+    'a3',
+    auteur: 'plusA',
+    nom: 'Plus A',
+    ajout: tTest(3, 9),
+    texte: 'Clous 3 po',
+    quantite: '2 boîtes',
+  ),
+  entreeTest(
+    'b1',
+    auteur: 'plusB',
+    nom: 'Bernard',
+    ajout: tTest(2, 10),
+    texte: 'Bâche',
+  ),
+  entreeTest(
+    'c1',
+    auteur: 'adminA',
+    nom: 'Admin A',
+    ajout: tTest(1, 11),
+    texte: 'Marteau',
+  ),
 ];
 
 /// Double du matériel Général : les demandes et les visites en direct.
@@ -56,7 +89,8 @@ class FauxSource implements SourceMaterielGeneral {
   final _ctrlV = StreamController<VisitesGeneral>.broadcast();
 
   final List<String> marques = []; // auteurs marqués « vus »
-  final List<Set<String>> leves = []; // drapeaux « non lu » levés à chaque visite
+  final List<Set<String>> leves =
+      []; // drapeaux « non lu » levés à chaque visite
   final List<List<String>> nonLusPoses = []; // demandes marquées « non lu »
   final List<String> obtenues = []; // « id:true|false »
   final List<String> supprimees = [];
@@ -161,7 +195,10 @@ class FauxSource implements SourceMaterielGeneral {
   }
 
   @override
-  Future<void> transfererAuxAchats(EntreeMateriel entree, Employee admin) async {
+  Future<void> transfererAuxAchats(
+    EntreeMateriel entree,
+    Employee admin,
+  ) async {
     transferees.add(entree.id);
     signaturesTransfert.add(admin.id);
     if (echecTransfert) throw StateError('refusé');
@@ -244,7 +281,10 @@ class FauxAchats implements SourceListeAchats {
   }
 
   @override
-  Future<void> supprimer(ArticleAchat article, {required String employeId}) async {
+  Future<void> supprimer(
+    ArticleAchat article, {
+    required String employeId,
+  }) async {
     employes.add(employeId);
     retires.add(article.id);
     pousser([

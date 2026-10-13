@@ -215,6 +215,54 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   bool _erreurFeuille = false;
   bool get _erreurChargement => _erreurChantiers || _erreurFeuille;
 
+  /// La saisie telle qu'elle était au dernier chargement : sert à savoir si l'employé a
+  /// des changements non enregistrés avant d'actualiser.
+  String _empreinteChargee = '';
+
+  String _empreinteSaisie() => _jours
+      .map(
+        (j) => [
+          j.chantier?.id,
+          j.estAucun,
+          j._debutMinutes,
+          j._finMinutes,
+          j.pauseMatin,
+          j.diner,
+          j.tempsVoyagement?.inMinutes,
+        ].join('|'),
+      )
+      .join(';');
+
+  /// Tirer vers le bas : recharge les chantiers et la semaine. Des changements non
+  /// enregistrés seraient remplacés par ce qui est enregistré : on le demande d'abord.
+  Future<void> _actualiser() async {
+    if (_empreinteSaisie() != _empreinteChargee) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Actualiser la page ?'),
+          content: const Text(
+            'Vos changements non enregistrés seront remplacés par les données '
+            'enregistrées.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler'),
+            ),
+            FilledButton(
+              key: const ValueKey('actualiser_confirmer'),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Actualiser'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    await _chargerTout();
+  }
+
   void _initialiserSemaineVide() {
     const noms = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
     _jours = noms.map((n) => JourTravail(n)).toList();
@@ -339,6 +387,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       _erreurFeuille = true;
     }
 
+    _empreinteChargee = _empreinteSaisie();
     if (mounted) setState(() => _chargement = false);
   }
 
@@ -752,242 +801,252 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
 
         return Stack(
           children: [
-            SingleChildScrollView(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Feuille de temps',
-                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 12),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 4,
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.chevron_left),
-                            onPressed: () => _changerSemaine(-1),
-                          ),
-                          Text(
-                            'Semaine du ${_formatDateCourte(_lundiDeLaSemaine)} au ${_formatDateCourte(dimanche)}',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.chevron_right),
-                            onPressed: () => _changerSemaine(1),
-                          ),
-                        ],
+            RefreshIndicator(
+              onRefresh: _actualiser,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Feuille de temps',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  ),
-                  if (_erreurChargement && !pasConnecte) ...[
                     const SizedBox(height: 12),
                     Card(
-                      key: const ValueKey('erreur_chargement'),
-                      color: Colors.red.shade50,
                       child: Padding(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Icon(Icons.cloud_off, color: Colors.red.shade800),
-                            const SizedBox(width: 10),
-                            const Expanded(
-                              child: Text(
-                                'Impossible de charger vos données. Vérifiez '
-                                'votre réseau : la soumission est bloquée pour '
-                                'ne rien écraser.',
-                                style: TextStyle(fontSize: 13),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_left),
+                              onPressed: () => _changerSemaine(-1),
+                            ),
+                            Text(
+                              'Semaine du ${_formatDateCourte(_lundiDeLaSemaine)} au ${_formatDateCourte(dimanche)}',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
-                            TextButton(
-                              onPressed: _chargerTout,
-                              child: const Text('Réessayer'),
+                            IconButton(
+                              icon: const Icon(Icons.chevron_right),
+                              onPressed: () => _changerSemaine(1),
                             ),
                           ],
                         ),
                       ),
                     ),
-                  ],
-                  if (pasConnecte) ...[
-                    const SizedBox(height: 12),
+                    if (_erreurChargement && !pasConnecte) ...[
+                      const SizedBox(height: 12),
+                      Card(
+                        key: const ValueKey('erreur_chargement'),
+                        color: Colors.red.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.cloud_off, color: Colors.red.shade800),
+                              const SizedBox(width: 10),
+                              const Expanded(
+                                child: Text(
+                                  'Impossible de charger vos données. Vérifiez '
+                                  'votre réseau : la soumission est bloquée pour '
+                                  'ne rien écraser.',
+                                  style: TextStyle(fontSize: 13),
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _chargerTout,
+                                child: const Text('Réessayer'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (pasConnecte) ...[
+                      const SizedBox(height: 12),
+                      Card(
+                        color: ThemeCompagnie.teintePale(
+                          Theme.of(context).colorScheme.primary,
+                          0.12,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.login,
+                                color: ThemeCompagnie.accentDe(context),
+                              ),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Connectez-vous (onglet "Se connecter") pour saisir vos heures.',
+                                  style: TextStyle(
+                                    color: Colors.black87,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ] else if (!individuel && _chantiers.isEmpty) ...[
+                      const SizedBox(height: 12),
+                      Card(
+                        color: Colors.grey.shade200,
+                        child: const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Text(
+                            'Aucun chantier n\'a été créé pour votre compagnie. Un administrateur peut en ajouter dans Admin → Chantiers.',
+                            style: TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
+                    ] else if (!individuel && _semaineVerrouillee) ...[
+                      const SizedBox(height: 12),
+                      Card(
+                        color: Colors.grey.shade200,
+                        child: const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.lock_outline, color: Colors.grey),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  'Cette semaine est verrouillée (limite : mardi 18h00). Contactez votre superviseur pour toute correction.',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    ..._jours.map(
+                      (jour) => _carteJour(jour, verrouillee, individuel),
+                    ),
+                    const SizedBox(height: 8),
                     Card(
                       color: ThemeCompagnie.teintePale(
                         Theme.of(context).colorScheme.primary,
                         0.12,
                       ),
                       child: Padding(
-                        padding: const EdgeInsets.all(12),
-                        child: Row(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
                           children: [
-                            Icon(
-                              Icons.login,
-                              color: ThemeCompagnie.accentDe(context),
-                            ),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Connectez-vous (onglet "Se connecter") pour saisir vos heures.',
-                                style: TextStyle(
-                                  color: Colors.black87,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ] else if (!individuel && _chantiers.isEmpty) ...[
-                    const SizedBox(height: 12),
-                    Card(
-                      color: Colors.grey.shade200,
-                      child: const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Text(
-                          'Aucun chantier n\'a été créé pour votre compagnie. Un administrateur peut en ajouter dans Admin → Chantiers.',
-                          style: TextStyle(fontSize: 13),
-                        ),
-                      ),
-                    ),
-                  ] else if (!individuel && _semaineVerrouillee) ...[
-                    const SizedBox(height: 12),
-                    Card(
-                      color: Colors.grey.shade200,
-                      child: const Padding(
-                        padding: EdgeInsets.all(12),
-                        child: Row(
-                          children: [
-                            Icon(Icons.lock_outline, color: Colors.grey),
-                            SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                'Cette semaine est verrouillée (limite : mardi 18h00). Contactez votre superviseur pour toute correction.',
-                                style: TextStyle(
-                                  color: Colors.black54,
-                                  fontSize: 13,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  ..._jours.map(
-                    (jour) => _carteJour(jour, verrouillee, individuel),
-                  ),
-                  const SizedBox(height: 8),
-                  Card(
-                    color: ThemeCompagnie.teintePale(
-                      Theme.of(context).colorScheme.primary,
-                      0.12,
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              const Text(
-                                'Total de la semaine',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              Text(
-                                '${_totalSemaine.toStringAsFixed(2)} h',
-                                style: const TextStyle(
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (_voyagementPaye) ...[
-                            const Divider(height: 20),
-                            _ligneTotal(
-                              'Heures travaillées',
-                              '${_totalHeuresTravaillees.toStringAsFixed(2)} h',
-                            ),
-                            const SizedBox(height: 4),
-                            _ligneTotal(
-                              'Voyagement payé',
-                              '${_totalVoyagementPaye.toStringAsFixed(2)} h',
-                            ),
-                          ],
-                          // Le voyagement saisi n'est montré qu'au particulier
-                          // (en compagnie, seul le voyagement payé compte).
-                          if (_afficherVoyagement && !_voyagementPaye) ...[
-                            const Divider(height: 20),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 const Text(
-                                  'Voyagement saisi',
+                                  'Total de la semaine',
                                   style: TextStyle(
-                                    fontSize: 14,
-                                    color: Colors.black54,
-                                  ),
-                                ),
-                                Text(
-                                  _formatDureeAffichage(
-                                    _totalVoyagementSemaine,
-                                  ),
-                                  style: const TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                                Text(
+                                  '${_totalSemaine.toStringAsFixed(2)} h',
+                                  style: const TextStyle(
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                               ],
                             ),
-                          ],
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  SizedBox(
-                    width: double.infinity,
-                    child: FilledButton.icon(
-                      onPressed:
-                          (verrouillee ||
-                              _envoiSemaineEnCours ||
-                              _erreurChargement)
-                          ? null
-                          : _soumettreSemaine,
-                      icon: _envoiSemaineEnCours
-                          ? const SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
+                            if (_voyagementPaye) ...[
+                              const Divider(height: 20),
+                              _ligneTotal(
+                                'Heures travaillées',
+                                '${_totalHeuresTravaillees.toStringAsFixed(2)} h',
                               ),
-                            )
-                          : const Icon(Icons.check_circle),
-                      label: Text(
-                        pasConnecte
-                            ? 'Connectez-vous pour soumettre'
-                            : (!individuel && _semaineVerrouillee
-                                  ? 'Semaine verrouillée'
-                                  : '${individuel ? 'Enregistrer' : 'Soumettre'} ${_nombreJoursActifs >= 2 ? 'les journées' : 'la journée'}'),
-                      ),
-                      style: FilledButton.styleFrom(
-                        padding: const EdgeInsets.all(16),
+                              const SizedBox(height: 4),
+                              _ligneTotal(
+                                'Voyagement payé',
+                                '${_totalVoyagementPaye.toStringAsFixed(2)} h',
+                              ),
+                            ],
+                            // Le voyagement saisi n'est montré qu'au particulier
+                            // (en compagnie, seul le voyagement payé compte).
+                            if (_afficherVoyagement && !_voyagementPaye) ...[
+                              const Divider(height: 20),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  const Text(
+                                    'Voyagement saisi',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Colors.black54,
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatDureeAffichage(
+                                      _totalVoyagementSemaine,
+                                    ),
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed:
+                            (verrouillee ||
+                                _envoiSemaineEnCours ||
+                                _erreurChargement)
+                            ? null
+                            : _soumettreSemaine,
+                        icon: _envoiSemaineEnCours
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: Colors.white,
+                                ),
+                              )
+                            : const Icon(Icons.check_circle),
+                        label: Text(
+                          pasConnecte
+                              ? 'Connectez-vous pour soumettre'
+                              : (!individuel && _semaineVerrouillee
+                                    ? 'Semaine verrouillée'
+                                    : '${individuel ? 'Enregistrer' : 'Soumettre'} ${_nombreJoursActifs >= 2 ? 'les journées' : 'la journée'}'),
+                        ),
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.all(16),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             if (_chargement)

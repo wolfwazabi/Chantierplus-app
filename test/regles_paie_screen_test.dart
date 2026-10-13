@@ -91,25 +91,29 @@ void main() {
         texte(tester, 'texte_semaines'),
         contains('les semaines précédentes ne changent jamais'),
       );
-      expect(texte(tester, 'aide_recalcul'), contains('ne sont jamais modifiées'));
+      expect(
+        texte(tester, 'aide_recalcul'),
+        contains('ne sont jamais modifiées'),
+      );
       // Rien de modifié et pas de session admin : le bouton existe, aucun appel.
       expect(find.byKey(const ValueKey('recalculer_semaine')), findsOneWidget);
     },
   );
 
-  testWidgets('recalcul : désactivé tant que les règles ne sont pas enregistrées', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    OutlinedButton recalcul() => tester.widget<OutlinedButton>(
-      find.byKey(const ValueKey('recalculer_semaine')),
-    );
-    expect(recalcul().onPressed, isNotNull);
-    await tester.tap(find.byKey(const ValueKey('voyagement_actif')));
-    await tester.pump();
-    // Règles modifiées mais pas enregistrées : on enregistre d'abord.
-    expect(recalcul().onPressed, isNull);
-  });
+  testWidgets(
+    'recalcul : désactivé tant que les règles ne sont pas enregistrées',
+    (tester) async {
+      await ouvrir(tester);
+      OutlinedButton recalcul() => tester.widget<OutlinedButton>(
+        find.byKey(const ValueKey('recalculer_semaine')),
+      );
+      expect(recalcul().onPressed, isNotNull);
+      await tester.tap(find.byKey(const ValueKey('voyagement_actif')));
+      await tester.pump();
+      // Règles modifiées mais pas enregistrées : on enregistre d'abord.
+      expect(recalcul().onPressed, isNull);
+    },
+  );
 
   testWidgets('pause payée : la journée compte 8 h', (tester) async {
     await ouvrir(tester);

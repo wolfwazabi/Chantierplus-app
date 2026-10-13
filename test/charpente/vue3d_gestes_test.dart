@@ -20,11 +20,15 @@ Scene _scene() => construireScene(
   ),
 );
 
-dynamic _camera(WidgetTester t) => (t
-    .widgetList<CustomPaint>(find.byType(CustomPaint))
-    .firstWhere((c) => c.painter.runtimeType.toString() == '_Peintre')
-    .painter as dynamic)
-    .camera;
+dynamic _camera(WidgetTester t) =>
+    (t
+                .widgetList<CustomPaint>(find.byType(CustomPaint))
+                .firstWhere(
+                  (c) => c.painter.runtimeType.toString() == '_Peintre',
+                )
+                .painter
+            as dynamic)
+        .camera;
 
 double _echelle(WidgetTester t) => _camera(t).echelle as double;
 double _azimut(WidgetTester t) => _camera(t).azimut as double;
@@ -84,7 +88,9 @@ Future<void> _toucherUnePiece(WidgetTester t) async {
   final rect = t.getRect(_zone);
   for (var y = 0.2; y < 0.9; y += 0.1) {
     for (var x = 0.15; x < 0.9; x += 0.07) {
-      await t.tapAt(Offset(rect.left + rect.width * x, rect.top + rect.height * y));
+      await t.tapAt(
+        Offset(rect.left + rect.width * x, rect.top + rect.height * y),
+      );
       await t.pump(const Duration(seconds: 1));
       if (_aide.evaluate().isEmpty) return;
     }
@@ -134,7 +140,11 @@ void main() {
       await ouvrir(t);
       expect(_aide, findsOneWidget);
       await _pincer(t, debut: 40, fin: 120);
-      expect(_aide, findsOneWidget, reason: 'une pièce a été choisie par erreur');
+      expect(
+        _aide,
+        findsOneWidget,
+        reason: 'une pièce a été choisie par erreur',
+      );
     });
 
     testWidgets('lever un doigt puis l\'autre : ce n\'est pas un toucher', (
@@ -156,7 +166,12 @@ void main() {
       await _pincer(t, debut: 40, fin: 80);
       final milieu = _echelle(t);
       expect(milieu, greaterThan(avant * 1.5));
-      await _pincer(t, debut: 40, fin: 80, delai: const Duration(milliseconds: 30));
+      await _pincer(
+        t,
+        debut: 40,
+        fin: 80,
+        delai: const Duration(milliseconds: 30),
+      );
       expect(_echelle(t), greaterThan(milieu * 1.5));
     });
 
@@ -254,7 +269,9 @@ void main() {
     });
   });
 
-  testWidgets('onglet 3D de l\'écran Charpente : le pincement zoome', (t) async {
+  testWidgets('onglet 3D de l\'écran Charpente : le pincement zoome', (
+    t,
+  ) async {
     t.view.physicalSize = const Size(800, 1600);
     t.view.devicePixelRatio = 2;
     addTearDown(t.view.reset);

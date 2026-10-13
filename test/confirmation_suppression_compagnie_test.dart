@@ -14,8 +14,8 @@ void main() {
             body: Center(
               child: ElevatedButton(
                 key: const ValueKey('ouvrir'),
-                onPressed: () async => resultat =
-                    await confirmerSuppressionCompagnie(
+                onPressed: () async =>
+                    resultat = await confirmerSuppressionCompagnie(
                       context,
                       nom: 'Construction Test',
                       numero: '1005',
@@ -42,20 +42,21 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('étape 1 : nom, numéro et conséquences, sans rien supprimer encore', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    expect(find.text('Supprimer « Construction Test » ?'), findsOneWidget);
-    expect(find.text('Compagnie n° 1005'), findsOneWidget);
-    for (final c in consequencesSuppressionCompagnie) {
-      expect(find.text('• $c'), findsOneWidget);
-    }
-    expect(find.textContaining('irréversible'), findsOneWidget);
-    // Le numéro n'est pas encore demandé.
-    expect(cle('suppression_numero'), findsNothing);
-    expect(resultat, isNull);
-  });
+  testWidgets(
+    'étape 1 : nom, numéro et conséquences, sans rien supprimer encore',
+    (tester) async {
+      await ouvrir(tester);
+      expect(find.text('Supprimer « Construction Test » ?'), findsOneWidget);
+      expect(find.text('Compagnie n° 1005'), findsOneWidget);
+      for (final c in consequencesSuppressionCompagnie) {
+        expect(find.text('• $c'), findsOneWidget);
+      }
+      expect(find.textContaining('irréversible'), findsOneWidget);
+      // Le numéro n'est pas encore demandé.
+      expect(cle('suppression_numero'), findsNothing);
+      expect(resultat, isNull);
+    },
+  );
 
   testWidgets('annuler à l\'étape 1 : refusé, la 2e étape n\'apparaît pas', (
     tester,
@@ -67,37 +68,48 @@ void main() {
     expect(cle('suppression_numero'), findsNothing);
   });
 
-  testWidgets('étape 2 : le bouton reste désactivé tant que le numéro n\'est pas exact', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    await tester.tap(cle('suppression_continuer'));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'étape 2 : le bouton reste désactivé tant que le numéro n\'est pas exact',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.tap(cle('suppression_continuer'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Dernière vérification'), findsOneWidget);
-    expect(confirmerActif(tester), isFalse);
-    for (final faux in ['', '1', '100', '10055', '1004', '1006', 'abcd', '1 005']) {
-      await saisir(tester, faux);
-      expect(confirmerActif(tester), isFalse, reason: 'numéro « $faux »');
-    }
-    // Le nom de la compagnie ne remplace pas son numéro.
-    await saisir(tester, 'Construction Test');
-    expect(confirmerActif(tester), isFalse);
-    expect(resultat, isNull);
-  });
+      expect(find.text('Dernière vérification'), findsOneWidget);
+      expect(confirmerActif(tester), isFalse);
+      for (final faux in [
+        '',
+        '1',
+        '100',
+        '10055',
+        '1004',
+        '1006',
+        'abcd',
+        '1 005',
+      ]) {
+        await saisir(tester, faux);
+        expect(confirmerActif(tester), isFalse, reason: 'numéro « $faux »');
+      }
+      // Le nom de la compagnie ne remplace pas son numéro.
+      await saisir(tester, 'Construction Test');
+      expect(confirmerActif(tester), isFalse);
+      expect(resultat, isNull);
+    },
+  );
 
-  testWidgets('numéro exact (espaces autour tolérés) : la suppression est confirmée', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    await tester.tap(cle('suppression_continuer'));
-    await tester.pumpAndSettle();
-    await saisir(tester, ' 1005 ');
-    expect(confirmerActif(tester), isTrue);
-    await tester.tap(cle('suppression_confirmer'));
-    await tester.pumpAndSettle();
-    expect(resultat, isTrue);
-  });
+  testWidgets(
+    'numéro exact (espaces autour tolérés) : la suppression est confirmée',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.tap(cle('suppression_continuer'));
+      await tester.pumpAndSettle();
+      await saisir(tester, ' 1005 ');
+      expect(confirmerActif(tester), isTrue);
+      await tester.tap(cle('suppression_confirmer'));
+      await tester.pumpAndSettle();
+      expect(resultat, isTrue);
+    },
+  );
 
   testWidgets('annuler à l\'étape 2 : refusé', (tester) async {
     await ouvrir(tester);

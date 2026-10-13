@@ -40,9 +40,8 @@ class ArticleAchat {
 
   factory ArticleAchat.fromMap(String id, Map<String, dynamic> d) {
     String texteDe(Object? v) => v is String ? v : '';
-    DateTime? dateDe(Object? v) => v is Timestamp
-        ? v.toDate()
-        : (v is DateTime ? v : null);
+    DateTime? dateDe(Object? v) =>
+        v is Timestamp ? v.toDate() : (v is DateTime ? v : null);
     return ArticleAchat(
       id: id,
       texte: texteDe(d['texte']),
@@ -117,7 +116,12 @@ List<GroupeDemandeur> grouperParDemandeur(List<ArticleAchat> articles) {
     for (final e in parId.entries)
       GroupeDemandeur(
         demandeParId: e.key,
-        nom: nomDemandeur(e.value.firstWhere((a) => a.demandeParNom.isNotEmpty, orElse: () => e.value.first)),
+        nom: nomDemandeur(
+          e.value.firstWhere(
+            (a) => a.demandeParNom.isNotEmpty,
+            orElse: () => e.value.first,
+          ),
+        ),
         articles: [...e.value]..sort(_recents),
       ),
   ];

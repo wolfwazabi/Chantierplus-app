@@ -6,6 +6,7 @@ import '../../services/app_session.dart';
 import '../../services/theme_compagnie.dart';
 import '../../widgets/photos_multiples.dart';
 import 'formulaire_extra.dart';
+import '../../widgets/actualiser.dart';
 
 /// Onglet « Extras » d'un chantier : travaux supplémentaires effectués
 /// (description, nombre d'hommes, temps, date, jusqu'à 6 photos).
@@ -22,7 +23,8 @@ class ExtrasTab extends StatefulWidget {
   @visibleForTesting
   final Future<void> Function(Map<String, dynamic> donnees)? ajouterDoc;
   @visibleForTesting
-  final Future<void> Function(String id, Map<String, dynamic> donnees)? modifierDoc;
+  final Future<void> Function(String id, Map<String, dynamic> donnees)?
+  modifierDoc;
   @visibleForTesting
   final Future<void> Function(String id)? supprimerDoc;
   @visibleForTesting
@@ -265,7 +267,8 @@ class _ExtrasTabState extends State<ExtrasTab> {
           .snapshots()
           .map(
             (s) => [
-              for (final d in s.docs) ExtraChantier.fromFirestore(d.id, d.data()),
+              for (final d in s.docs)
+                ExtraChantier.fromFirestore(d.id, d.data()),
             ],
           );
 
@@ -287,8 +290,8 @@ class _ExtrasTabState extends State<ExtrasTab> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: StreamBuilder<List<ExtraChantier>>(
-            stream: _lecture,
+          child: FluxActualisable<List<ExtraChantier>>(
+            creerFlux: () => _lecture,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return const Center(

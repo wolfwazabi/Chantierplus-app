@@ -17,7 +17,11 @@ Employee _admin() => Employee(
   estProprietaire: true,
 );
 
-const _base = {'nom': 'Rémi Rappel', 'courriel': 'remi@exemple.ca', 'role': 'employe'};
+const _base = {
+  'nom': 'Rémi Rappel',
+  'courriel': 'remi@exemple.ca',
+  'role': 'employe',
+};
 
 Future<void> _ouvrirFormulaire(
   WidgetTester tester,
@@ -94,18 +98,25 @@ void main() {
   });
 
   group('Formulaire : renvoyer l\'invitation ou réinitialiser', () {
-    testWidgets('nipCree: true (sans pinHash) → « Réinitialiser le NIP »', (t) async {
+    testWidgets('nipCree: true (sans pinHash) → « Réinitialiser le NIP »', (
+      t,
+    ) async {
       await _ouvrirFormulaire(t, {..._base, 'nipCree': true});
       expect(find.text('Réinitialiser le NIP'), findsOneWidget);
       expect(find.text('Renvoyer l\'invitation'), findsNothing);
     });
 
-    testWidgets('ancien pinHash → « Réinitialiser le NIP » (avant la migration)', (t) async {
-      await _ouvrirFormulaire(t, {..._base, 'pinHash': 'h'});
-      expect(find.text('Réinitialiser le NIP'), findsOneWidget);
-    });
+    testWidgets(
+      'ancien pinHash → « Réinitialiser le NIP » (avant la migration)',
+      (t) async {
+        await _ouvrirFormulaire(t, {..._base, 'pinHash': 'h'});
+        expect(find.text('Réinitialiser le NIP'), findsOneWidget);
+      },
+    );
 
-    testWidgets('nipCree: false, ou aucun champ → « Renvoyer l\'invitation »', (t) async {
+    testWidgets('nipCree: false, ou aucun champ → « Renvoyer l\'invitation »', (
+      t,
+    ) async {
       await _ouvrirFormulaire(t, {..._base, 'nipCree': false});
       expect(find.text('Renvoyer l\'invitation'), findsOneWidget);
       expect(find.text('Réinitialiser le NIP'), findsNothing);

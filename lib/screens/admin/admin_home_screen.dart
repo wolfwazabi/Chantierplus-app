@@ -98,7 +98,9 @@ class AdminHomeScreen extends StatelessWidget {
           child: ListTile(
             leading: Icon(Icons.shopping_cart_checkout, color: accent),
             title: const Text('Liste d\'achats'),
-            subtitle: const Text('Matériel à acheter, transféré depuis Général'),
+            subtitle: const Text(
+              'Matériel à acheter, transféré depuis Général',
+            ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () {
               Navigator.of(context).push(

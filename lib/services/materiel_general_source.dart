@@ -64,10 +64,11 @@ class SourceMaterielGeneralFirestore implements SourceMaterielGeneral {
       );
 
   @override
-  Stream<VisitesGeneral> visites(String employeId) => _visites(employeId)
-      .snapshots()
-      .map((d) => visitesDepuisDonnees(d.data()))
-      .handleError((_) {});
+  Stream<VisitesGeneral> visites(String employeId) =>
+      _visites(employeId)
+          .snapshots()
+          .map((d) => visitesDepuisDonnees(d.data()))
+          .handleError((_) {});
 
   @override
   Future<void> marquerVu({
@@ -80,7 +81,8 @@ class SourceMaterielGeneralFirestore implements SourceMaterielGeneral {
     return _visites(employeId).set({
       'companyId': companyId,
       'vus': {cleVu(auteurId): FieldValue.serverTimestamp()},
-      if (ids.isNotEmpty) 'nonLus': {for (final id in ids) id: FieldValue.delete()},
+      if (ids.isNotEmpty)
+        'nonLus': {for (final id in ids) id: FieldValue.delete()},
     }, SetOptions(merge: true));
   }
 
@@ -117,7 +119,10 @@ class SourceMaterielGeneralFirestore implements SourceMaterielGeneral {
   @override
   Future<void> transfererAuxAchats(EntreeMateriel entree, Employee admin) {
     final lot = _db.batch();
-    lot.set(_db.collection('liste_achats').doc(), donneesTransfert(entree, admin));
+    lot.set(
+      _db.collection('liste_achats').doc(),
+      donneesTransfert(entree, admin),
+    );
     lot.update(
       _db.collection('chantier_materiel').doc(entree.id),
       donneesMarquerTransfert(admin),

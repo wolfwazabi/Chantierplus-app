@@ -35,7 +35,10 @@ class SourceListeAchatsFirestore implements SourceListeAchats {
 
   /// Met à jour la demande d'origine sans faire échouer l'opération principale :
   /// elle a pu être supprimée entre-temps.
-  Future<void> _majOrigine(ArticleAchat article, Map<String, dynamic> donnees) async {
+  Future<void> _majOrigine(
+    ArticleAchat article,
+    Map<String, dynamic> donnees,
+  ) async {
     if (article.origineId.isEmpty) return;
     try {
       await _db
@@ -61,7 +64,11 @@ class SourceListeAchatsFirestore implements SourceListeAchats {
     });
     await _majOrigine(
       article,
-      donneesCompletion(complete: achete, general: true, modifieParId: employeId),
+      donneesCompletion(
+        complete: achete,
+        general: true,
+        modifieParId: employeId,
+      ),
     );
   }
 

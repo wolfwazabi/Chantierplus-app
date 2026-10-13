@@ -421,14 +421,20 @@ void mainPlancherReel() {
       expect(p.poutres!.section.nom, '2×8');
       expect(p.poutres!.pieuxParPoutre, 3);
       expect(p.poutres!.hauteurPatte, 16);
-      expect(lu.toJson(), const ProjetCharpente(plancher: plancherReel).toJson());
+      expect(
+        lu.toJson(),
+        const ProjetCharpente(plancher: plancherReel).toJson(),
+      );
     });
 
     test('sans poutres : null dans le JSON et à la relecture', () {
       final j = const ProjetCharpente().toJson();
       expect((j['plancher'] as Map)['poutres'], isNull);
       expect((j['plancher'] as Map)['coteMaison'], isNull);
-      expect(ProjetCharpente.fromJson(jsonDecode(jsonEncode(j))).plancher.poutres, isNull);
+      expect(
+        ProjetCharpente.fromJson(jsonDecode(jsonEncode(j))).plancher.poutres,
+        isNull,
+      );
     });
 
     test('un projet enregistré avant ces réglages se relit avec les valeurs d\'avant', () {
@@ -476,9 +482,9 @@ void mainPlancherReel() {
     });
 
     test('valeurs invalides refusées', () {
-      Map base() =>
-          jsonDecode(jsonEncode(const ProjetCharpente(plancher: plancherReel).toJson()))
-              as Map;
+      Map base() => jsonDecode(
+        jsonEncode(const ProjetCharpente(plancher: plancherReel).toJson()),
+      ) as Map;
       void refuse(void Function(Map plancher) change) {
         final j = base();
         change(j['plancher'] as Map);
@@ -500,29 +506,40 @@ void mainPlancherReel() {
       refuse((p) => p['poutres'] = 'beaucoup');
     });
 
-    test('calcul du projet : poutres, pattes, clous et rives dans la commande', () {
-      final r = calculerProjet(const ProjetCharpente(plancher: plancherReel));
-      expect(r.erreurPlancher, isNull);
-      final lignes = {for (final l in r.commande.lignes) l.article: l.quantite};
-      expect(lignes["2×8 × 16' traité"], 6);
-      expect(lignes["6×6 × 8' traité"], 1);
-      expect(lignes['Étrier de solive pour 2×8'], 11);
-      // 11 étriers × 12 clous + 10 % = 145,2 clous : 2 boîtes de 100.
-      expect(
-        lignes.entries.firstWhere((e) => e.key.startsWith('Clous d')).value,
-        2,
-      );
-      expect(r.plancher!.rives, hasLength(3));
-    });
+    test(
+      'calcul du projet : poutres, pattes, clous et rives dans la commande',
+      () {
+        final r = calculerProjet(const ProjetCharpente(plancher: plancherReel));
+        expect(r.erreurPlancher, isNull);
+        final lignes = {
+          for (final l in r.commande.lignes) l.article: l.quantite,
+        };
+        expect(lignes["2×8 × 16' traité"], 6);
+        expect(lignes["6×6 × 8' traité"], 1);
+        expect(lignes['Étrier de solive pour 2×8'], 11);
+        // 11 étriers × 12 clous + 10 % = 145,2 clous : 2 boîtes de 100.
+        expect(
+          lignes.entries.firstWhere((e) => e.key.startsWith('Clous d')).value,
+          2,
+        );
+        expect(r.plancher!.rives, hasLength(3));
+      },
+    );
 
-    test('un côté de maison hors du contour est refusé au calcul, sans exception', () {
-      final r = calculerProjet(
-        const ProjetCharpente(
-          plancher: ParametresPlancher(forme: FormeRectangle(180, 168), coteMaison: 9),
-        ),
-      );
-      expect(r.plancher, isNull);
-      expect(r.erreurPlancher, contains('Côté de la maison'));
-    });
+    test(
+      'un côté de maison hors du contour est refusé au calcul, sans exception',
+      () {
+        final r = calculerProjet(
+          const ProjetCharpente(
+            plancher: ParametresPlancher(
+              forme: FormeRectangle(180, 168),
+              coteMaison: 9,
+            ),
+          ),
+        );
+        expect(r.plancher, isNull);
+        expect(r.erreurPlancher, contains('Côté de la maison'));
+      },
+    );
   });
 }

@@ -51,7 +51,11 @@ void main() {
   group('cas calculé à la main : contremarche 7 1/2 po, giron 10 po (triangle 3-4-5)', () {
     // 7,5² + 10² = 12,5² : cos = 0,8 ; sin = 0,6 ; tout est exact à la main.
     final r = calculerEscalier(
-      const SpecEscalier(hauteurTotale: 105, nombreContremarches: 14, giron: 10),
+      const SpecEscalier(
+        hauteurTotale: 105,
+        nombreContremarches: 14,
+        giron: 10,
+      ),
     );
 
     test('contremarches, marches, course', () {
@@ -86,10 +90,13 @@ void main() {
       expect(r.coupeTete, closeTo(14.0625, 1e-12));
     });
 
-    test('longueur de planche : 130 × 0,8 + 103,5 × 0,6 = 166,1 po → 14 pi', () {
-      expect(r.longueurLimon, closeTo(166.1, 1e-9));
-      expect(r.longueurCommerciale, 168);
-    });
+    test(
+      'longueur de planche : 130 × 0,8 + 103,5 × 0,6 = 166,1 po → 14 pi',
+      () {
+        expect(r.longueurLimon, closeTo(166.1, 1e-9));
+        expect(r.longueurCommerciale, 168);
+      },
+    );
 
     test('4 limons à 11 1/2 po (largeur 36 po, entraxe max 16 po)', () {
       // (36 − 1,5) ÷ 16 = 2,16 → 3 espaces → 4 limons ; 34,5 ÷ 3 = 11,5.
@@ -108,7 +115,10 @@ void main() {
       // 2 + 2 × 13 sommets d'escalier, puis tête et dessous.
       expect(p.length, 2 + 2 * 13 + 2);
       expect(p[p.length - 3], const Pt(130, 103.5)); // dernière pointe
-      expect(p[p.length - 2], const Pt(130, 89.4375)); // bas de la coupe de tête
+      expect(
+        p[p.length - 2],
+        const Pt(130, 89.4375),
+      ); // bas de la coupe de tête
       expect(p.last, const Pt(10.75, 0)); // fin de la coupe de niveau
     });
 
@@ -123,16 +133,21 @@ void main() {
       expect(r.table.last.course, closeTo(130, 1e-12));
     });
 
-    test('code : contremarche 190,5 mm, giron 254 mm → giron 1 mm sous le minimum', () {
-      // 10 po = 254 mm < 255 mm : refusé, par 1 mm.
-      expect(_v(r, 'contremarche').niveau, Niveau.ok);
-      expect(_v(r, 'giron').niveau, Niveau.erreur);
-      expect(r.conforme, isFalse);
-    });
+    test(
+      'code : contremarche 190,5 mm, giron 254 mm → giron 1 mm sous le minimum',
+      () {
+        // 10 po = 254 mm < 255 mm : refusé, par 1 mm.
+        expect(_v(r, 'contremarche').niveau, Niveau.ok);
+        expect(_v(r, 'giron').niveau, Niveau.erreur);
+        expect(r.conforme, isFalse);
+      },
+    );
   });
 
   group('cas calculé à la main : plancher de 9 pi, giron 10 1/4 po', () {
-    final r = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10.25));
+    final r = calculerEscalier(
+      const SpecEscalier(hauteurTotale: 108, giron: 10.25),
+    );
 
     test('15 contremarches de 7,2 po (108 ÷ 15), 14 marches', () {
       expect(r.nombreContremarches, 15);
@@ -161,9 +176,21 @@ void main() {
 
   group('choix du nombre de contremarches', () {
     test('la contremarche la plus proche de 7 1/4 po parmi celles que le Code permet', () {
-      expect(calculerEscalier(const SpecEscalier(hauteurTotale: 108)).nombreContremarches, 15);
-      expect(calculerEscalier(const SpecEscalier(hauteurTotale: 96)).nombreContremarches, 13);
-      expect(calculerEscalier(const SpecEscalier(hauteurTotale: 120)).nombreContremarches, 17);
+      expect(
+        calculerEscalier(const SpecEscalier(hauteurTotale: 108))
+            .nombreContremarches,
+        15,
+      );
+      expect(
+        calculerEscalier(const SpecEscalier(hauteurTotale: 96))
+            .nombreContremarches,
+        13,
+      );
+      expect(
+        calculerEscalier(const SpecEscalier(hauteurTotale: 120))
+            .nombreContremarches,
+        17,
+      );
     });
 
     test('à égalité, la plus petite contremarche (7 1/2 ou 7 po : 15 contremarches)', () {
@@ -180,7 +207,11 @@ void main() {
           final existe = [for (var n = 2; n <= 40; n++) h / n]
               .any((v) => _mm(v) >= 125 - 0.05 && _mm(v) <= 200 + 0.05);
           if (existe) {
-            expect(_v(r, 'contremarche').niveau, Niveau.ok, reason: 'H = $h po');
+            expect(
+              _v(r, 'contremarche').niveau,
+              Niveau.ok,
+              reason: 'H = $h po',
+            );
           }
         }
       }
@@ -218,7 +249,9 @@ void main() {
     });
 
     test('autres choix : seuls les nombres conformes, autour du choix', () {
-      final r = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10.5));
+      final r = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 108, giron: 10.5),
+      );
       expect(r.nombreContremarches, 15);
       // 12 et 13 : contremarche trop haute ; 14, 16, 17, 18 : conformes.
       expect(r.variantes.map((v) => v.nombreContremarches), [14, 16, 17, 18]);
@@ -231,13 +264,18 @@ void main() {
 
     test('un giron hors Code : aucun autre choix n\'est « conforme »', () {
       // 10 po = 254 mm, 1 mm sous le minimum : aucune variante ne l\'est non plus.
-      final r = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10));
+      final r = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 108, giron: 10),
+      );
       expect(r.conforme, isFalse);
       expect(r.variantes, isEmpty);
     });
 
     test('le giron par défaut respecte le Code', () {
-      expect(poucesEnMm(const SpecEscalier(hauteurTotale: 108).giron), greaterThanOrEqualTo(255));
+      expect(
+        poucesEnMm(const SpecEscalier(hauteurTotale: 108).giron),
+        greaterThanOrEqualTo(255),
+      );
     });
 
     test('un nombre imposé est respecté', () {
@@ -251,14 +289,31 @@ void main() {
 
   group('limites du Code, au millimètre', () {
     test('contremarche privée : 125 à 200 mm', () {
-      expect(_v(calculerEscalier(_specR(200, 14)), 'contremarche').niveau, Niveau.ok);
-      expect(_v(calculerEscalier(_specR(125, 14)), 'contremarche').niveau, Niveau.ok);
-      expect(_v(calculerEscalier(_specR(200.5, 14)), 'contremarche').niveau, Niveau.erreur);
-      expect(_v(calculerEscalier(_specR(124.5, 14)), 'contremarche').niveau, Niveau.erreur);
+      expect(
+        _v(calculerEscalier(_specR(200, 14)), 'contremarche').niveau,
+        Niveau.ok,
+      );
+      expect(
+        _v(calculerEscalier(_specR(125, 14)), 'contremarche').niveau,
+        Niveau.ok,
+      );
+      expect(
+        _v(calculerEscalier(_specR(200.5, 14)), 'contremarche').niveau,
+        Niveau.erreur,
+      );
+      expect(
+        _v(calculerEscalier(_specR(124.5, 14)), 'contremarche').niveau,
+        Niveau.erreur,
+      );
       // 7 7/8 po = 200,025 mm : c'est la limite de 200 mm en pouces.
       expect(
         _v(
-          calculerEscalier(const SpecEscalier(hauteurTotale: 7.875 * 14, nombreContremarches: 14)),
+          calculerEscalier(
+            const SpecEscalier(
+              hauteurTotale: 7.875 * 14,
+              nombreContremarches: 14,
+            ),
+          ),
           'contremarche',
         ).niveau,
         Niveau.ok,
@@ -266,9 +321,13 @@ void main() {
     });
 
     test('contremarche commune : 125 à 180 mm', () {
-      SpecEscalier s(double mm) => _specR(mm, 14, usage: UsageEscalier.commun, giron: 11.5, largeur: 40);
+      SpecEscalier s(double mm) =>
+          _specR(mm, 14, usage: UsageEscalier.commun, giron: 11.5, largeur: 40);
       expect(_v(calculerEscalier(s(180)), 'contremarche').niveau, Niveau.ok);
-      expect(_v(calculerEscalier(s(181)), 'contremarche').niveau, Niveau.erreur);
+      expect(
+        _v(calculerEscalier(s(181)), 'contremarche').niveau,
+        Niveau.erreur,
+      );
     });
 
     test('giron privé : 255 à 355 mm', () {
@@ -310,7 +369,12 @@ void main() {
       expect(
         _v(
           calculerEscalier(
-            const SpecEscalier(hauteurTotale: 100, nombreContremarches: 14, giron: 10.5, nez: 1),
+            const SpecEscalier(
+              hauteurTotale: 100,
+              nombreContremarches: 14,
+              giron: 10.5,
+              nez: 1,
+            ),
           ),
           'profondeur',
         ).niveau,
@@ -326,10 +390,22 @@ void main() {
         largeur: _po(mm),
         usage: u,
       );
-      expect(_v(calculerEscalier(s(860, UsageEscalier.prive)), 'largeur').niveau, Niveau.ok);
-      expect(_v(calculerEscalier(s(859, UsageEscalier.prive)), 'largeur').niveau, Niveau.erreur);
-      expect(_v(calculerEscalier(s(900, UsageEscalier.commun)), 'largeur').niveau, Niveau.ok);
-      expect(_v(calculerEscalier(s(899, UsageEscalier.commun)), 'largeur').niveau, Niveau.erreur);
+      expect(
+        _v(calculerEscalier(s(860, UsageEscalier.prive)), 'largeur').niveau,
+        Niveau.ok,
+      );
+      expect(
+        _v(calculerEscalier(s(859, UsageEscalier.prive)), 'largeur').niveau,
+        Niveau.erreur,
+      );
+      expect(
+        _v(calculerEscalier(s(900, UsageEscalier.commun)), 'largeur').niveau,
+        Niveau.ok,
+      );
+      expect(
+        _v(calculerEscalier(s(899, UsageEscalier.commun)), 'largeur').niveau,
+        Niveau.erreur,
+      );
     });
 
     test('volée : 3,7 m au plus, sinon un palier est exigé', () {
@@ -345,20 +421,30 @@ void main() {
     test('confort (Blondel) : avertissement seulement, jamais une erreur', () {
       // 2 × 200 + 255 = 655 mm : au-dessus de 650.
       final r = calculerEscalier(
-        SpecEscalier(hauteurTotale: _po(200) * 14, nombreContremarches: 14, giron: _po(255)),
+        SpecEscalier(
+          hauteurTotale: _po(200) * 14,
+          nombreContremarches: 14,
+          giron: _po(255),
+        ),
       );
       expect(_v(r, 'blondel').niveau, Niveau.avertissement);
       expect(r.conforme, isTrue);
     });
 
     test('rappels : échappée toujours ; contremarches ouvertes seulement si ouvertes', () {
-      final ouvertes = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10.25));
+      final ouvertes = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 108, giron: 10.25),
+      );
       expect(_v(ouvertes, 'echappee').niveau, Niveau.info);
       expect(_v(ouvertes, 'planchers').niveau, Niveau.info);
       expect(_v(ouvertes, 'tete').message, contains('1 1/2"'));
       expect(ouvertes.verifications.any((v) => v.id == 'ouvertes'), isTrue);
       final fermees = calculerEscalier(
-        const SpecEscalier(hauteurTotale: 108, giron: 10.25, contremarchesFermees: true),
+        const SpecEscalier(
+          hauteurTotale: 108,
+          giron: 10.25,
+          contremarchesFermees: true,
+        ),
       );
       expect(fermees.verifications.any((v) => v.id == 'ouvertes'), isFalse);
     });
@@ -381,23 +467,35 @@ void main() {
 
     test('2×12 : même escalier, gorge suffisante', () {
       final r = calculerEscalier(
-        const SpecEscalier(hauteurTotale: 112, nombreContremarches: 14, giron: 10),
+        const SpecEscalier(
+          hauteurTotale: 112,
+          nombreContremarches: 14,
+          giron: 10,
+        ),
       );
       expect(_v(r, 'gorge').niveau, Niveau.ok);
     });
 
     test('limon trop long pour le 20 pi : avertissement', () {
       final r = calculerEscalier(
-        const SpecEscalier(hauteurTotale: 140, nombreContremarches: 19, giron: 11),
+        const SpecEscalier(
+          hauteurTotale: 140,
+          nombreContremarches: 19,
+          giron: 11,
+        ),
       );
       expect(r.longueurLimon, greaterThan(240));
       expect(r.verifications.any((v) => v.id == 'longueur'), isTrue);
     });
 
     test('longueurs courantes : pieds pairs, 8 pi minimum', () {
-      final petit = calculerEscalier(const SpecEscalier(hauteurTotale: 28, nombreContremarches: 4));
+      final petit = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 28, nombreContremarches: 4),
+      );
       expect(petit.longueurCommerciale, 96);
-      final r = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10.25));
+      final r = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 108, giron: 10.25),
+      );
       expect(r.longueurCommerciale % 24, 0);
       expect(r.longueurCommerciale, greaterThanOrEqualTo(r.longueurLimon));
       expect(r.longueurCommerciale - r.longueurLimon, lessThan(24));
@@ -405,7 +503,12 @@ void main() {
 
     test('nombre de limons selon la largeur et l\'entraxe', () {
       int nb(double largeur, double ent) => calculerEscalier(
-        SpecEscalier(hauteurTotale: 108, giron: 10.25, largeur: largeur, espacementMax: ent),
+        SpecEscalier(
+          hauteurTotale: 108,
+          giron: 10.25,
+          largeur: largeur,
+          espacementMax: ent,
+        ),
       ).nombreLimons;
       expect(nb(36, 16), 4);
       expect(nb(36, 18), 3); // 34,5 ÷ 18 = 1,92 → 2 espaces
@@ -418,42 +521,56 @@ void main() {
 
   group('traçage arrondi', () {
     test('au 1/16 po : écart de volée sous 10 mm, voisines sous 5 mm', () {
-      final r = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10.25));
+      final r = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 108, giron: 10.25),
+      );
       expect(r.ecartVolee, lessThanOrEqualTo(2 / 16 + 1e-9));
       expect(r.ecartAdjacent, lessThanOrEqualTo(2 / 16 + 1e-9));
       expect(_v(r, 'uniformite').niveau, Niveau.ok);
     });
 
-    test('l\'uniformité compte aussi les girons, pas seulement les contremarches', () {
-      // 15 contremarches de 7 po (parfaitement régulières au pas de 1/2 po), mais un
-      // giron de 10,1 po dont les positions arrondies donnent des girons de 10 et 10 1/2 po.
-      final r = calculerEscalier(
-        const SpecEscalier(
-          hauteurTotale: 105,
-          nombreContremarches: 15,
-          giron: 10.1,
-          precisionTrace: 0.5,
-        ),
-      );
-      expect(r.ecartVolee, closeTo(0.5, 1e-12));
-      expect(r.ecartAdjacent, closeTo(0.5, 1e-12));
-      expect(_v(r, 'uniformite').niveau, Niveau.erreur);
-    });
+    test(
+      'l\'uniformité compte aussi les girons, pas seulement les contremarches',
+      () {
+        // 15 contremarches de 7 po (parfaitement régulières au pas de 1/2 po), mais un
+        // giron de 10,1 po dont les positions arrondies donnent des girons de 10 et 10 1/2 po.
+        final r = calculerEscalier(
+          const SpecEscalier(
+            hauteurTotale: 105,
+            nombreContremarches: 15,
+            giron: 10.1,
+            precisionTrace: 0.5,
+          ),
+        );
+        expect(r.ecartVolee, closeTo(0.5, 1e-12));
+        expect(r.ecartAdjacent, closeTo(0.5, 1e-12));
+        expect(_v(r, 'uniformite').niveau, Niveau.erreur);
+      },
+    );
 
     test('un pas trop grossier est signalé', () {
       final r = calculerEscalier(
-        const SpecEscalier(hauteurTotale: 108, giron: 10.25, precisionTrace: 0.5),
+        const SpecEscalier(
+          hauteurTotale: 108,
+          giron: 10.25,
+          precisionTrace: 0.5,
+        ),
       );
       expect(_v(r, 'uniformite').niveau, Niveau.erreur);
     });
 
-    test('arrondi au pas, sans accumuler : chaque hauteur est arrondie seule', () {
-      final r = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10.25));
-      // 7,2 po × 15 = 108 : la marche 14 est à 100,8 po, pas à 14 × 7 3/16.
-      expect(r.arrondi(r.table.last.hauteurDessus), closeTo(100.8125, 1e-12));
-      expect(arrondirAuPas(7.2, 1 / 16), closeTo(7.1875, 1e-12));
-      expect(arrondirAuPas(7.2, 1 / 25.4), closeTo(183 / 25.4, 1e-12));
-    });
+    test(
+      'arrondi au pas, sans accumuler : chaque hauteur est arrondie seule',
+      () {
+        final r = calculerEscalier(
+          const SpecEscalier(hauteurTotale: 108, giron: 10.25),
+        );
+        // 7,2 po × 15 = 108 : la marche 14 est à 100,8 po, pas à 14 × 7 3/16.
+        expect(r.arrondi(r.table.last.hauteurDessus), closeTo(100.8125, 1e-12));
+        expect(arrondirAuPas(7.2, 1 / 16), closeTo(7.1875, 1e-12));
+        expect(arrondirAuPas(7.2, 1 / 25.4), closeTo(183 / 25.4, 1e-12));
+      },
+    );
   });
 
   group('contrôles géométriques indépendants (300 escaliers au hasard)', () {
@@ -477,46 +594,79 @@ void main() {
         final r = calculerEscalier(s);
         final n = r.nombreContremarches;
         expect(n * r.contremarche, closeTo(s.hauteurTotale, 1e-9));
-        expect(math.tan(degEnRad(r.angle)), closeTo(r.contremarche / r.giron, 1e-9));
+        expect(
+          math.tan(degEnRad(r.angle)),
+          closeTo(r.contremarche / r.giron, 1e-9),
+        );
         final p = r.profil;
         // p[2k] = pointe k − 1 pour k ≥ 1, p[2k + 1]… : pointes en indices 1, 3, 5…
         for (var k = 1; k < n; k++) {
           final fond = p[2 * k];
           final pointe = p[2 * k + 1];
           final avant = p[2 * k - 1];
-          expect(fond.x - avant.x, closeTo(r.giron, 1e-9), reason: 'siège $k : giron');
-          expect(fond.y, closeTo(avant.y, 1e-9), reason: 'siège $k : de niveau');
-          expect(pointe.y - fond.y, closeTo(r.contremarche, 1e-9), reason: 'contremarche $k');
-          expect(pointe.x, closeTo(fond.x, 1e-9), reason: 'contremarche $k : d\'aplomb');
+          expect(
+            fond.x - avant.x,
+            closeTo(r.giron, 1e-9),
+            reason: 'siège $k : giron',
+          );
+          expect(
+            fond.y,
+            closeTo(avant.y, 1e-9),
+            reason: 'siège $k : de niveau',
+          );
+          expect(
+            pointe.y - fond.y,
+            closeTo(r.contremarche, 1e-9),
+            reason: 'contremarche $k',
+          );
+          expect(
+            pointe.x,
+            closeTo(fond.x, 1e-9),
+            reason: 'contremarche $k : d\'aplomb',
+          );
           // Le dessus de la marche (siège + épaisseur) est à k × R du plancher.
           expect(fond.y + s.epaisseurMarche, closeTo(k * r.contremarche, 1e-9));
         }
         // La dernière pointe + épaisseur = hauteur totale (le plancher du haut).
-        expect(p[p.length - 3].y + s.epaisseurMarche, closeTo(s.hauteurTotale, 1e-9));
-      }
-    });
-
-    test('pointes alignées ; dessous parallèle à la profondeur de la planche', () {
-      for (final s in cas) {
-        final r = calculerEscalier(s);
-        final n = r.nombreContremarches;
-        final p = r.profil;
-        final pointes = [for (var k = 0; k < n; k++) p[1 + 2 * k]];
-        final finDessous = p.last;
-        final basTete = p[p.length - 2];
-        for (final q in pointes) {
-          // Toutes sur la droite passant par les deux premières pointes.
-          expect(_distanceDroite(q, pointes[0], pointes[1]), closeTo(0, 1e-8));
-          // Et à la même distance (= profondeur de la planche) du dessous.
-          expect(_distanceDroite(q, finDessous, basTete), closeTo(s.section.profondeur, 1e-8));
-        }
-        // Dessous parallèle au dessus.
         expect(
-          (basTete - finDessous).unitaire.cross((pointes.last - pointes[0]).unitaire),
-          closeTo(0, 1e-9),
+          p[p.length - 3].y + s.epaisseurMarche,
+          closeTo(s.hauteurTotale, 1e-9),
         );
       }
     });
+
+    test(
+      'pointes alignées ; dessous parallèle à la profondeur de la planche',
+      () {
+        for (final s in cas) {
+          final r = calculerEscalier(s);
+          final n = r.nombreContremarches;
+          final p = r.profil;
+          final pointes = [for (var k = 0; k < n; k++) p[1 + 2 * k]];
+          final finDessous = p.last;
+          final basTete = p[p.length - 2];
+          for (final q in pointes) {
+            // Toutes sur la droite passant par les deux premières pointes.
+            expect(
+              _distanceDroite(q, pointes[0], pointes[1]),
+              closeTo(0, 1e-8),
+            );
+            // Et à la même distance (= profondeur de la planche) du dessous.
+            expect(
+              _distanceDroite(q, finDessous, basTete),
+              closeTo(s.section.profondeur, 1e-8),
+            );
+          }
+          // Dessous parallèle au dessus.
+          expect(
+            (basTete - finDessous).unitaire.cross(
+              (pointes.last - pointes[0]).unitaire,
+            ),
+            closeTo(0, 1e-9),
+          );
+        }
+      },
+    );
 
     test('gorge = distance réelle du fond d\'une entaille au dessous de la planche', () {
       for (final s in cas) {
@@ -534,17 +684,27 @@ void main() {
       }
     });
 
-    test('aire du limon = aire de la bande − (n − 1) entailles de R × G ÷ 2', () {
-      for (final s in cas) {
-        final r = calculerEscalier(s);
-        final p = r.profil;
-        final n = r.nombreContremarches;
-        // Bande : pied, 1re pointe, dernière pointe, bas de la tête, fin du dessous.
-        final bande = [p.first, p[1], p[p.length - 3], p[p.length - 2], p.last];
-        final attendue = _aire(bande) - (n - 1) * r.contremarche * r.giron / 2;
-        expect(_aire(p), closeTo(attendue, 1e-6));
-      }
-    });
+    test(
+      'aire du limon = aire de la bande − (n − 1) entailles de R × G ÷ 2',
+      () {
+        for (final s in cas) {
+          final r = calculerEscalier(s);
+          final p = r.profil;
+          final n = r.nombreContremarches;
+          // Bande : pied, 1re pointe, dernière pointe, bas de la tête, fin du dessous.
+          final bande = [
+            p.first,
+            p[1],
+            p[p.length - 3],
+            p[p.length - 2],
+            p.last,
+          ];
+          final attendue =
+              _aire(bande) - (n - 1) * r.contremarche * r.giron / 2;
+          expect(_aire(p), closeTo(attendue, 1e-6));
+        }
+      },
+    );
 
     test('longueur de planche = étendue du profil tourné à plat', () {
       for (final s in cas) {
@@ -555,7 +715,10 @@ void main() {
         final etendue = xs.reduce(math.max) - xs.reduce(math.min);
         expect(r.longueurLimon, closeTo(etendue, 1e-8));
         // Encadrement : entre les pointes extrêmes et la diagonale étage à étage.
-        expect(r.longueurLimon, greaterThanOrEqualTo(r.longueurEntrePointes - 1e-9));
+        expect(
+          r.longueurLimon,
+          greaterThanOrEqualTo(r.longueurEntrePointes - 1e-9),
+        );
         final diagonaleTotale = math.sqrt(
           s.hauteurTotale * s.hauteurTotale + r.course * r.course,
         );
@@ -567,16 +730,19 @@ void main() {
       }
     });
 
-    test('la planche couvre tout le contour : aucun sommet hors du rectangle', () {
-      for (final s in cas) {
-        final r = calculerEscalier(s);
-        final a = degEnRad(-r.angle);
-        final pts = [for (final q in r.profil) q.pivote(a)];
-        final xMin = pts.map((q) => q.x).reduce(math.min);
-        final xMax = pts.map((q) => q.x).reduce(math.max);
-        expect(xMax - xMin, lessThanOrEqualTo(r.longueurCommerciale + 1e-9));
-      }
-    });
+    test(
+      'la planche couvre tout le contour : aucun sommet hors du rectangle',
+      () {
+        for (final s in cas) {
+          final r = calculerEscalier(s);
+          final a = degEnRad(-r.angle);
+          final pts = [for (final q in r.profil) q.pivote(a)];
+          final xMin = pts.map((q) => q.x).reduce(math.min);
+          final xMax = pts.map((q) => q.x).reduce(math.max);
+          expect(xMax - xMin, lessThanOrEqualTo(r.longueurCommerciale + 1e-9));
+        }
+      },
+    );
 
     test('pied au niveau du plancher : aucun point sous le plancher', () {
       for (final s in cas) {
@@ -589,31 +755,46 @@ void main() {
       }
     });
 
-    test('tableau de traçage : dessus de la marche k à k × R, siège t plus bas', () {
-      for (final s in cas) {
-        final r = calculerEscalier(s);
-        expect(r.table.length, r.nombreMarches);
-        for (final l in r.table) {
-          expect(l.hauteurDessus, closeTo(l.marche * r.contremarche, 1e-9));
-          expect(l.hauteurDessus - l.hauteurSiege, closeTo(s.epaisseurMarche, 1e-12));
-          expect(l.course, closeTo(l.marche * r.giron, 1e-9));
+    test(
+      'tableau de traçage : dessus de la marche k à k × R, siège t plus bas',
+      () {
+        for (final s in cas) {
+          final r = calculerEscalier(s);
+          expect(r.table.length, r.nombreMarches);
+          for (final l in r.table) {
+            expect(l.hauteurDessus, closeTo(l.marche * r.contremarche, 1e-9));
+            expect(
+              l.hauteurDessus - l.hauteurSiege,
+              closeTo(s.epaisseurMarche, 1e-12),
+            );
+            expect(l.course, closeTo(l.marche * r.giron, 1e-9));
+          }
         }
-      }
-    });
+      },
+    );
 
-    test('verdicts cohérents avec les mesures (recalculés ici en millimètres)', () {
-      for (final s in cas) {
-        final r = calculerEscalier(s);
-        final rMm = _mm(r.contremarche);
-        final gMm = _mm(r.giron);
-        final rOk = rMm >= 125 - 0.05 && rMm <= 200 + 0.05;
-        final gOk = gMm >= 255 - 0.05 && gMm <= 355 + 0.05;
-        expect(_v(r, 'contremarche').niveau == Niveau.ok, rOk);
-        expect(_v(r, 'giron').niveau == Niveau.ok, gOk);
-        expect(_v(r, 'largeur').niveau == Niveau.ok, _mm(s.largeur) >= 860 - 0.05);
-        expect(_v(r, 'volee').niveau == Niveau.ok, _mm(s.hauteurTotale) <= 3700 + 0.05);
-      }
-    });
+    test(
+      'verdicts cohérents avec les mesures (recalculés ici en millimètres)',
+      () {
+        for (final s in cas) {
+          final r = calculerEscalier(s);
+          final rMm = _mm(r.contremarche);
+          final gMm = _mm(r.giron);
+          final rOk = rMm >= 125 - 0.05 && rMm <= 200 + 0.05;
+          final gOk = gMm >= 255 - 0.05 && gMm <= 355 + 0.05;
+          expect(_v(r, 'contremarche').niveau == Niveau.ok, rOk);
+          expect(_v(r, 'giron').niveau == Niveau.ok, gOk);
+          expect(
+            _v(r, 'largeur').niveau == Niveau.ok,
+            _mm(s.largeur) >= 860 - 0.05,
+          );
+          expect(
+            _v(r, 'volee').niveau == Niveau.ok,
+            _mm(s.hauteurTotale) <= 3700 + 0.05,
+          );
+        }
+      },
+    );
 
     test('le nombre de limons ne dépasse jamais l\'entraxe maximal', () {
       for (final s in cas) {
@@ -655,7 +836,11 @@ void main() {
     test('marche plus épaisse que la contremarche : refusée', () {
       expect(
         () => calculerEscalier(
-          const SpecEscalier(hauteurTotale: 20, nombreContremarches: 2, epaisseurMarche: 10),
+          const SpecEscalier(
+            hauteurTotale: 20,
+            nombreContremarches: 2,
+            epaisseurMarche: 10,
+          ),
         ),
         throwsA(isA<EscalierInvalide>()),
       );
@@ -674,7 +859,10 @@ void main() {
       final b = calculerEscalier(s);
       expect(a.longueurLimon, b.longueurLimon);
       expect(a.profil, b.profil);
-      expect(a.verifications.map((v) => v.message), b.verifications.map((v) => v.message));
+      expect(
+        a.verifications.map((v) => v.message),
+        b.verifications.map((v) => v.message),
+      );
     });
 
     test('messages en métrique quand on le demande', () {
@@ -683,7 +871,9 @@ void main() {
         metrique: true,
       );
       expect(_v(r, 'contremarche').message, contains('mm'));
-      final imperial = calculerEscalier(const SpecEscalier(hauteurTotale: 108, giron: 10.25));
+      final imperial = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 108, giron: 10.25),
+      );
       expect(_v(imperial, 'contremarche').message, contains('7 3/16"'));
     });
   });

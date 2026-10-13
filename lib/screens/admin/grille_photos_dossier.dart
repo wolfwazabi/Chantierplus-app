@@ -224,7 +224,9 @@ class _GrillePhotosDossierState extends State<GrillePhotosDossier> {
                       right: 4,
                       child: Icon(
                         choisie ? Icons.check_circle : Icons.circle_outlined,
-                        key: ValueKey('${choisie ? 'choisie' : 'libre'}_${p.id}'),
+                        key: ValueKey(
+                          '${choisie ? 'choisie' : 'libre'}_${p.id}',
+                        ),
                         color: choisie ? Colors.red : Colors.white,
                         shadows: const [Shadow(blurRadius: 4)],
                       ),

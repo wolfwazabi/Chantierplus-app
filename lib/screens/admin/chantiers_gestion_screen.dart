@@ -9,6 +9,7 @@ import '../../widgets/recherche_chantier.dart';
 import 'chantier_admin_actions.dart';
 import 'dossier_chantier_screen.dart';
 import 'materiel_general_screen.dart';
+import '../../widgets/actualiser.dart';
 
 /// Filtre de la liste des chantiers.
 enum FiltreChantiers { actifs, archives, tous }
@@ -70,8 +71,8 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
       appBar: AppBar(title: const Text('Chantiers')),
       body: companyId == null || !AppSession.estAdmin
           ? const Center(child: Text('Réservé aux administrateurs.'))
-          : StreamBuilder<List<Chantier>>(
-              stream:
+          : FluxActualisable<List<Chantier>>(
+              creerFlux: () =>
                   widget.fluxChantiers ??
                   FirebaseFirestore.instance
                       .collection('chantiers')
@@ -146,8 +147,8 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                       _TuileGeneral(source: widget.sourceMateriel),
                     Expanded(
                       child: visibles.isEmpty
-                          ? Center(
-                              child: Padding(
+                          ? messageActualisable(
+                              Padding(
                                 padding: const EdgeInsets.all(24),
                                 child: Text(
                                   tous.isEmpty
@@ -160,11 +161,10 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                           : ListView.builder(
                               padding: const EdgeInsets.only(bottom: 88),
                               itemCount: visibles.length,
-                              itemBuilder: (context, i) =>
-                                  _TuileChantier(
-                                    chantier: visibles[i],
-                                    pageChantier: widget.pageChantier,
-                                  ),
+                              itemBuilder: (context, i) => _TuileChantier(
+                                chantier: visibles[i],
+                                pageChantier: widget.pageChantier,
+                              ),
                             ),
                     ),
                   ],
@@ -251,7 +251,10 @@ class _TuileChantier extends StatelessWidget {
       ),
       title: Text(c.nom),
       subtitle: Text(
-        [if (c.adresse.isNotEmpty) c.adresse, if (c.archive) 'Archivé'].join(' • '),
+        [
+          if (c.adresse.isNotEmpty) c.adresse,
+          if (c.archive) 'Archivé',
+        ].join(' • '),
       ),
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(

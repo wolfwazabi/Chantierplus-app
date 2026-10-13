@@ -102,7 +102,12 @@ void main() {
 
     test('onglets dans la barre : toutes les teintes, claires et foncées', () {
       for (var h = 0; h < 360; h += 5) {
-        for (final (s, l) in [(1.0, 0.5), (1.0, 0.85), (0.6, 0.2), (0.3, 0.5)]) {
+        for (final (s, l) in [
+          (1.0, 0.5),
+          (1.0, 0.85),
+          (0.6, 0.2),
+          (0.3, 0.5),
+        ]) {
           final c = HSLColor.fromAHSL(1, h.toDouble(), s, l).toColor();
           final o = ThemeCompagnie.ongletsSurBarre(c);
           expect(
@@ -119,14 +124,19 @@ void main() {
       }
     });
 
-    test('vert par défaut : onglet choisi ≠ couleur de la barre (vert sur vert)', () {
-      final o = ThemeCompagnie.ongletsSurBarre(ThemeCompagnie.couleurParDefaut);
-      expect(o.actif, isNot(ThemeCompagnie.couleurParDefaut));
-      expect(
-        contrasteTest(ThemeCompagnie.couleurParDefaut, o.actif),
-        greaterThan(6),
-      );
-    });
+    test(
+      'vert par défaut : onglet choisi ≠ couleur de la barre (vert sur vert)',
+      () {
+        final o = ThemeCompagnie.ongletsSurBarre(
+          ThemeCompagnie.couleurParDefaut,
+        );
+        expect(o.actif, isNot(ThemeCompagnie.couleurParDefaut));
+        expect(
+          contrasteTest(ThemeCompagnie.couleurParDefaut, o.actif),
+          greaterThan(6),
+        );
+      },
+    );
   });
 
   test('appliquer : valeur invalide ou absente → vert par défaut', () {

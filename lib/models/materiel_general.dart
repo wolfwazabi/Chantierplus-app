@@ -259,8 +259,10 @@ List<MapEntry<String, Map<String, dynamic>>> ordonnerParRecence(
 /// L'auteur à imposer dans la requête Firestore de la liste Général : un
 /// contremaître ne demande que SA liste (les règles refusent tout le reste) ; un
 /// admin demande toutes les listes (null : aucune restriction).
-String? auteurImposeALaRequete({required bool estAdmin, required String? moiId}) =>
-    estAdmin ? null : moiId;
+String? auteurImposeALaRequete({
+  required bool estAdmin,
+  required String? moiId,
+}) => estAdmin ? null : moiId;
 
 /// Demandes marquées « non lu » à la main : { idDeLaDemande: true }.
 Set<String> nonLusDepuisDonnees(Map<String, dynamic>? data) {
@@ -279,10 +281,11 @@ class VisitesGeneral {
   const VisitesGeneral({this.vus = const {}, this.nonLus = const {}});
 }
 
-VisitesGeneral visitesDepuisDonnees(Map<String, dynamic>? data) => VisitesGeneral(
-  vus: vusDepuisDonnees(data),
-  nonLus: nonLusDepuisDonnees(data),
-);
+VisitesGeneral visitesDepuisDonnees(Map<String, dynamic>? data) =>
+    VisitesGeneral(
+      vus: vusDepuisDonnees(data),
+      nonLus: nonLusDepuisDonnees(data),
+    );
 
 /// Entrées d'un seul auteur ([auteurId] null : toutes).
 List<EntreeMateriel> filtrerParAuteur(

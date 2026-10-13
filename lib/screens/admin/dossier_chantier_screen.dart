@@ -14,6 +14,7 @@ import '../documents/documents_chantier.dart';
 import 'chantier_admin_actions.dart';
 import 'grille_photos_dossier.dart';
 import 'resume_heures_carte.dart';
+import '../../widgets/actualiser.dart';
 
 /// Page d'un chantier pour l'admin, avec tout ce qui le concerne :
 ///  - Résumé : heures, extras, matériel, travaux, export du dossier (ZIP) ;
@@ -169,88 +170,91 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
 
   /// Onglet Résumé : état du chantier, export, heures, extras, matériel, travaux.
   Widget _ongletResume(Chantier c, String companyId) {
-    return ListView(
-      key: const ValueKey('onglet_resume'),
-      padding: const EdgeInsets.all(16),
-      children: [
-        if (c.archive)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              children: [
-                const Icon(Icons.inventory_2_outlined, size: 18),
-                const SizedBox(width: 6),
-                Text(
-                  'Chantier archivé',
-                  key: const ValueKey('bandeau_archive'),
-                  style: TextStyle(color: Colors.grey.shade700),
-                ),
-              ],
-            ),
-          ),
-        if (c.adresse.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(
-              c.adresse,
-              style: const TextStyle(color: Colors.black54),
-            ),
-          ),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            key: const ValueKey('dossier_exporter'),
-            onPressed: _exportEnCours ? null : _exporter,
-            icon: _exportEnCours
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.archive_outlined),
-            label: Text(
-              _exportEnCours
-                  ? 'Préparation de l\'export…'
-                  : 'Exporter le dossier (ZIP)',
-            ),
-          ),
-        ),
-        const Padding(
-          padding: EdgeInsets.only(top: 6, bottom: 8),
-          child: Text(
-            'Résumé des heures, extras, matériel, photos et documents, à garder '
-            'sur l\'ordinateur de la compagnie.',
-            style: TextStyle(fontSize: 12, color: Colors.black54),
-          ),
-        ),
-        if (_chargement)
-          const Padding(
-            padding: EdgeInsets.all(24),
-            child: Center(child: CircularProgressIndicator()),
-          )
-        else if (_erreur != null)
-          Card(
-            color: Colors.red.shade50,
-            child: ListTile(
-              leading: const Icon(Icons.cloud_off),
-              title: Text(_erreur!),
-              trailing: TextButton(
-                onPressed: _charger,
-                child: const Text('Réessayer'),
+    return PageActualisable(
+      onRefresh: _charger,
+      child: ListView(
+        key: const ValueKey('onglet_resume'),
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (c.archive)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  const Icon(Icons.inventory_2_outlined, size: 18),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Chantier archivé',
+                    key: const ValueKey('bandeau_archive'),
+                    style: TextStyle(color: Colors.grey.shade700),
+                  ),
+                ],
               ),
             ),
-          )
-        else if (_resume != null)
-          ResumeHeuresCarte(resume: _resume!),
-        const SizedBox(height: 8),
-        _SectionExtras(companyId: companyId, chantierId: c.id),
-        _SectionMateriel(companyId: companyId, chantierId: c.id),
-        _SectionTravaux(companyId: companyId, chantierId: c.id),
-        const SizedBox(height: 24),
-      ],
+          if (c.adresse.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                c.adresse,
+                style: const TextStyle(color: Colors.black54),
+              ),
+            ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const ValueKey('dossier_exporter'),
+              onPressed: _exportEnCours ? null : _exporter,
+              icon: _exportEnCours
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.archive_outlined),
+              label: Text(
+                _exportEnCours
+                    ? 'Préparation de l\'export…'
+                    : 'Exporter le dossier (ZIP)',
+              ),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.only(top: 6, bottom: 8),
+            child: Text(
+              'Résumé des heures, extras, matériel, photos et documents, à garder '
+              'sur l\'ordinateur de la compagnie.',
+              style: TextStyle(fontSize: 12, color: Colors.black54),
+            ),
+          ),
+          if (_chargement)
+            const Padding(
+              padding: EdgeInsets.all(24),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_erreur != null)
+            Card(
+              color: Colors.red.shade50,
+              child: ListTile(
+                leading: const Icon(Icons.cloud_off),
+                title: Text(_erreur!),
+                trailing: TextButton(
+                  onPressed: _charger,
+                  child: const Text('Réessayer'),
+                ),
+              ),
+            )
+          else if (_resume != null)
+            ResumeHeuresCarte(resume: _resume!),
+          const SizedBox(height: 8),
+          _SectionExtras(companyId: companyId, chantierId: c.id),
+          _SectionMateriel(companyId: companyId, chantierId: c.id),
+          _SectionTravaux(companyId: companyId, chantierId: c.id),
+          const SizedBox(height: 24),
+        ],
+      ),
     );
   }
 
@@ -316,7 +320,9 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                     PopupMenuItem(
                       value: 'archive',
                       child: Text(
-                        c.archive ? 'Restaurer le chantier' : 'Archiver le chantier',
+                        c.archive
+                            ? 'Restaurer le chantier'
+                            : 'Archiver le chantier',
                       ),
                     ),
                   ],
@@ -331,7 +337,10 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                 tabs: const [
                   Tab(icon: Icon(Icons.assessment_outlined), text: 'Résumé'),
                   Tab(icon: Icon(Icons.photo_library_outlined), text: 'Photos'),
-                  Tab(icon: Icon(Icons.description_outlined), text: 'Documents'),
+                  Tab(
+                    icon: Icon(Icons.description_outlined),
+                    text: 'Documents',
+                  ),
                 ],
               ),
             ),
@@ -349,7 +358,10 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                         key: const ValueKey('onglet_photos'),
                         padding: const EdgeInsets.all(16),
                         children: [
-                          _SectionPhotos(companyId: companyId, chantierId: c.id),
+                          _SectionPhotos(
+                            companyId: companyId,
+                            chantierId: c.id,
+                          ),
                         ],
                       ),
                 ),

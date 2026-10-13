@@ -60,7 +60,10 @@ void main() {
       // Le reste de l'écran est inchangé.
       expect(find.text('Heures employés'), findsOneWidget);
       expect(find.text('Gestion des employés'), findsOneWidget);
-      expect(find.textContaining('photos, documents, heures et export'), findsOneWidget);
+      expect(
+        find.textContaining('photos, documents, heures et export'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('la tuile ouvre la liste des chantiers', (tester) async {
@@ -153,7 +156,8 @@ void main() {
     testWidgets('un toucher ouvre la page de CE chantier', (tester) async {
       await ouvrir(
         tester,
-        page: (c) => Scaffold(appBar: AppBar(), body: Text('PAGE ${c.id} ${c.nom}')),
+        page: (c) =>
+            Scaffold(appBar: AppBar(), body: Text('PAGE ${c.id} ${c.nom}')),
       );
       await tester.tap(find.text('Garage Tremblay'));
       await tester.pumpAndSettle();
@@ -220,7 +224,10 @@ void main() {
       await tester.tap(_cle('chantier_ajouter'));
       await tester.pumpAndSettle();
       expect(find.text('Nouveau chantier'), findsOneWidget);
-      expect(tester.widget<TextField>(_cle('chantier_nom')).controller!.text, '');
+      expect(
+        tester.widget<TextField>(_cle('chantier_nom')).controller!.text,
+        '',
+      );
     });
   });
 
@@ -240,9 +247,12 @@ void main() {
           home: DossierChantierScreen(
             chantier: chantier,
             fluxChantier: flux ?? Stream.value(chantier),
-            contenuResume: (_, c) => Text('RESUME ${c.id}', key: const ValueKey('r')),
-            contenuPhotos: (_, c) => Text('PHOTOS ${c.id}', key: const ValueKey('p')),
-            contenuDocuments: (_, c) => Text('DOCS ${c.id}', key: const ValueKey('d')),
+            contenuResume: (_, c) =>
+                Text('RESUME ${c.id}', key: const ValueKey('r')),
+            contenuPhotos: (_, c) =>
+                Text('PHOTOS ${c.id}', key: const ValueKey('p')),
+            contenuDocuments: (_, c) =>
+                Text('DOCS ${c.id}', key: const ValueKey('d')),
           ),
         ),
       );

@@ -44,9 +44,14 @@ void main() {
         }),
       );
       expect(e.photoUrl, isNotNull);
-      expect(e.photos, ['https://firebasestorage.googleapis.com/v0/b/b/o/p.jpg']);
+      expect(e.photos, [
+        'https://firebasestorage.googleapis.com/v0/b/b/o/p.jpg',
+      ]);
       expect(e.chemins, ['chantiers/A/chA/chantier_extras/p.jpg']);
-      expect(e.cheminDe(e.photos.first), 'chantiers/A/chA/chantier_extras/p.jpg');
+      expect(
+        e.cheminDe(e.photos.first),
+        'chantiers/A/chA/chantier_extras/p.jpg',
+      );
       expect(e.dateAjout, DateTime(2026, 10, 1, 9));
     });
 
@@ -56,7 +61,11 @@ void main() {
         donnees({
           'photoUrl': 'https://f/a.jpg',
           'cheminPhoto': 'c/a.jpg',
-          'photoUrls': ['https://f/a.jpg', 'https://f/b.jpg', 'https://f/c.jpg'],
+          'photoUrls': [
+            'https://f/a.jpg',
+            'https://f/b.jpg',
+            'https://f/c.jpg',
+          ],
           'cheminsPhotos': ['c/a.jpg', 'c/b.jpg', 'c/c.jpg'],
         }),
       );
@@ -80,7 +89,12 @@ void main() {
 
     test('champs Firestore : la première + toutes, 6 au plus', () {
       final d = champsPhotosExtra(['a', 'b'], ['ca', 'cb']);
-      expect(d, {'photoUrl': 'a', 'cheminPhoto': 'ca', 'photoUrls': ['a', 'b'], 'cheminsPhotos': ['ca', 'cb']});
+      expect(d, {
+        'photoUrl': 'a',
+        'cheminPhoto': 'ca',
+        'photoUrls': ['a', 'b'],
+        'cheminsPhotos': ['ca', 'cb'],
+      });
       expect(champsPhotosExtra(const [], const []), isEmpty);
       final beaucoup = champsPhotosExtra(
         [for (var i = 0; i < 9; i++) 'u$i'],
@@ -92,7 +106,12 @@ void main() {
 
     test('modification : une liste vide retire les quatre champs', () {
       final d = champsPhotosExtraModification(const [], const []);
-      expect(d.keys.toSet(), {'photoUrl', 'cheminPhoto', 'photoUrls', 'cheminsPhotos'});
+      expect(d.keys.toSet(), {
+        'photoUrl',
+        'cheminPhoto',
+        'photoUrls',
+        'cheminsPhotos',
+      });
       for (final v in d.values) {
         expect(v, isA<FieldValue>());
       }

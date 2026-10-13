@@ -38,13 +38,8 @@ EntreeMateriel _e(
   complete: complete,
 );
 
-Employee _emp(String id, String nom, EmployeeRole role) => Employee(
-  id: id,
-  companyId: 'A',
-  companyNom: 'Alpha',
-  nom: nom,
-  role: role,
-);
+Employee _emp(String id, String nom, EmployeeRole role) =>
+    Employee(id: id, companyId: 'A', companyNom: 'Alpha', nom: nom, role: role);
 
 void main() {
   group('« Général » n\'est pas un chantier', () {
@@ -61,7 +56,10 @@ void main() {
         Chantier(id: 'c1', companyId: 'A', nom: 'Chalet', adresse: ''),
         Chantier(id: 'c2', companyId: 'A', nom: 'Garage', adresse: ''),
       ];
-      expect(sansGeneral([chantierGeneral, ...reels]).map((c) => c.id), ['c1', 'c2']);
+      expect(sansGeneral([chantierGeneral, ...reels]).map((c) => c.id), [
+        'c1',
+        'c2',
+      ]);
       expect(sansGeneral(reels), reels);
       expect(sansGeneral(const []), isEmpty);
     });
@@ -96,23 +94,26 @@ void main() {
       expect(e.dateComplete, _t(3).toLocal());
     });
 
-    test('champs absents ou de mauvais type : valeurs par défaut, sans erreur', () {
-      final e = EntreeMateriel.fromMap('y', {
-        'texte': 5,
-        'quantite': 12,
-        'photoUrl': '',
-        'dateAjout': 'hier',
-        'ajoutePar': null,
-      });
-      expect(e.texte, '');
-      expect(e.quantite, '12');
-      expect(e.photoUrl, isNull);
-      expect(e.complete, isFalse);
-      expect(e.auteurId, '');
-      expect(e.dateAjout, isNull);
-      expect(e.dateChangement, isNull);
-      expect(e.changePar, '');
-    });
+    test(
+      'champs absents ou de mauvais type : valeurs par défaut, sans erreur',
+      () {
+        final e = EntreeMateriel.fromMap('y', {
+          'texte': 5,
+          'quantite': 12,
+          'photoUrl': '',
+          'dateAjout': 'hier',
+          'ajoutePar': null,
+        });
+        expect(e.texte, '');
+        expect(e.quantite, '12');
+        expect(e.photoUrl, isNull);
+        expect(e.complete, isFalse);
+        expect(e.auteurId, '');
+        expect(e.dateAjout, isNull);
+        expect(e.dateChangement, isNull);
+        expect(e.changePar, '');
+      },
+    );
 
     test('dernier changement = modification, sinon ajout ; auteur tant que personne d\'autre n\'a touché', () {
       final sansModif = _e('a', ajout: _t(1));
@@ -130,12 +131,23 @@ void main() {
     });
 
     test('visité après le changement : plus rien de nouveau', () {
-      expect(estNonVu(_e('a', ajout: _t(1)), moiId: 'adminA', vuLe: _t(2)), isFalse);
+      expect(
+        estNonVu(
+          _e('a', ajout: _t(1)),
+          moiId: 'adminA',
+          vuLe: _t(2),
+        ),
+        isFalse,
+      );
     });
 
     test('changé après la visite : nouveau', () {
       expect(
-        estNonVu(_e('a', ajout: _t(1), modif: _t(3), modifiePar: 'plusA'), moiId: 'adminA', vuLe: _t(2)),
+        estNonVu(
+          _e('a', ajout: _t(1), modif: _t(3), modifiePar: 'plusA'),
+          moiId: 'adminA',
+          vuLe: _t(2),
+        ),
         isTrue,
       );
     });
@@ -144,22 +156,45 @@ void main() {
       // Une demande que j\'ai ajoutée, ou que j\'ai moi-même marquée « obtenue ».
       expect(estNonVu(_e('a', auteur: 'adminA'), moiId: 'adminA'), isFalse);
       expect(
-        estNonVu(_e('b', ajout: _t(1), modif: _t(5), modifiePar: 'adminA'), moiId: 'adminA', vuLe: _t(2)),
+        estNonVu(
+          _e('b', ajout: _t(1), modif: _t(5), modifiePar: 'adminA'),
+          moiId: 'adminA',
+          vuLe: _t(2),
+        ),
         isFalse,
       );
     });
 
     test('mais le changement d\'une autre personne sur ma demande l\'est', () {
-      final e = _e('c', auteur: 'adminA', ajout: _t(1), modif: _t(5), modifiePar: 'plusA');
+      final e = _e(
+        'c',
+        auteur: 'adminA',
+        ajout: _t(1),
+        modif: _t(5),
+        modifiePar: 'plusA',
+      );
       expect(estNonVu(e, moiId: 'adminA', vuLe: _t(2)), isTrue);
     });
 
     test('heure du serveur pas encore reçue (écriture en cours) : ignoré', () {
-      expect(estNonVu(const EntreeMateriel(id: 'z', texte: 'x', auteurId: 'plusA'), moiId: 'adminA'), isFalse);
+      expect(
+        estNonVu(
+          const EntreeMateriel(id: 'z', texte: 'x', auteurId: 'plusA'),
+          moiId: 'adminA',
+        ),
+        isFalse,
+      );
     });
 
     test('à l\'instant exact de la visite : déjà vu', () {
-      expect(estNonVu(_e('a', ajout: _t(2)), moiId: 'adminA', vuLe: _t(2)), isFalse);
+      expect(
+        estNonVu(
+          _e('a', ajout: _t(2)),
+          moiId: 'adminA',
+          vuLe: _t(2),
+        ),
+        isFalse,
+      );
     });
   });
 
@@ -179,18 +214,24 @@ void main() {
     });
 
     test('dans un groupe : à acheter d\'abord (récent en premier), obtenues ensuite', () {
-      final plus = grouperParAuteur(entrees, moiId: 'adminA').firstWhere((x) => x.auteurId == 'plusA');
+      final plus = grouperParAuteur(
+        entrees,
+        moiId: 'adminA',
+      ).firstWhere((x) => x.auteurId == 'plusA');
       expect(plus.entrees.map((e) => e.id), ['a3', 'a1', 'a2']);
       expect(plus.aAcheter, 2);
       expect(plus.obtenues, 1);
     });
 
-    test('pastille : changements des autres seulement (mon groupe à moi : aucun)', () {
-      final g = grouperParAuteur(entrees, moiId: 'adminA');
-      final parId = {for (final x in g) x.auteurId: x.nonVus};
-      expect(parId, {'adminA': 0, 'plusB': 1, 'plusA': 3});
-      expect(totalNonVus(g), 4);
-    });
+    test(
+      'pastille : changements des autres seulement (mon groupe à moi : aucun)',
+      () {
+        final g = grouperParAuteur(entrees, moiId: 'adminA');
+        final parId = {for (final x in g) x.auteurId: x.nonVus};
+        expect(parId, {'adminA': 0, 'plusB': 1, 'plusA': 3});
+        expect(totalNonVus(g), 4);
+      },
+    );
 
     test('la visite d\'un groupe n\'efface que ce groupe', () {
       final vus = {'plusA': _t(10)};
@@ -202,14 +243,27 @@ void main() {
 
     test('une nouvelle demande après la visite rallume la pastille de cette personne', () {
       final vus = {'plusA': _t(10), 'plusB': _t(10)};
-      final avec = [...entrees, _e('a4', auteur: 'plusA', nom: 'Plus A', ajout: _t(11))];
+      final avec = [
+        ...entrees,
+        _e('a4', auteur: 'plusA', nom: 'Plus A', ajout: _t(11)),
+      ];
       final g = grouperParAuteur(avec, moiId: 'adminA', vus: vus);
-      expect({for (final x in g) x.auteurId: x.nonVus}, {'adminA': 0, 'plusB': 0, 'plusA': 1});
+      expect(
+        {for (final x in g) x.auteurId: x.nonVus},
+        {'adminA': 0, 'plusB': 0, 'plusA': 1},
+      );
     });
 
     test('une modification (ex. quantité changée) compte aussi', () {
       final vus = {'plusA': _t(10)};
-      final modifiee = _e('a1', auteur: 'plusA', nom: 'Plus A', ajout: _t(1), modif: _t(12), modifiePar: 'plusA');
+      final modifiee = _e(
+        'a1',
+        auteur: 'plusA',
+        nom: 'Plus A',
+        ajout: _t(1),
+        modif: _t(12),
+        modifiePar: 'plusA',
+      );
       final g = grouperParAuteur([modifiee], moiId: 'adminA', vus: vus);
       expect(g.single.nonVus, 1);
     });
@@ -220,7 +274,10 @@ void main() {
         _e('2', auteur: 'p', nom: 'Nouveau nom', ajout: _t(5)),
         _e('3', auteur: '', nom: '', ajout: _t(1)),
       ], moiId: 'adminA');
-      expect(g.map((x) => x.nom), containsAll(['Nouveau nom', nomAuteurInconnu]));
+      expect(
+        g.map((x) => x.nom),
+        containsAll(['Nouveau nom', nomAuteurInconnu]),
+      );
     });
 
     test('aucune demande : aucun groupe', () {
@@ -230,7 +287,11 @@ void main() {
     test('clé de visite : jamais vide', () {
       expect(cleVu('plusA'), 'plusA');
       expect(cleVu(''), '_inconnu');
-      final g = grouperParAuteur([_e('1', auteur: '', nom: '')], moiId: 'adminA', vus: {'_inconnu': _t(9)});
+      final g = grouperParAuteur(
+        [_e('1', auteur: '', nom: '')],
+        moiId: 'adminA',
+        vus: {'_inconnu': _t(9)},
+      );
       expect(g.single.nonVus, 0);
     });
   });
@@ -239,7 +300,11 @@ void main() {
     test('lit les dates par personne, ignore le reste', () {
       final m = vusDepuisDonnees({
         'companyId': 'A',
-        'vus': {'plusA': Timestamp.fromDate(_t(5)), 'x': 'pas une date', 'plusB': Timestamp.fromDate(_t(6))},
+        'vus': {
+          'plusA': Timestamp.fromDate(_t(5)),
+          'x': 'pas une date',
+          'plusB': Timestamp.fromDate(_t(6)),
+        },
       });
       expect(m, {'plusA': _t(5).toLocal(), 'plusB': _t(6).toLocal()});
     });
@@ -252,10 +317,23 @@ void main() {
   });
 
   group('filtre par personne', () {
-    final liste = [_e('a', auteur: 'p1'), _e('b', auteur: 'p2'), _e('c', auteur: 'p1')];
-    test('une personne', () => expect(filtrerParAuteur(liste, 'p1').map((e) => e.id), ['a', 'c']));
-    test('tout le monde', () => expect(filtrerParAuteur(liste, null).length, 3));
-    test('personne inconnue', () => expect(filtrerParAuteur(liste, 'zz'), isEmpty));
+    final liste = [
+      _e('a', auteur: 'p1'),
+      _e('b', auteur: 'p2'),
+      _e('c', auteur: 'p1'),
+    ];
+    test(
+      'une personne',
+      () => expect(filtrerParAuteur(liste, 'p1').map((e) => e.id), ['a', 'c']),
+    );
+    test(
+      'tout le monde',
+      () => expect(filtrerParAuteur(liste, null).length, 3),
+    );
+    test(
+      'personne inconnue',
+      () => expect(filtrerParAuteur(liste, 'zz'), isEmpty),
+    );
   });
 
   group('données écrites dans Firestore', () {
@@ -271,11 +349,22 @@ void main() {
         auteur: contremaitre,
       );
       expect(d.keys.toSet(), {
-        'companyId', 'chantierId', 'texte', 'complete', 'dateAjout', 'photoUrl', 'photoUrls', 'quantite',
-        'ajoutePar', 'ajouteParNom',
+        'companyId',
+        'chantierId',
+        'texte',
+        'complete',
+        'dateAjout',
+        'photoUrl',
+        'photoUrls',
+        'quantite',
+        'ajoutePar',
+        'ajouteParNom',
       });
       expect(d['photoUrl'], 'https://exemple.test/p.jpg');
-      expect(d['photoUrls'], ['https://exemple.test/p.jpg', 'https://exemple.test/q.jpg']);
+      expect(d['photoUrls'], [
+        'https://exemple.test/p.jpg',
+        'https://exemple.test/q.jpg',
+      ]);
       expect(d['chantierId'], '_general');
       expect(d['ajoutePar'], 'plusA');
       expect(d['ajouteParNom'], 'Plus A');
@@ -283,12 +372,19 @@ void main() {
       expect(d['dateAjout'], isA<FieldValue>());
     });
 
-    test('nouvelle entrée Général sans auteur : refusée (les règles l\'exigent)', () {
-      expect(
-        () => donneesNouvelleEntree(companyId: 'A', chantierId: idChantierGeneral, texte: 'x'),
-        throwsArgumentError,
-      );
-    });
+    test(
+      'nouvelle entrée Général sans auteur : refusée (les règles l\'exigent)',
+      () {
+        expect(
+          () => donneesNouvelleEntree(
+            companyId: 'A',
+            chantierId: idChantierGeneral,
+            texte: 'x',
+          ),
+          throwsArgumentError,
+        );
+      },
+    );
 
     test('nouvelle entrée d\'un vrai chantier : exactement comme avant, sans auteur', () {
       final d = donneesNouvelleEntree(
@@ -298,35 +394,73 @@ void main() {
         quantite: '',
         auteur: contremaitre, // ignoré : ce n'est pas Général
       );
-      expect(d.keys.toSet(), {'companyId', 'chantierId', 'texte', 'complete', 'dateAjout'});
+      expect(d.keys.toSet(), {
+        'companyId',
+        'chantierId',
+        'texte',
+        'complete',
+        'dateAjout',
+      });
     });
 
     test('quantité vide ou absente : pas de champ', () {
       expect(
-        donneesNouvelleEntree(companyId: 'A', chantierId: 'chA', texte: 'x', quantite: '').containsKey('quantite'),
+        donneesNouvelleEntree(
+          companyId: 'A',
+          chantierId: 'chA',
+          texte: 'x',
+          quantite: '',
+        ).containsKey('quantite'),
         isFalse,
       );
       expect(
-        donneesNouvelleEntree(companyId: 'A', chantierId: 'chA', texte: 'x').containsKey('quantite'),
+        donneesNouvelleEntree(
+          companyId: 'A',
+          chantierId: 'chA',
+          texte: 'x',
+        ).containsKey('quantite'),
         isFalse,
       );
     });
 
     test('obtenu / manquant : Général signe (dateModif, modifiePar)', () {
-      final obtenu = donneesCompletion(complete: true, general: true, modifieParId: 'adminA');
-      expect(obtenu.keys.toSet(), {'complete', 'dateComplete', 'dateModif', 'modifiePar'});
+      final obtenu = donneesCompletion(
+        complete: true,
+        general: true,
+        modifieParId: 'adminA',
+      );
+      expect(obtenu.keys.toSet(), {
+        'complete',
+        'dateComplete',
+        'dateModif',
+        'modifiePar',
+      });
       expect(obtenu['complete'], true);
       expect(obtenu['dateComplete'], isA<FieldValue>());
       expect(obtenu['modifiePar'], 'adminA');
-      final manquant = donneesCompletion(complete: false, general: true, modifieParId: 'adminA');
+      final manquant = donneesCompletion(
+        complete: false,
+        general: true,
+        modifieParId: 'adminA',
+      );
       expect(manquant['complete'], false);
-      expect(manquant['dateComplete'], isA<FieldValue>()); // FieldValue.delete()
+      expect(
+        manquant['dateComplete'],
+        isA<FieldValue>(),
+      ); // FieldValue.delete()
     });
 
-    test('obtenu / manquant d\'un vrai chantier : sans signature (inchangé)', () {
-      final d = donneesCompletion(complete: true, general: false, modifieParId: 'adminA');
-      expect(d.keys.toSet(), {'complete', 'dateComplete'});
-    });
+    test(
+      'obtenu / manquant d\'un vrai chantier : sans signature (inchangé)',
+      () {
+        final d = donneesCompletion(
+          complete: true,
+          general: false,
+          modifieParId: 'adminA',
+        );
+        expect(d.keys.toSet(), {'complete', 'dateComplete'});
+      },
+    );
 
     test('modification Général : texte, quantité, photos + signature', () {
       final d = donneesModification(
@@ -336,24 +470,46 @@ void main() {
         general: true,
         modifieParId: 'plusA',
       );
-      expect(d.keys.toSet(), {'texte', 'quantite', 'photoUrl', 'photoUrls', 'dateModif', 'modifiePar'});
+      expect(d.keys.toSet(), {
+        'texte',
+        'quantite',
+        'photoUrl',
+        'photoUrls',
+        'dateModif',
+        'modifiePar',
+      });
       expect(d['photoUrl'], 'https://exemple.test/n.jpg');
       expect(d['modifiePar'], 'plusA');
     });
 
-    test('modification : photos null = inchangées ; liste vide = toutes retirées', () {
-      final inchangees = donneesModification(texte: 'x', general: false);
-      expect(inchangees.containsKey('photoUrl'), isFalse);
-      expect(inchangees.containsKey('photoUrls'), isFalse);
-      final retirees = donneesModification(texte: 'x', photos: const [], general: false);
-      expect(retirees['photoUrl'], isA<FieldValue>()); // FieldValue.delete()
-      expect(retirees['photoUrls'], isA<FieldValue>());
-    });
+    test(
+      'modification : photos null = inchangées ; liste vide = toutes retirées',
+      () {
+        final inchangees = donneesModification(texte: 'x', general: false);
+        expect(inchangees.containsKey('photoUrl'), isFalse);
+        expect(inchangees.containsKey('photoUrls'), isFalse);
+        final retirees = donneesModification(
+          texte: 'x',
+          photos: const [],
+          general: false,
+        );
+        expect(retirees['photoUrl'], isA<FieldValue>()); // FieldValue.delete()
+        expect(retirees['photoUrls'], isA<FieldValue>());
+      },
+    );
 
     test('modification d\'un chantier : sans signature ; sans quantité pour les travaux', () {
-      final d = donneesModification(texte: 'Coffrage', general: false, modifieParId: 'plusA');
+      final d = donneesModification(
+        texte: 'Coffrage',
+        general: false,
+        modifieParId: 'plusA',
+      );
       expect(d.keys.toSet(), {'texte'});
-      final avecQuantite = donneesModification(texte: 'Clous', quantite: '', general: false);
+      final avecQuantite = donneesModification(
+        texte: 'Clous',
+        quantite: '',
+        general: false,
+      );
       expect(avecQuantite.keys.toSet(), {'texte', 'quantite'});
     });
   });
@@ -362,7 +518,10 @@ void main() {
     test('une demande marquée « non lu » compte, même déjà vue ou à moi', () {
       final vue = _e('a', ajout: _t(1));
       expect(estNonVu(vue, moiId: 'adminA', vuLe: _t(9)), isFalse);
-      expect(estNonVu(vue, moiId: 'adminA', vuLe: _t(9), marqueNonLu: true), isTrue);
+      expect(
+        estNonVu(vue, moiId: 'adminA', vuLe: _t(9), marqueNonLu: true),
+        isTrue,
+      );
       final miennne = _e('b', auteur: 'adminA');
       expect(estNonVu(miennne, moiId: 'adminA', marqueNonLu: true), isTrue);
     });
@@ -381,15 +540,31 @@ void main() {
       ];
       final vus = {'plusA': _t(10)};
       // Tout est vu : rien.
-      expect(totalNonVus(grouperParAuteur(entrees, moiId: 'adminA', vus: vus)), 0);
+      expect(
+        totalNonVus(grouperParAuteur(entrees, moiId: 'adminA', vus: vus)),
+        0,
+      );
       // Deux demandes de plusA et une des miennes marquées « non lu ».
-      final g = grouperParAuteur(entrees, moiId: 'adminA', vus: vus, nonLus: {'a1', 'a3', 'c1', 'fantome'});
-      expect({for (final x in g) x.auteurId: x.nonVus}, {'adminA': 1, 'plusA': 2});
+      final g = grouperParAuteur(
+        entrees,
+        moiId: 'adminA',
+        vus: vus,
+        nonLus: {'a1', 'a3', 'c1', 'fantome'},
+      );
+      expect(
+        {for (final x in g) x.auteurId: x.nonVus},
+        {'adminA': 1, 'plusA': 2},
+      );
       expect(totalNonVus(g), 3);
     });
 
     test('lecture des drapeaux : seulement « true », le reste est ignoré', () {
-      expect(nonLusDepuisDonnees({'nonLus': {'a': true, 'b': false, 'c': 'oui', 'd': true}}), {'a', 'd'});
+      expect(
+        nonLusDepuisDonnees({
+          'nonLus': {'a': true, 'b': false, 'c': 'oui', 'd': true},
+        }),
+        {'a', 'd'},
+      );
       expect(nonLusDepuisDonnees({'nonLus': 'oui'}), isEmpty);
       expect(nonLusDepuisDonnees({}), isEmpty);
       expect(nonLusDepuisDonnees(null), isEmpty);
@@ -409,18 +584,32 @@ void main() {
   });
 
   group('requête de la liste Général', () {
-    test('un contremaître impose son identifiant, un admin aucune restriction', () {
-      expect(auteurImposeALaRequete(estAdmin: false, moiId: 'plusA'), 'plusA');
-      expect(auteurImposeALaRequete(estAdmin: true, moiId: 'adminA'), isNull);
-    });
+    test(
+      'un contremaître impose son identifiant, un admin aucune restriction',
+      () {
+        expect(
+          auteurImposeALaRequete(estAdmin: false, moiId: 'plusA'),
+          'plusA',
+        );
+        expect(auteurImposeALaRequete(estAdmin: true, moiId: 'adminA'), isNull);
+      },
+    );
   });
 
   group('tri des demandes (liste Général d\'un contremaître)', () {
     MapEntry<String, Map<String, dynamic>> m(String id, DateTime? d) =>
-        MapEntry(id, {'texte': id, if (d != null) 'dateAjout': Timestamp.fromDate(d)});
+        MapEntry(id, {
+          'texte': id,
+          if (d != null) 'dateAjout': Timestamp.fromDate(d),
+        });
 
     test('récent d\'abord ; écriture en cours (sans heure) tout en haut', () {
-      final tri = ordonnerParRecence([m('vieux', _t(1)), m('recent', _t(5)), m('enCours', null), m('milieu', _t(3))]);
+      final tri = ordonnerParRecence([
+        m('vieux', _t(1)),
+        m('recent', _t(5)),
+        m('enCours', null),
+        m('milieu', _t(3)),
+      ]);
       expect(tri.map((e) => e.key), ['enCours', 'recent', 'milieu', 'vieux']);
     });
 
@@ -436,29 +625,56 @@ void main() {
   group('Liste d\'achats : transfert depuis Général', () {
     final admin = _emp('adminA', 'Admin A', EmployeeRole.admin);
 
-    test('l\'article garde le texte, la quantité, la photo et les deux personnes', () {
-      final d = donneesTransfert(
-        _e('x', auteur: 'plusA', nom: 'Plus A', texte: 'Sangles', quantite: '4', photos: ['https://exemple.test/p.jpg', 'https://exemple.test/q.jpg']),
-        admin,
-      );
-      expect(d['photoUrls'], ['https://exemple.test/p.jpg', 'https://exemple.test/q.jpg']);
-      expect(d.keys.toSet(), {
-        'companyId', 'texte', 'quantite', 'photoUrl', 'photoUrls', 'demandeParId', 'demandeParNom',
-        'transfereParId', 'transfereParNom', 'origine', 'origineId', 'complete', 'dateAjout',
-      });
-      expect(d['origineId'], 'x'); // le lien vers la demande d'origine
-      expect(d['companyId'], 'A');
-      expect(d['texte'], 'Sangles');
-      expect(d['quantite'], '4');
-      expect(d['photoUrl'], 'https://exemple.test/p.jpg');
-      expect(d['demandeParId'], 'plusA');
-      expect(d['demandeParNom'], 'Plus A');
-      expect(d['transfereParId'], 'adminA');
-      expect(d['transfereParNom'], 'Admin A');
-      expect(d['origine'], 'general');
-      expect(d['complete'], false);
-      expect(d['dateAjout'], isA<FieldValue>());
-    });
+    test(
+      'l\'article garde le texte, la quantité, la photo et les deux personnes',
+      () {
+        final d = donneesTransfert(
+          _e(
+            'x',
+            auteur: 'plusA',
+            nom: 'Plus A',
+            texte: 'Sangles',
+            quantite: '4',
+            photos: [
+              'https://exemple.test/p.jpg',
+              'https://exemple.test/q.jpg',
+            ],
+          ),
+          admin,
+        );
+        expect(d['photoUrls'], [
+          'https://exemple.test/p.jpg',
+          'https://exemple.test/q.jpg',
+        ]);
+        expect(d.keys.toSet(), {
+          'companyId',
+          'texte',
+          'quantite',
+          'photoUrl',
+          'photoUrls',
+          'demandeParId',
+          'demandeParNom',
+          'transfereParId',
+          'transfereParNom',
+          'origine',
+          'origineId',
+          'complete',
+          'dateAjout',
+        });
+        expect(d['origineId'], 'x'); // le lien vers la demande d'origine
+        expect(d['companyId'], 'A');
+        expect(d['texte'], 'Sangles');
+        expect(d['quantite'], '4');
+        expect(d['photoUrl'], 'https://exemple.test/p.jpg');
+        expect(d['demandeParId'], 'plusA');
+        expect(d['demandeParNom'], 'Plus A');
+        expect(d['transfereParId'], 'adminA');
+        expect(d['transfereParNom'], 'Admin A');
+        expect(d['origine'], 'general');
+        expect(d['complete'], false);
+        expect(d['dateAjout'], isA<FieldValue>());
+      },
+    );
 
     test('sans quantité ni photo : ces champs sont absents (les règles les veulent valides)', () {
       final d = donneesTransfert(_e('x'), admin);
@@ -486,9 +702,15 @@ void main() {
 
     test('lecture d\'un article', () {
       final x = ArticleAchat.fromMap('id1', {
-        'texte': 'Cordes', 'quantite': 3, 'photoUrl': 'https://exemple.test/c.jpg',
-        'demandeParId': 'plusB', 'demandeParNom': 'Bernard', 'transfereParNom': 'Admin A',
-        'complete': true, 'dateAjout': Timestamp.fromDate(_t(2)), 'dateComplete': Timestamp.fromDate(_t(4)),
+        'texte': 'Cordes',
+        'quantite': 3,
+        'photoUrl': 'https://exemple.test/c.jpg',
+        'demandeParId': 'plusB',
+        'demandeParNom': 'Bernard',
+        'transfereParNom': 'Admin A',
+        'complete': true,
+        'dateAjout': Timestamp.fromDate(_t(2)),
+        'dateComplete': Timestamp.fromDate(_t(4)),
       });
       expect(x.texte, 'Cordes');
       expect(x.quantite, '3');
@@ -514,7 +736,10 @@ void main() {
       expect(g.map((x) => x.nom), ['Bernard', 'Plus A']);
       expect(g[1].articles.map((x) => x.id), ['3', '2']); // récent d'abord
       expect(g.expand((x) => x.articles).any((x) => x.complete), isFalse);
-      expect(articlesAchetes(liste).map((x) => x.id), ['5', '4']); // dernier acheté d'abord
+      expect(articlesAchetes(liste).map((x) => x.id), [
+        '5',
+        '4',
+      ]); // dernier acheté d'abord
     });
 
     test('aucun article : aucun groupe', () {
@@ -523,22 +748,45 @@ void main() {
     });
   });
 
-
   group('photos d\'une demande', () {
-    test('photosDe : toutes les photos, sinon la seule photoUrl, sinon rien', () {
-      expect(photosDe({'photoUrls': ['a', 'b', 'c'], 'photoUrl': 'a'}), ['a', 'b', 'c']);
-      expect(photosDe({'photoUrl': 'seule'}), ['seule']);
-      expect(photosDe({}), isEmpty);
-      expect(photosDe({'photoUrls': [], 'photoUrl': 'seule'}), ['seule']);
-      expect(photosDe({'photoUrls': 'pas une liste', 'photoUrl': ''}), isEmpty);
-      expect(photosDe({'photoUrls': ['a', 7, '', 'b']}), ['a', 'b']);
-    });
+    test(
+      'photosDe : toutes les photos, sinon la seule photoUrl, sinon rien',
+      () {
+        expect(
+          photosDe({
+            'photoUrls': ['a', 'b', 'c'],
+            'photoUrl': 'a',
+          }),
+          ['a', 'b', 'c'],
+        );
+        expect(photosDe({'photoUrl': 'seule'}), ['seule']);
+        expect(photosDe({}), isEmpty);
+        expect(photosDe({'photoUrls': [], 'photoUrl': 'seule'}), ['seule']);
+        expect(
+          photosDe({'photoUrls': 'pas une liste', 'photoUrl': ''}),
+          isEmpty,
+        );
+        expect(
+          photosDe({
+            'photoUrls': ['a', 7, '', 'b'],
+          }),
+          ['a', 'b'],
+        );
+      },
+    );
 
     test('lecture d\'une demande : les photos viennent de photoUrls, ou de l\'ancienne photoUrl', () {
-      final nouvelle = EntreeMateriel.fromMap('n', {'texte': 'x', 'photoUrl': 'a', 'photoUrls': ['a', 'b']});
+      final nouvelle = EntreeMateriel.fromMap('n', {
+        'texte': 'x',
+        'photoUrl': 'a',
+        'photoUrls': ['a', 'b'],
+      });
       expect(nouvelle.photos, ['a', 'b']);
       expect(nouvelle.photoUrl, 'a');
-      final ancienne = EntreeMateriel.fromMap('o', {'texte': 'x', 'photoUrl': 'seule'});
+      final ancienne = EntreeMateriel.fromMap('o', {
+        'texte': 'x',
+        'photoUrl': 'seule',
+      });
       expect(ancienne.photos, ['seule']);
       final sans = EntreeMateriel.fromMap('s', {'texte': 'x'});
       expect(sans.photos, isEmpty);
@@ -547,7 +795,10 @@ void main() {
 
     test('champsPhotos : la première + toutes, 6 au plus ; rien si vide', () {
       final d = champsPhotos(['a', 'b']);
-      expect(d, {'photoUrl': 'a', 'photoUrls': ['a', 'b']});
+      expect(d, {
+        'photoUrl': 'a',
+        'photoUrls': ['a', 'b'],
+      });
       expect(champsPhotos(const []), isEmpty);
       final beaucoup = champsPhotos([for (var i = 0; i < 9; i++) 'p$i']);
       expect((beaucoup['photoUrls'] as List).length, maxPhotosParEntree);
@@ -559,7 +810,11 @@ void main() {
     final admin = _emp('adminA', 'Admin A', EmployeeRole.admin);
 
     test('lecture : marquée transférée, avec le nom de l\'admin', () {
-      final e = EntreeMateriel.fromMap('t', {'texte': 'x', 'transfere': true, 'transfereParNom': 'Admin A'});
+      final e = EntreeMateriel.fromMap('t', {
+        'texte': 'x',
+        'transfere': true,
+        'transfereParNom': 'Admin A',
+      });
       expect(e.transfere, isTrue);
       expect(e.transfereParNom, 'Admin A');
       expect(EntreeMateriel.fromMap('u', {'texte': 'x'}).transfere, isFalse);
@@ -575,14 +830,22 @@ void main() {
       ], moiId: 'adminA').single;
       expect(g.aAcheter, 2); // a, e
       expect(g.enAchat, 1); // b
-      expect(g.obtenues, 2); // c, d (même transférée, une demande faite est obtenue)
+      expect(
+        g.obtenues,
+        2,
+      ); // c, d (même transférée, une demande faite est obtenue)
       // À acheter d'abord, puis celles dans la Liste d'achats, puis les obtenues.
       expect(g.entrees.map((x) => x.id), ['a', 'e', 'b', 'c', 'd']);
     });
 
     test('marquer le transfert : nom de l\'admin + signature', () {
       final d = donneesMarquerTransfert(admin);
-      expect(d.keys.toSet(), {'transfere', 'transfereParNom', 'dateModif', 'modifiePar'});
+      expect(d.keys.toSet(), {
+        'transfere',
+        'transfereParNom',
+        'dateModif',
+        'modifiePar',
+      });
       expect(d['transfere'], true);
       expect(d['transfereParNom'], 'Admin A');
       expect(d['modifiePar'], 'adminA');
@@ -590,14 +853,30 @@ void main() {
 
     test('retirer le transfert : les deux champs ensemble, signés', () {
       final d = donneesRetirerTransfert('adminA');
-      expect(d.keys.toSet(), {'transfere', 'transfereParNom', 'dateModif', 'modifiePar'});
+      expect(d.keys.toSet(), {
+        'transfere',
+        'transfereParNom',
+        'dateModif',
+        'modifiePar',
+      });
       expect(d['transfere'], isA<FieldValue>());
       expect(d['transfereParNom'], isA<FieldValue>());
     });
 
     test('copieAvec : change seulement ce qu\'on demande', () {
-      final e = _e('x', texte: 'Sangles', quantite: '4', photos: ['a'], auteur: 'plusA', nom: 'Plus A');
-      final c = e.copieAvec(transfere: true, transfereParNom: 'Admin A', complete: true);
+      final e = _e(
+        'x',
+        texte: 'Sangles',
+        quantite: '4',
+        photos: ['a'],
+        auteur: 'plusA',
+        nom: 'Plus A',
+      );
+      final c = e.copieAvec(
+        transfere: true,
+        transfereParNom: 'Admin A',
+        complete: true,
+      );
       expect(c.transfere, isTrue);
       expect(c.complete, isTrue);
       expect(c.texte, 'Sangles');
@@ -609,7 +888,10 @@ void main() {
 
     test('article de la Liste d\'achats : photos et lien vers la demande', () {
       final a = ArticleAchat.fromMap('z', {
-        'texte': 'Sangles', 'photoUrl': 'a', 'photoUrls': ['a', 'b'], 'origineId': 'dem1',
+        'texte': 'Sangles',
+        'photoUrl': 'a',
+        'photoUrls': ['a', 'b'],
+        'origineId': 'dem1',
       });
       expect(a.photos, ['a', 'b']);
       expect(a.photoUrl, 'a');
@@ -617,5 +899,4 @@ void main() {
       expect(ArticleAchat.fromMap('y', {'texte': 'x'}).origineId, '');
     });
   });
-
 }

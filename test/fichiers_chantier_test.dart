@@ -22,9 +22,12 @@ void main() {
 
   group('supprimerElementsChantier', () {
     test('le fichier du Storage part avant la fiche', () async {
-      final r = await supprimerElementsChantier('chantier_photos', const [
-        ElementChantier('p1', 'chantiers/A/c/photos/1.jpg'),
-      ], supprimerFichier: fichierQui(), supprimerFiche: ficheQui());
+      final r = await supprimerElementsChantier(
+        'chantier_photos',
+        const [ElementChantier('p1', 'chantiers/A/c/photos/1.jpg')],
+        supprimerFichier: fichierQui(),
+        supprimerFiche: ficheQui(),
+      );
       expect(journal, [
         'fichier:chantiers/A/c/photos/1.jpg',
         'fiche:chantier_photos/p1',
@@ -33,61 +36,70 @@ void main() {
       expect(r.toutSupprime, isTrue);
     });
 
-    test('un fichier déjà absent du Storage n\'empêche pas la suppression', () async {
-      final r = await supprimerElementsChantier(
-        'chantier_documents',
-        const [ElementChantier('d1', 'chantiers/A/c/documents/plan.pdf')],
-        supprimerFichier: fichierQui({
-          'chantiers/A/c/documents/plan.pdf': FirebaseException(
-            plugin: 'firebase_storage',
-            code: 'object-not-found',
-          ),
-        }),
-        supprimerFiche: ficheQui(),
-      );
-      expect(journal.last, 'fiche:chantier_documents/d1');
-      expect(r.supprimes, 1);
-      expect(r.echecs, 0);
-    });
+    test(
+      'un fichier déjà absent du Storage n\'empêche pas la suppression',
+      () async {
+        final r = await supprimerElementsChantier(
+          'chantier_documents',
+          const [ElementChantier('d1', 'chantiers/A/c/documents/plan.pdf')],
+          supprimerFichier: fichierQui({
+            'chantiers/A/c/documents/plan.pdf': FirebaseException(
+              plugin: 'firebase_storage',
+              code: 'object-not-found',
+            ),
+          }),
+          supprimerFiche: ficheQui(),
+        );
+        expect(journal.last, 'fiche:chantier_documents/d1');
+        expect(r.supprimes, 1);
+        expect(r.echecs, 0);
+      },
+    );
 
-    test('fichier impossible à supprimer : la fiche reste, les autres continuent', () async {
-      final r = await supprimerElementsChantier(
-        'chantier_photos',
-        const [
-          ElementChantier('p1', 'a.jpg'),
-          ElementChantier('p2', 'b.jpg'),
-          ElementChantier('p3', 'c.jpg'),
-        ],
-        supprimerFichier: fichierQui({
-          'b.jpg': FirebaseException(
-            plugin: 'firebase_storage',
-            code: 'unauthorized',
-          ),
-        }),
-        supprimerFiche: ficheQui(),
-      );
-      expect(journal, [
-        'fichier:a.jpg',
-        'fiche:chantier_photos/p1',
-        'fichier:b.jpg', // refusé : pas de fiche supprimée pour p2
-        'fichier:c.jpg',
-        'fiche:chantier_photos/p3',
-      ]);
-      expect(r.supprimes, 2);
-      expect(r.echecs, 1);
-      expect(r.toutSupprime, isFalse);
-    });
+    test(
+      'fichier impossible à supprimer : la fiche reste, les autres continuent',
+      () async {
+        final r = await supprimerElementsChantier(
+          'chantier_photos',
+          const [
+            ElementChantier('p1', 'a.jpg'),
+            ElementChantier('p2', 'b.jpg'),
+            ElementChantier('p3', 'c.jpg'),
+          ],
+          supprimerFichier: fichierQui({
+            'b.jpg': FirebaseException(
+              plugin: 'firebase_storage',
+              code: 'unauthorized',
+            ),
+          }),
+          supprimerFiche: ficheQui(),
+        );
+        expect(journal, [
+          'fichier:a.jpg',
+          'fiche:chantier_photos/p1',
+          'fichier:b.jpg', // refusé : pas de fiche supprimée pour p2
+          'fichier:c.jpg',
+          'fiche:chantier_photos/p3',
+        ]);
+        expect(r.supprimes, 2);
+        expect(r.echecs, 1);
+        expect(r.toutSupprime, isFalse);
+      },
+    );
 
-    test('toute autre erreur de Storage (réseau, droits) compte comme un échec', () async {
-      final r = await supprimerElementsChantier(
-        'chantier_photos',
-        const [ElementChantier('p1', 'a.jpg')],
-        supprimerFichier: fichierQui({'a.jpg': StateError('réseau')}),
-        supprimerFiche: ficheQui(),
-      );
-      expect(journal, ['fichier:a.jpg']);
-      expect(r.echecs, 1);
-    });
+    test(
+      'toute autre erreur de Storage (réseau, droits) compte comme un échec',
+      () async {
+        final r = await supprimerElementsChantier(
+          'chantier_photos',
+          const [ElementChantier('p1', 'a.jpg')],
+          supprimerFichier: fichierQui({'a.jpg': StateError('réseau')}),
+          supprimerFiche: ficheQui(),
+        );
+        expect(journal, ['fichier:a.jpg']);
+        expect(r.echecs, 1);
+      },
+    );
 
     test('fiche refusée : comptée comme échec', () async {
       final r = await supprimerElementsChantier(
@@ -115,7 +127,13 @@ void main() {
     });
 
     test('seules les photos et les documents peuvent être supprimés ainsi', () {
-      for (final collection in ['chantiers', 'companies', 'employees', 'feuilles_temps', '']) {
+      for (final collection in [
+        'chantiers',
+        'companies',
+        'employees',
+        'feuilles_temps',
+        '',
+      ]) {
         expect(
           () => supprimerElementsChantier(
             collection,

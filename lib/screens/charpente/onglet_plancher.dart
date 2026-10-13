@@ -292,8 +292,7 @@ class OngletPlancher extends StatelessWidget {
                   max: 5000,
                   decimales: 0,
                   aide: '1 lb de 10d × 1 1/2 po : environ 120',
-                  onChange: (v) =>
-                      _set(_p.copieAvec(clousParBoite: v.round())),
+                  onChange: (v) => _set(_p.copieAvec(clousParBoite: v.round())),
                 ),
               ),
               const SizedBox(width: 8),
@@ -1024,7 +1023,9 @@ class _Resultats extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w700),
               ),
               for (final e in r.poutres!.bois.parLongueur.entries)
-                Text('${e.value} × ${formatPlanche(e.key, metrique: metrique)}'),
+                Text(
+                  '${e.value} × ${formatPlanche(e.key, metrique: metrique)}',
+                ),
               if (r.poutres!.pattes != null) ...[
                 const SizedBox(height: 8),
                 const Text(

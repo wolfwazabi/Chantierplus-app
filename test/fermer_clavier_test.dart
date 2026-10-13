@@ -55,17 +55,24 @@ void main() {
     );
   }
 
-  testWidgets('toucher une zone vide ferme le clavier (le champ perd le focus)', (tester) async {
-    await ouvrir(tester);
-    await tester.tap(find.byKey(const ValueKey('a')));
-    await tester.pump();
-    expect(foyerA.hasFocus, isTrue);
-    await tester.tapAt(const Offset(400, 500)); // dans la liste, sous les tuiles
-    await tester.pump();
-    expect(foyerA.hasFocus, isFalse);
-  });
+  testWidgets(
+    'toucher une zone vide ferme le clavier (le champ perd le focus)',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.tap(find.byKey(const ValueKey('a')));
+      await tester.pump();
+      expect(foyerA.hasFocus, isTrue);
+      await tester.tapAt(
+        const Offset(400, 500),
+      ); // dans la liste, sous les tuiles
+      await tester.pump();
+      expect(foyerA.hasFocus, isFalse);
+    },
+  );
 
-  testWidgets('toucher l\'espace vide d\'une liste ferme aussi le clavier', (tester) async {
+  testWidgets('toucher l\'espace vide d\'une liste ferme aussi le clavier', (
+    tester,
+  ) async {
     await ouvrir(tester);
     await tester.tap(find.byKey(const ValueKey('b')));
     await tester.pump();
@@ -91,17 +98,22 @@ void main() {
     expect(tuiles, 1);
   });
 
-  testWidgets('toucher un autre champ passe le focus à ce champ (pas de clavier fermé puis rouvert)', (tester) async {
-    await ouvrir(tester);
-    await tester.tap(find.byKey(const ValueKey('a')));
-    await tester.pump();
-    await tester.tap(find.byKey(const ValueKey('b')));
-    await tester.pump();
-    expect(foyerA.hasFocus, isFalse);
-    expect(foyerB.hasFocus, isTrue);
-  });
+  testWidgets(
+    'toucher un autre champ passe le focus à ce champ (pas de clavier fermé puis rouvert)',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.tap(find.byKey(const ValueKey('a')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('b')));
+      await tester.pump();
+      expect(foyerA.hasFocus, isFalse);
+      expect(foyerB.hasFocus, isTrue);
+    },
+  );
 
-  testWidgets('toucher dans le champ déjà actif le garde actif', (tester) async {
+  testWidgets('toucher dans le champ déjà actif le garde actif', (
+    tester,
+  ) async {
     await ouvrir(tester);
     await tester.tap(find.byKey(const ValueKey('a')));
     await tester.pump();
@@ -110,21 +122,27 @@ void main() {
     expect(foyerA.hasFocus, isTrue);
   });
 
-  testWidgets('sans champ actif : un toucher dans le vide ne fait rien de mal', (tester) async {
-    await ouvrir(tester);
-    await tester.tap(find.byKey(const ValueKey('vide')));
-    await tester.pump();
-    expect(foyerA.hasFocus, isFalse);
-    expect(tester.takeException(), isNull);
-  });
+  testWidgets(
+    'sans champ actif : un toucher dans le vide ne fait rien de mal',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.tap(find.byKey(const ValueKey('vide')));
+      await tester.pump();
+      expect(foyerA.hasFocus, isFalse);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
-  testWidgets('faire défiler la liste ne ferme pas le clavier par erreur de toucher', (tester) async {
-    await ouvrir(tester);
-    await tester.tap(find.byKey(const ValueKey('a')));
-    await tester.pump();
-    await tester.drag(find.byType(ListView), const Offset(0, -100));
-    await tester.pump();
-    // Un glissement n'est pas un toucher : le champ garde son focus.
-    expect(foyerA.hasFocus, isTrue);
-  });
+  testWidgets(
+    'faire défiler la liste ne ferme pas le clavier par erreur de toucher',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.tap(find.byKey(const ValueKey('a')));
+      await tester.pump();
+      await tester.drag(find.byType(ListView), const Offset(0, -100));
+      await tester.pump();
+      // Un glissement n'est pas un toucher : le champ garde son focus.
+      expect(foyerA.hasFocus, isTrue);
+    },
+  );
 }

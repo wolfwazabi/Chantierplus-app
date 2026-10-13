@@ -29,10 +29,7 @@ Map<String, dynamic> champsPhotos(List<String> urls) {
 /// Même chose pour une modification : une liste vide retire toutes les photos.
 Map<String, dynamic> champsPhotosModification(List<String> urls) {
   if (urls.isEmpty) {
-    return {
-      'photoUrl': FieldValue.delete(),
-      'photoUrls': FieldValue.delete(),
-    };
+    return {'photoUrl': FieldValue.delete(), 'photoUrls': FieldValue.delete()};
   }
   return champsPhotos(urls);
 }

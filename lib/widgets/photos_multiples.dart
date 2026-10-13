@@ -140,7 +140,9 @@ Future<List<PhotoEnvoyee>> televerserPhotos(
       progression?.call(i + 1, photos.length);
     }
   } catch (_) {
-    await supprimerPhotosStorage([for (final f in faites) f.chemin], supprimer: supprimer);
+    await supprimerPhotosStorage([
+      for (final f in faites) f.chemin,
+    ], supprimer: supprimer);
     rethrow;
   }
   return faites;
@@ -261,7 +263,10 @@ class SelecteurPhotos extends StatelessWidget {
           clipBehavior: Clip.none,
           children: [
             Positioned.fill(
-              child: ClipRRect(borderRadius: BorderRadius.circular(6), child: image),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(6),
+                child: image,
+              ),
             ),
             Positioned(
               top: -8,
@@ -317,7 +322,9 @@ class SelecteurPhotos extends StatelessWidget {
               ),
             OutlinedButton.icon(
               key: const ValueKey('photos_ajouter'),
-              onPressed: actif && c.restantes > 0 ? () => _ouvrirChoix(context) : null,
+              onPressed: actif && c.restantes > 0
+                  ? () => _ouvrirChoix(context)
+                  : null,
               icon: const Icon(Icons.add_a_photo_outlined, size: 18),
               label: Text(
                 c.total == 0
@@ -412,7 +419,10 @@ class _GalerieState extends State<_Galerie> {
                 '${_courante + 1} / ${widget.urls.length}',
                 key: const ValueKey('galerie_compteur'),
                 textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
           ),
@@ -445,7 +455,8 @@ class VignettePhotos extends StatelessWidget {
                 child: Image.network(
                   urls.first,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const Icon(Icons.broken_image_outlined),
+                  errorBuilder: (_, _, _) =>
+                      const Icon(Icons.broken_image_outlined),
                 ),
               ),
             ),
@@ -455,14 +466,23 @@ class VignettePhotos extends StatelessWidget {
                 bottom: 0,
                 child: Container(
                   key: const ValueKey('vignette_nombre'),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 1,
+                  ),
                   decoration: const BoxDecoration(
                     color: Colors.black54,
-                    borderRadius: BorderRadius.only(topLeft: Radius.circular(6)),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(6),
+                    ),
                   ),
                   child: Text(
                     '${urls.length}',
-                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),

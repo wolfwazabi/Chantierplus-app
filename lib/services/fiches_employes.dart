@@ -4,11 +4,10 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 typedef FluxFiches = Stream<List<MapEntry<String, Map<String, dynamic>>>>;
 
 /// Appel d'une Cloud Function (remplaçable dans les tests).
-typedef AppelFonction =
-    Future<Map<String, dynamic>> Function(
-      String nom,
-      Map<String, dynamic> donnees,
-    );
+typedef AppelFonction = Future<Map<String, dynamic>> Function(
+  String nom,
+  Map<String, dynamic> donnees,
+);
 
 /// Toutes les fiches de la compagnie, anciens employés compris : les écrans filtrent
 /// (Firestore ne sait pas chercher un champ absent).

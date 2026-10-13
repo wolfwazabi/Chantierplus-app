@@ -41,16 +41,22 @@ void main() {
     final c = construireCommande(plancher: r, sectionPlancher: section2x8);
     final l = _lignes(c);
 
-    test('direction : solives sur le petit côté, rives sur les côtés de 15 pi', () {
-      expect(r.porteeMax, closeTo(168 - 1.5 - 3, 1e-9));
-      expect(r.cotesDeRive, [0, 2]);
-    });
+    test(
+      'direction : solives sur le petit côté, rives sur les côtés de 15 pi',
+      () {
+        expect(r.porteeMax, closeTo(168 - 1.5 - 3, 1e-9));
+        expect(r.cotesDeRive, [0, 2]);
+      },
+    );
 
-    test('solives : 13 positions + 2 de bordure doublées = 15 (11 intérieures)', () {
-      expect(r.nombreSolives, 15);
-      expect(r.solives.where((s) => s.bordure).length, 4);
-      expect(r.solives.where((s) => !s.bordure).length, 11);
-    });
+    test(
+      'solives : 13 positions + 2 de bordure doublées = 15 (11 intérieures)',
+      () {
+        expect(r.nombreSolives, 15);
+        expect(r.solives.where((s) => s.bordure).length, 4);
+        expect(r.solives.where((s) => !s.bordure).length, 11);
+      },
+    );
 
     test('rives : avant doublée (2), maison simple (1)', () {
       expect(r.rives, hasLength(3));
@@ -59,22 +65,31 @@ void main() {
       expect(r.rives.every((p) => (p.longueur - 180).abs() < 1e-9), isTrue);
     });
 
-    test('solives plus courtes de 4 1/2 po : une rive simple + une rive doublée', () {
-      expect(r.solives.every((s) => (s.longueurCoupe - 163.5).abs() < 1e-9), isTrue);
-    });
+    test(
+      'solives plus courtes de 4 1/2 po : une rive simple + une rive doublée',
+      () {
+        expect(
+          r.solives.every((s) => (s.longueurCoupe - 163.5).abs() < 1e-9),
+          isTrue,
+        );
+      },
+    );
 
     test('une rangée d\'entremises, 11 blocs dans un seul 2×8 de 16 pi', () {
       expect(r.entremises, hasLength(11));
       expect(r.entremisesPoses, hasLength(11));
     });
 
-    test('bois : 15 solives + 1 planche d\'entremises en 14 pi, 3 rives en 16 pi', () {
-      // La liste de l'entrepreneur : 16 × 14 pi (les 15 solives et la planche
-      // des entremises) et 4 × 16 pi (3 rives + 1 de plus).
-      expect(r.bois.parLongueur, {168.0: 16, 192.0: 3});
-      expect(l["2×8 × 14'"], 16);
-      expect(l["2×8 × 16'"], 3);
-    });
+    test(
+      'bois : 15 solives + 1 planche d\'entremises en 14 pi, 3 rives en 16 pi',
+      () {
+        // La liste de l'entrepreneur : 16 × 14 pi (les 15 solives et la planche
+        // des entremises) et 4 × 16 pi (3 rives + 1 de plus).
+        expect(r.bois.parLongueur, {168.0: 16, 192.0: 3});
+        expect(l["2×8 × 14'"], 16);
+        expect(l["2×8 × 16'"], 3);
+      },
+    );
 
     test('étriers : 11 (solives intérieures) et 1 boîte de clous', () {
       expect(r.etriers, 11);
@@ -107,12 +122,17 @@ void main() {
 
     test('aucun avertissement de poutre ou d\'épissure', () {
       expect(r.poutres!.avertissements, isEmpty);
-      expect(r.avertissements.where((a) => a.contains('plusieurs morceaux')), isEmpty);
+      expect(
+        r.avertissements.where((a) => a.contains('plusieurs morceaux')),
+        isEmpty,
+      );
     });
   });
 
   group('solarium 14 × 12 pi (solives de 12 pi)', () {
-    final r = calculerPlancher(_spec(144, 168, hauteurPatte: 20, coteMaison: 1));
+    final r = calculerPlancher(
+      _spec(144, 168, hauteurPatte: 20, coteMaison: 1),
+    );
     final c = construireCommande(plancher: r, sectionPlancher: section2x8);
     final l = _lignes(c);
 
@@ -121,11 +141,17 @@ void main() {
       expect(r.rives, hasLength(3));
     });
 
-    test('solives : 12 positions + 2 de bordure doublées = 14, étriers : 10', () {
-      expect(r.nombreSolives, 14);
-      expect(r.etriers, 10);
-      expect(r.solives.every((s) => (s.longueurCoupe - 139.5).abs() < 1e-9), isTrue);
-    });
+    test(
+      'solives : 12 positions + 2 de bordure doublées = 14, étriers : 10',
+      () {
+        expect(r.nombreSolives, 14);
+        expect(r.etriers, 10);
+        expect(
+          r.solives.every((s) => (s.longueurCoupe - 139.5).abs() < 1e-9),
+          isTrue,
+        );
+      },
+    );
 
     test('bois : 14 × 12 pi (solives) et 4 × 14 pi (3 rives + 1 planche d\'entremises)', () {
       // La liste de l'entrepreneur : rives 4 + entremises 1 = 5 × 14 pi.
@@ -137,20 +163,25 @@ void main() {
       expect(r.boitesClousEtriers, 1);
     });
 
-    test('poutres 6 × 16... de 14 pi : 6 × 2×8 × 14 pi traité, pieux à 6 pi', () {
-      final p = r.poutres!;
-      expect(p.longueur, 168);
-      expect(p.bois.parLongueur, {168.0: 6});
-      expect(p.entraxePieux, closeTo(72, 1e-9));
-      expect(l["2×8 × 14' traité"], 6);
-    });
+    test(
+      'poutres 6 × 16... de 14 pi : 6 × 2×8 × 14 pi traité, pieux à 6 pi',
+      () {
+        final p = r.poutres!;
+        expect(p.longueur, 168);
+        expect(p.bois.parLongueur, {168.0: 6});
+        expect(p.entraxePieux, closeTo(72, 1e-9));
+        expect(l["2×8 × 14' traité"], 6);
+      },
+    );
 
     test('pattes : 6 × 20 po = un 6×6 de 10 pi traité', () {
       expect(l["6×6 × 10' traité"], 1);
     });
 
     test('mesure réelle de 14 pi 1 po : les poutres passent à 16 pi', () {
-      final reel = calculerPlancher(_spec(144, 169, hauteurPatte: 20, coteMaison: 1));
+      final reel = calculerPlancher(
+        _spec(144, 169, hauteurPatte: 20, coteMaison: 1),
+      );
       expect(reel.poutres!.bois.parLongueur, {192.0: 6});
     });
   });
@@ -195,11 +226,17 @@ void main() {
 
     test('côté de maison parallèle aux solives : avertissement', () {
       final r = calculerPlancher(base(coteMaison: 1));
-      expect(r.avertissements.any((a) => a.contains('parallèle aux solives')), isTrue);
+      expect(
+        r.avertissements.any((a) => a.contains('parallèle aux solives')),
+        isTrue,
+      );
     });
 
     test('côté de maison inexistant : refusé', () {
-      expect(() => calculerPlancher(base(coteMaison: 9)), throwsA(isA<SpecInvalide>()));
+      expect(
+        () => calculerPlancher(base(coteMaison: 9)),
+        throwsA(isA<SpecInvalide>()),
+      );
     });
 
     test('étriers : les solives de bordure sont exclues sur demande', () {
@@ -250,22 +287,29 @@ void main() {
           entremisesAuto: true,
         ),
       );
-      final us = ({for (final p in r.entremisesPoses) (p.u * 100).round() / 100}).toList()..sort();
+      final us = ({
+        for (final p in r.entremisesPoses) (p.u * 100).round() / 100,
+      }).toList()..sort();
       expect(us, hasLength(2));
       expect(us[1] - us[0], closeTo(252 / 3, 1e-6));
     });
 
-    test('le nombre de rangées choisi à la main est ignoré en mode automatique', () {
-      final r = calculerPlancher(
-        SpecPlancher(
-          forme: Polygone.rectangle(168 + 4.5, 200),
-          angleSolivesDeg: 0,
-          entremisesAuto: true,
-          rangeesEntremises: 3,
-        ),
-      );
-      expect({for (final p in r.entremisesPoses) (p.u * 100).round()}, hasLength(1));
-    });
+    test(
+      'le nombre de rangées choisi à la main est ignoré en mode automatique',
+      () {
+        final r = calculerPlancher(
+          SpecPlancher(
+            forme: Polygone.rectangle(168 + 4.5, 200),
+            angleSolivesDeg: 0,
+            entremisesAuto: true,
+            rangeesEntremises: 3,
+          ),
+        );
+        expect({
+          for (final p in r.entremisesPoses) (p.u * 100).round(),
+        }, hasLength(1));
+      },
+    );
 
     test('pose alternée : les blocs voisins sont décalés d\'une épaisseur de solive', () {
       final droite = calculerPlancher(base(rangees: 1));
@@ -273,7 +317,10 @@ void main() {
       expect(alternee.entremises.length, droite.entremises.length);
       final us = [for (final p in alternee.entremisesPoses) p.u]..sort();
       final u0 = droite.entremisesPoses.first.u;
-      expect(droite.entremisesPoses.every((p) => (p.u - u0).abs() < 1e-9), isTrue);
+      expect(
+        droite.entremisesPoses.every((p) => (p.u - u0).abs() < 1e-9),
+        isTrue,
+      );
       expect(
         alternee.entremisesPoses
             .map((p) => ((p.u - u0) * 1000).round() / 1000)
@@ -302,35 +349,45 @@ void main() {
           r.bois.planches.fold(0, (a, p) => a + p.pieces.length);
       expect(pieces(separees), pieces(ensemble));
       // L'optimisation d'ensemble n'achète jamais plus de bois.
-      expect(separees.bois.longueurTotale, greaterThanOrEqualTo(ensemble.bois.longueurTotale));
-    });
-
-    test('clous d\'étriers : boîtes selon les clous nécessaires et la marge', () {
-      // Une forme de n solives (2 de bordure + n − 2 à 16 po c/c) : étriers = n.
-      ResultatPlancher avec(int n, {double marge = 5, int parEtrier = 10}) {
-        final largeur = 16.0 * (n - 2) + 8;
-        return calculerPlancher(
-          SpecPlancher(
-            forme: Polygone.rectangle(largeur, largeur / 2),
-            etriers: ModeEtriers.unBout,
-            margeClousPourcent: marge,
-            clousParEtrier: parEtrier,
-          ),
-        );
-      }
-
-      final douze = avec(12);
-      expect(douze.etriers, 12);
-      expect(douze.boitesClousEtriers, 2); // 126 clous avec la marge de 5 %
-      expect(avec(12, marge: 0).boitesClousEtriers, 1); // 120 clous : une boîte exacte
-      final dix = avec(10);
-      expect(dix.boitesClousEtriers, 1); // 105 clous
-      expect(avec(10, parEtrier: 12).boitesClousEtriers, 2); // 126 clous
       expect(
-        calculerPlancher(SpecPlancher(forme: Polygone.rectangle(100, 100))).boitesClousEtriers,
-        0,
+        separees.bois.longueurTotale,
+        greaterThanOrEqualTo(ensemble.bois.longueurTotale),
       );
     });
+
+    test(
+      'clous d\'étriers : boîtes selon les clous nécessaires et la marge',
+      () {
+        // Une forme de n solives (2 de bordure + n − 2 à 16 po c/c) : étriers = n.
+        ResultatPlancher avec(int n, {double marge = 5, int parEtrier = 10}) {
+          final largeur = 16.0 * (n - 2) + 8;
+          return calculerPlancher(
+            SpecPlancher(
+              forme: Polygone.rectangle(largeur, largeur / 2),
+              etriers: ModeEtriers.unBout,
+              margeClousPourcent: marge,
+              clousParEtrier: parEtrier,
+            ),
+          );
+        }
+
+        final douze = avec(12);
+        expect(douze.etriers, 12);
+        expect(douze.boitesClousEtriers, 2); // 126 clous avec la marge de 5 %
+        expect(
+          avec(12, marge: 0).boitesClousEtriers,
+          1,
+        ); // 120 clous : une boîte exacte
+        final dix = avec(10);
+        expect(dix.boitesClousEtriers, 1); // 105 clous
+        expect(avec(10, parEtrier: 12).boitesClousEtriers, 2); // 126 clous
+        expect(
+          calculerPlancher(SpecPlancher(forme: Polygone.rectangle(100, 100)))
+              .boitesClousEtriers,
+          0,
+        );
+      },
+    );
   });
 
   group('rives et poutres faites de plusieurs morceaux', () {
@@ -374,9 +431,19 @@ void main() {
       final avant = r.rives.where((p) => p.cote == 0).toList();
       expect(avant, hasLength(2)); // rive simple en 2 morceaux (comme avant)
       expect(maison, hasLength(5)); // 2 plis : 2 + 3 morceaux
-      expect(maison.where((p) => !p.doublon).map((p) => p.longueur), [180, 180]);
-      expect(maison.where((p) => p.doublon).map((p) => p.longueur), [90, 180, 90]);
-      expect(r.avertissements.any((a) => a.contains('plusieurs morceaux')), isTrue);
+      expect(maison.where((p) => !p.doublon).map((p) => p.longueur), [
+        180,
+        180,
+      ]);
+      expect(maison.where((p) => p.doublon).map((p) => p.longueur), [
+        90,
+        180,
+        90,
+      ]);
+      expect(
+        r.avertissements.any((a) => a.contains('plusieurs morceaux')),
+        isTrue,
+      );
     });
 
     test('poutres de 24 pi : plis alternés et avertissement', () {
@@ -388,7 +455,10 @@ void main() {
       );
       final p = r.poutres!;
       expect(p.longueur, 288);
-      expect(p.avertissements.any((a) => a.contains('plusieurs morceaux')), isTrue);
+      expect(
+        p.avertissements.any((a) => a.contains('plusieurs morceaux')),
+        isTrue,
+      );
       // 2 poutres × (2 + 3 + 2) morceaux.
       expect(p.bois.planches.fold(0, (a, b) => a + b.pieces.length), 2 * 7);
     });
@@ -397,7 +467,9 @@ void main() {
   group('poutres : validations', () {
     test('valeurs refusées', () {
       void refuse(SpecPoutres p) => expect(
-        () => calculerPlancher(SpecPlancher(forme: Polygone.rectangle(100, 100), poutres: p)),
+        () => calculerPlancher(
+          SpecPlancher(forme: Polygone.rectangle(100, 100), poutres: p),
+        ),
         throwsA(isA<SpecInvalide>()),
       );
       refuse(const SpecPoutres(nombre: 0));
@@ -415,22 +487,38 @@ void main() {
           poutres: const SpecPoutres(retraitPieux: 60),
         ),
       );
-      expect(r.poutres!.avertissements.any((a) => a.contains('trop grand')), isTrue);
+      expect(
+        r.poutres!.avertissements.any((a) => a.contains('trop grand')),
+        isTrue,
+      );
     });
 
     test('forme irrégulière : avertissement', () {
       final r = calculerPlancher(
         SpecPlancher(
-          forme: Polygone(const [Pt(0, 0), Pt(200, 0), Pt(200, 100), Pt(100, 100), Pt(100, 200), Pt(0, 200)]),
+          forme: Polygone(const [
+            Pt(0, 0),
+            Pt(200, 0),
+            Pt(200, 100),
+            Pt(100, 100),
+            Pt(100, 200),
+            Pt(0, 200),
+          ]),
           poutres: const SpecPoutres(),
         ),
       );
-      expect(r.poutres!.avertissements.any((a) => a.contains('irrégulière')), isTrue);
+      expect(
+        r.poutres!.avertissements.any((a) => a.contains('irrégulière')),
+        isTrue,
+      );
     });
 
     test('sans patte : aucun 6×6', () {
       final r = calculerPlancher(
-        SpecPlancher(forme: Polygone.rectangle(180, 168), poutres: const SpecPoutres()),
+        SpecPlancher(
+          forme: Polygone.rectangle(180, 168),
+          poutres: const SpecPoutres(),
+        ),
       );
       expect(r.poutres!.pattes, isNull);
       final c = construireCommande(plancher: r, sectionPlancher: section2x8);

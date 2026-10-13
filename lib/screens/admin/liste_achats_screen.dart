@@ -6,6 +6,7 @@ import '../../services/liste_achats_source.dart';
 import '../../services/theme_compagnie.dart';
 import '../../widgets/confirmer_action.dart';
 import '../../widgets/photos_multiples.dart';
+import '../../widgets/actualiser.dart';
 
 /// Admin → Liste d'achats : le matériel que les admins ont transféré depuis
 /// Général (appui long sur une demande), séparé par équipe (la personne qui l'a
@@ -40,7 +41,10 @@ class _ListeAchatsScreenState extends State<ListeAchatsScreen> {
   void _message(String texte, {bool erreur = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(texte), backgroundColor: erreur ? Colors.red : null),
+      SnackBar(
+        content: Text(texte),
+        backgroundColor: erreur ? Colors.red : null,
+      ),
     );
   }
 
@@ -56,7 +60,8 @@ class _ListeAchatsScreenState extends State<ListeAchatsScreen> {
     final ok = await confirmerAction(
       context,
       titre: 'Retirer cet article ?',
-      texte: '« ${a.texte} » sera retiré de la Liste d\'achats. Cette action est irréversible.',
+      texte:
+          '« ${a.texte} » sera retiré de la Liste d\'achats. Cette action est irréversible.',
       action: 'Retirer',
     );
     if (!ok) return;
@@ -112,11 +117,16 @@ class _ListeAchatsScreenState extends State<ListeAchatsScreen> {
         itemBuilder: (ctx) => [
           PopupMenuItem(
             value: a.complete ? 'a_acheter' : 'achete',
-            child: Text(a.complete ? 'Remettre à acheter' : 'Marquer comme acheté'),
+            child: Text(
+              a.complete ? 'Remettre à acheter' : 'Marquer comme acheté',
+            ),
           ),
           const PopupMenuItem(
             value: 'supprimer',
-            child: Text('Retirer de la liste', style: TextStyle(color: Colors.red)),
+            child: Text(
+              'Retirer de la liste',
+              style: TextStyle(color: Colors.red),
+            ),
           ),
         ],
       ),
@@ -133,8 +143,8 @@ class _ListeAchatsScreenState extends State<ListeAchatsScreen> {
     }
     return Scaffold(
       appBar: AppBar(title: const Text('Liste d\'achats')),
-      body: StreamBuilder<List<ArticleAchat>>(
-        stream: _articles,
+      body: FluxActualisable<List<ArticleAchat>>(
+        creerFlux: () => _articles!,
         builder: (context, snap) {
           if (snap.hasError) {
             return const Center(child: Text('Impossible de charger la liste.'));
@@ -145,7 +155,10 @@ class _ListeAchatsScreenState extends State<ListeAchatsScreen> {
           final articles = snap.data!;
           final groupes = grouperParDemandeur(articles);
           final achetes = articlesAchetes(articles);
-          final aAcheter = groupes.fold<int>(0, (s, g) => s + g.articles.length);
+          final aAcheter = groupes.fold<int>(
+            0,
+            (s, g) => s + g.articles.length,
+          );
           return ListView(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
             children: [
@@ -195,7 +208,8 @@ class _ListeAchatsScreenState extends State<ListeAchatsScreen> {
                           subtitle: Text('${g.articles.length} à acheter'),
                         ),
                         const Divider(height: 1),
-                        for (final a in g.articles) _ligne(a, avecDemandeur: false),
+                        for (final a in g.articles)
+                          _ligne(a, avecDemandeur: false),
                       ],
                     ),
                   ),

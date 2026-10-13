@@ -8,6 +8,7 @@ import '../services/erreurs_firebase.dart';
 import '../services/theme_compagnie.dart';
 import '../widgets/fermer_clavier.dart';
 import '../widgets/photos_multiples.dart';
+import '../widgets/actualiser.dart';
 
 /// Onglet liste d'un chantier (Travaux à compléter, Matériel) ou liste « Général »
 /// (matériel de la remorque, sans chantier). Chaque entrée a un texte, une quantité
@@ -111,10 +112,7 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
       QuerySnapshot<Map<String, dynamic>> s,
     ) => [for (final d in s.docs) MapEntry(d.id, d.data())];
     if (!widget.general) {
-      return base
-          .orderBy('dateAjout', descending: true)
-          .snapshots()
-          .map(lire);
+      return base.orderBy('dateAjout', descending: true).snapshots().map(lire);
     }
     // Général : un contremaître ne demande que SA liste (les règles refusent le
     // reste) ; un admin, toutes. Tri ici : aucun index à créer.
@@ -148,7 +146,10 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
   void _message(String texte, {bool erreur = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(texte), backgroundColor: erreur ? Colors.red : null),
+      SnackBar(
+        content: Text(texte),
+        backgroundColor: erreur ? Colors.red : null,
+      ),
     );
   }
 
@@ -349,7 +350,9 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
                                 );
                               }
                             },
-                      child: Text(enregistrement ? 'Enregistrement…' : 'Enregistrer'),
+                      child: Text(
+                        enregistrement ? 'Enregistrement…' : 'Enregistrer',
+                      ),
                     ),
                   ),
                 ],
@@ -508,8 +511,8 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
         ),
         const Divider(height: 1),
         Expanded(
-          child: StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
-            stream: widget.flux ?? _flux,
+          child: FluxActualisable<List<MapEntry<String, Map<String, dynamic>>>>(
+            creerFlux: () => widget.flux ?? _flux,
             builder: (context, snapshot) {
               if (snapshot.hasError) {
                 return Center(child: Text('Erreur : ${snapshot.error}'));
@@ -540,8 +543,8 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
               if (docs.isEmpty) {
                 return _avecFiltres(
                   toutes,
-                  Center(
-                    child: Padding(
+                  messageActualisable(
+                    Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
                         widget.general
@@ -561,7 +564,8 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
                 toutes,
                 ListView.builder(
                   itemCount: docs.length,
-                  itemBuilder: (context, index) => _tuile(docs[index], connecte),
+                  itemBuilder: (context, index) =>
+                      _tuile(docs[index], connecte),
                 ),
               );
             },
@@ -589,10 +593,10 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
       leading: photos.isNotEmpty
           ? VignettePhotos(urls: photos)
           : Icon(
-              transfere && !complete ? Icons.shopping_cart_checkout : widget.icone,
-              color: complete
-                  ? Colors.grey
-                  : ThemeCompagnie.accentDe(context),
+              transfere && !complete
+                  ? Icons.shopping_cart_checkout
+                  : widget.icone,
+              color: complete ? Colors.grey : ThemeCompagnie.accentDe(context),
             ),
       title: Text(
         data['texte'] ?? '',
@@ -604,7 +608,8 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (quantite != null && quantite.isNotEmpty) Text('Quantité : $quantite'),
+          if (quantite != null && quantite.isNotEmpty)
+            Text('Quantité : $quantite'),
           if (widget.general &&
               AppSession.estAdmin &&
               _filtreAuteur == null &&
@@ -652,19 +657,27 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
                     }
                   },
                   itemBuilder: (ctx) => [
-                    const PopupMenuItem(value: 'modifier', child: Text('Modifier')),
+                    const PopupMenuItem(
+                      value: 'modifier',
+                      child: Text('Modifier'),
+                    ),
                     if (!complete)
                       PopupMenuItem(
                         value: 'complete',
                         child: Text(widget.libelleComplete),
                       )
                     else
-                      PopupMenuItem(value: 'actif', child: Text(widget.libelleActif)),
+                      PopupMenuItem(
+                        value: 'actif',
+                        child: Text(widget.libelleActif),
+                      ),
                   ],
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: connecte ? () => _confirmerSuppression(doc.key) : null,
+                  onPressed: connecte
+                      ? () => _confirmerSuppression(doc.key)
+                      : null,
                 ),
               ],
             ),

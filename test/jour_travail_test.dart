@@ -19,12 +19,11 @@ const _nouvelles = ReglesPaie(
   voyagementPourcentage: 100,
 );
 
-JourTravail _jour({int voyagementMinutes = 120}) =>
-    JourTravail('Lundi')
-      ..chantier = const Chantier(id: 'c1', companyId: 'A', nom: 'A', adresse: '')
-      ..heureDebut = const TimeOfDay(hour: 7, minute: 0)
-      ..heureFin = const TimeOfDay(hour: 15, minute: 0)
-      ..tempsVoyagement = Duration(minutes: voyagementMinutes);
+JourTravail _jour({int voyagementMinutes = 120}) => JourTravail('Lundi')
+  ..chantier = const Chantier(id: 'c1', companyId: 'A', nom: 'A', adresse: '')
+  ..heureDebut = const TimeOfDay(hour: 7, minute: 0)
+  ..heureFin = const TimeOfDay(hour: 15, minute: 0)
+  ..tempsVoyagement = Duration(minutes: voyagementMinutes);
 
 void main() {
   tearDown(() => AppSession.reglesPaie.value = ReglesPaie.defaut);
@@ -51,14 +50,17 @@ void main() {
     expect(j.heuresTravaillees, 7.75);
   });
 
-  test('les valeurs d\'origine servent aussi quand la formule a changé depuis', () {
-    // Ancienne formule : 90 min à partir de 60, à 50 % = 45 min = 0,75 h. La valeur
-    // enregistrée (0,75) reste affichée, même si la nouvelle formule donnerait 0,25.
-    AppSession.reglesPaie.value = _anciennes;
-    final j = _jour(voyagementMinutes: 90)
-      ..figer(heures: 7.75, voyagementPaye: 0.75);
-    expect(j.heuresVoyagementPayees, 0.75);
-  });
+  test(
+    'les valeurs d\'origine servent aussi quand la formule a changé depuis',
+    () {
+      // Ancienne formule : 90 min à partir de 60, à 50 % = 45 min = 0,75 h. La valeur
+      // enregistrée (0,75) reste affichée, même si la nouvelle formule donnerait 0,25.
+      AppSession.reglesPaie.value = _anciennes;
+      final j = _jour(voyagementMinutes: 90)
+        ..figer(heures: 7.75, voyagementPaye: 0.75);
+      expect(j.heuresVoyagementPayees, 0.75);
+    },
+  );
 
   test('journée modifiée : recalculée avec les règles actuelles', () {
     AppSession.reglesPaie.value = _anciennes;

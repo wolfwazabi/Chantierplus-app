@@ -10,7 +10,11 @@ import '../../charpente/unites.dart';
 class SchemaLimon extends StatelessWidget {
   final ResultatEscalier resultat;
   final bool metrique;
-  const SchemaLimon({super.key, required this.resultat, required this.metrique});
+  const SchemaLimon({
+    super.key,
+    required this.resultat,
+    required this.metrique,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -86,10 +90,18 @@ class _PeintreLimon extends CustomPainter {
       ..color = trait.withValues(alpha: 0.7)
       ..strokeWidth = 2;
     canvas.drawLine(p(xMin, 0), p(r.course * 0.35, 0), sol);
-    canvas.drawLine(p(r.course, s.hauteurTotale), p(xMax, s.hauteurTotale), sol);
+    canvas.drawLine(
+      p(r.course, s.hauteurTotale),
+      p(xMax, s.hauteurTotale),
+      sol,
+    );
 
     // Limon.
-    final chemin = Path()..moveTo(p(r.profil.first.x, r.profil.first.y).dx, p(r.profil.first.x, r.profil.first.y).dy);
+    final chemin = Path()
+      ..moveTo(
+        p(r.profil.first.x, r.profil.first.y).dx,
+        p(r.profil.first.x, r.profil.first.y).dy,
+      );
     for (final q in r.profil.skip(1)) {
       final o = p(q.x, q.y);
       chemin.lineTo(o.dx, o.dy);
@@ -102,7 +114,10 @@ class _PeintreLimon extends CustomPainter {
     for (final t in r.table) {
       final x0 = (t.marche - 1) * r.giron - s.nez;
       final x1 = t.marche * r.giron;
-      final rect = Rect.fromPoints(p(x0, t.hauteurDessus), p(x1, t.hauteurSiege));
+      final rect = Rect.fromPoints(
+        p(x0, t.hauteurDessus),
+        p(x1, t.hauteurSiege),
+      );
       canvas.drawRect(rect, Paint()..color = marche);
       canvas.drawRect(rect, traitFin);
     }
@@ -117,7 +132,11 @@ class _PeintreLimon extends CustomPainter {
     final xh = xMin + 0.0;
     canvas.drawLine(p(xh - 1.5, 0), p(xh - 1.5, s.hauteurTotale), cotePaint);
     canvas.drawLine(p(xh - 2.5, 0), p(xh, 0), cotePaint);
-    canvas.drawLine(p(xh - 2.5, s.hauteurTotale), p(xh, s.hauteurTotale), cotePaint);
+    canvas.drawLine(
+      p(xh - 2.5, s.hauteurTotale),
+      p(xh, s.hauteurTotale),
+      cotePaint,
+    );
     _texte(
       canvas,
       l(s.hauteurTotale),
@@ -168,7 +187,11 @@ class _PeintreLimon extends CustomPainter {
     final tp = TextPainter(
       text: TextSpan(
         text: texte,
-        style: TextStyle(color: couleur, fontSize: 11, fontWeight: FontWeight.w600),
+        style: TextStyle(
+          color: couleur,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
       ),
       textDirection: TextDirection.ltr,
     )..layout();

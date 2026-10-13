@@ -174,7 +174,11 @@ void main() {
       final liste = anciensEmployes([
         MapEntry('b', {'nom': 'Zèbre', 'actif': false}),
         MapEntry('a', {'nom': 'abeille', 'actif': false}),
-        MapEntry('c', {'nom': 'Daté', 'actif': false, 'retireLe': _ts(2026, 1, 1)}),
+        MapEntry('c', {
+          'nom': 'Daté',
+          'actif': false,
+          'retireLe': _ts(2026, 1, 1),
+        }),
       ]);
       expect(liste.map((e) => e.id), ['c', 'a', 'b']);
     });
@@ -190,12 +194,19 @@ void main() {
       expect(find.text('Dina Ancienne'), findsNothing);
     });
 
-    testWidgets('« Invitation en attente » seulement sans NIP (comme avant)', (tester) async {
+    testWidgets('« Invitation en attente » seulement sans NIP (comme avant)', (
+      tester,
+    ) async {
       await _ouvrirListe(tester, _Appels());
-      expect(find.text('Invitation en attente : NIP pas encore créé'), findsOneWidget);
+      expect(
+        find.text('Invitation en attente : NIP pas encore créé'),
+        findsOneWidget,
+      );
     });
 
-    testWidgets('si tout le monde est ancien : « Aucun employé »', (tester) async {
+    testWidgets('si tout le monde est ancien : « Aucun employé »', (
+      tester,
+    ) async {
       AppSession.notifier.value = _admin();
       await tester.pumpWidget(
         MaterialApp(
@@ -210,15 +221,20 @@ void main() {
       expect(find.text('Aucun employé pour l\'instant.'), findsOneWidget);
     });
 
-    testWidgets('« Retirer » n\'est pas proposé pour le super-admin ni pour soi-même', (tester) async {
-      await _ouvrirListe(tester, _Appels());
-      await tester.tap(find.byKey(const ValueKey('employe_menu_e5')));
-      await tester.pumpAndSettle();
-      expect(find.text('Modifier'), findsOneWidget);
-      expect(find.text('Retirer'), findsNothing);
-    });
+    testWidgets(
+      '« Retirer » n\'est pas proposé pour le super-admin ni pour soi-même',
+      (tester) async {
+        await _ouvrirListe(tester, _Appels());
+        await tester.tap(find.byKey(const ValueKey('employe_menu_e5')));
+        await tester.pumpAndSettle();
+        expect(find.text('Modifier'), findsOneWidget);
+        expect(find.text('Retirer'), findsNothing);
+      },
+    );
 
-    testWidgets('l\'icône « Anciens employés » ouvre l\'écran des anciens', (tester) async {
+    testWidgets('l\'icône « Anciens employés » ouvre l\'écran des anciens', (
+      tester,
+    ) async {
       await _ouvrirListe(tester, _Appels());
       await tester.tap(find.byKey(const ValueKey('employes_anciens')));
       await tester.pumpAndSettle();
@@ -236,34 +252,61 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('le dialogue informe : accès coupé, 24 mois, suppression possible, registres', (tester) async {
-      await _ouvrirListe(tester, _Appels());
-      await ouvrirDialogue(tester);
-      expect(find.text('Retirer cet employé ?'), findsOneWidget);
-      expect(find.textContaining('Alice Tremblay sera immédiatement déconnecté'), findsOneWidget);
-      expect(find.textContaining('Son NIP est détruit'), findsOneWidget);
-      expect(find.textContaining('24 mois'), findsOneWidget);
-      expect(find.textContaining('supprimés automatiquement'), findsOneWidget);
-      expect(find.textContaining('supprimer sa fiche tout de suite'), findsOneWidget);
-      expect(find.textContaining('registres de la compagnie'), findsOneWidget);
-    });
+    testWidgets(
+      'le dialogue informe : accès coupé, 24 mois, suppression possible, registres',
+      (tester) async {
+        await _ouvrirListe(tester, _Appels());
+        await ouvrirDialogue(tester);
+        expect(find.text('Retirer cet employé ?'), findsOneWidget);
+        expect(
+          find.textContaining('Alice Tremblay sera immédiatement déconnecté'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('Son NIP est détruit'), findsOneWidget);
+        expect(find.textContaining('24 mois'), findsOneWidget);
+        expect(
+          find.textContaining('supprimés automatiquement'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('supprimer sa fiche tout de suite'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('registres de la compagnie'),
+          findsOneWidget,
+        );
+      },
+    );
 
-    testWidgets('sans toucher au motif : « non-precise » ; confirmation et message', (tester) async {
-      final appels = _Appels();
-      await _ouvrirListe(tester, appels);
-      await ouvrirDialogue(tester);
-      expect(find.text('Non précisé'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('employe_confirmer_retrait')));
-      await tester.pumpAndSettle();
-      expect(appels.faits, hasLength(1));
-      expect(appels.faits.single.key, 'retirerAccesEmploye');
-      expect(appels.faits.single.value, {'employeeId': 'e1', 'motif': 'non-precise'});
-      expect(find.textContaining('n\'a plus accès'), findsOneWidget);
-      expect(find.textContaining('Anciens employés'), findsWidgets);
-    });
+    testWidgets(
+      'sans toucher au motif : « non-precise » ; confirmation et message',
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrirListe(tester, appels);
+        await ouvrirDialogue(tester);
+        expect(find.text('Non précisé'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('employe_confirmer_retrait')),
+        );
+        await tester.pumpAndSettle();
+        expect(appels.faits, hasLength(1));
+        expect(appels.faits.single.key, 'retirerAccesEmploye');
+        expect(appels.faits.single.value, {
+          'employeeId': 'e1',
+          'motif': 'non-precise',
+        });
+        expect(find.textContaining('n\'a plus accès'), findsOneWidget);
+        expect(find.textContaining('Anciens employés'), findsWidgets);
+      },
+    );
 
-    testWidgets('le motif choisi dans la liste fermée est envoyé', (tester) async {
-      for (final entree in motifsRetrait.entries.where((e) => e.key != 'non-precise')) {
+    testWidgets('le motif choisi dans la liste fermée est envoyé', (
+      tester,
+    ) async {
+      for (final entree in motifsRetrait.entries.where(
+        (e) => e.key != 'non-precise',
+      )) {
         final appels = _Appels();
         await _ouvrirListe(tester, appels);
         await ouvrirDialogue(tester);
@@ -271,18 +314,39 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text(entree.value).last);
         await tester.pumpAndSettle();
-        await tester.tap(find.byKey(const ValueKey('employe_confirmer_retrait')));
+        await tester.tap(
+          find.byKey(const ValueKey('employe_confirmer_retrait')),
+        );
         await tester.pumpAndSettle();
-        expect(appels.faits.single.value['motif'], entree.key, reason: entree.value);
+        expect(
+          appels.faits.single.value['motif'],
+          entree.key,
+          reason: entree.value,
+        );
       }
     });
 
-    testWidgets('le motif est une liste : aucun champ de texte libre dans le dialogue', (tester) async {
-      await _ouvrirListe(tester, _Appels());
-      await ouvrirDialogue(tester);
-      expect(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextField)), findsNothing);
-      expect(find.descendant(of: find.byType(AlertDialog), matching: find.byType(TextFormField)), findsNothing);
-    });
+    testWidgets(
+      'le motif est une liste : aucun champ de texte libre dans le dialogue',
+      (tester) async {
+        await _ouvrirListe(tester, _Appels());
+        await ouvrirDialogue(tester);
+        expect(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextField),
+          ),
+          findsNothing,
+        );
+        expect(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.byType(TextFormField),
+          ),
+          findsNothing,
+        );
+      },
+    );
 
     testWidgets('Annuler : aucun appel', (tester) async {
       final appels = _Appels();
@@ -293,7 +357,9 @@ void main() {
       expect(appels.faits, isEmpty);
     });
 
-    testWidgets('refus du serveur : message d\'erreur, la liste reste', (tester) async {
+    testWidgets('refus du serveur : message d\'erreur, la liste reste', (
+      tester,
+    ) async {
       final appels = _Appels()..erreur = Exception('refus');
       await _ouvrirListe(tester, appels);
       await ouvrirDialogue(tester);
@@ -305,29 +371,47 @@ void main() {
   });
 
   group('Écran « Anciens employés »', () {
-    testWidgets('seulement les anciens : retrait, suppression automatique, motif', (tester) async {
-      await _ouvrirAnciens(tester, _Appels());
-      expect(find.text('Carl Ancien'), findsOneWidget);
-      expect(find.text('Dina Ancienne'), findsOneWidget);
-      expect(find.text('Alice Tremblay'), findsNothing);
-      expect(find.text('Zoé Proprio'), findsNothing);
-      expect(find.textContaining('Retiré le 01/03/2026 • Employé saisonnier'), findsOneWidget);
-      expect(find.textContaining('Suppression automatique le 01/03/2028'), findsOneWidget);
-      expect(find.textContaining('carl@exemple.ca'), findsOneWidget);
-      // Une valeur hors liste n'est jamais affichée telle quelle.
-      expect(find.textContaining('Retiré le 15/09/2026 • Non précisé'), findsOneWidget);
-      expect(find.textContaining('maladie'), findsNothing);
-      expect(find.textContaining('cancer'), findsNothing);
-    });
+    testWidgets(
+      'seulement les anciens : retrait, suppression automatique, motif',
+      (tester) async {
+        await _ouvrirAnciens(tester, _Appels());
+        expect(find.text('Carl Ancien'), findsOneWidget);
+        expect(find.text('Dina Ancienne'), findsOneWidget);
+        expect(find.text('Alice Tremblay'), findsNothing);
+        expect(find.text('Zoé Proprio'), findsNothing);
+        expect(
+          find.textContaining('Retiré le 01/03/2026 • Employé saisonnier'),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining('Suppression automatique le 01/03/2028'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('carl@exemple.ca'), findsOneWidget);
+        // Une valeur hors liste n'est jamais affichée telle quelle.
+        expect(
+          find.textContaining('Retiré le 15/09/2026 • Non précisé'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('maladie'), findsNothing);
+        expect(find.textContaining('cancer'), findsNothing);
+      },
+    );
 
     testWidgets('le plus récemment retiré en premier', (tester) async {
       await _ouvrirAnciens(tester, _Appels());
-      final dina = tester.getTopLeft(find.byKey(const ValueKey('ancien_e4'))).dy;
-      final carl = tester.getTopLeft(find.byKey(const ValueKey('ancien_e3'))).dy;
+      final dina = tester
+          .getTopLeft(find.byKey(const ValueKey('ancien_e4')))
+          .dy;
+      final carl = tester
+          .getTopLeft(find.byKey(const ValueKey('ancien_e3')))
+          .dy;
       expect(dina, lessThan(carl));
     });
 
-    testWidgets('explication : 24 mois, puis suppression automatique', (tester) async {
+    testWidgets('explication : 24 mois, puis suppression automatique', (
+      tester,
+    ) async {
       await _ouvrirAnciens(tester, _Appels());
       expect(find.byKey(const ValueKey('anciens_explication')), findsOneWidget);
       expect(find.textContaining('24 mois'), findsOneWidget);
@@ -345,72 +429,101 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Réactiver'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('lien pour créer un nouveau NIP'), findsOneWidget);
-      expect(find.textContaining('L\'ancien NIP n\'est pas conservé'), findsOneWidget);
+      expect(
+        find.textContaining('lien pour créer un nouveau NIP'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('L\'ancien NIP n\'est pas conservé'),
+        findsOneWidget,
+      );
       expect(appels.faits, isEmpty, reason: 'rien avant la confirmation');
-      await tester.tap(find.byKey(const ValueKey('ancien_confirmer_reactivation')));
+      await tester.tap(
+        find.byKey(const ValueKey('ancien_confirmer_reactivation')),
+      );
       await tester.pumpAndSettle();
       expect(appels.faits.single.key, 'reactiverEmploye');
       expect(appels.faits.single.value, {'employeeId': 'e3'});
       expect(find.textContaining('Carl Ancien est réactivé'), findsOneWidget);
     });
 
-    testWidgets('réactiver : courriel impossible → le lien de secours est montré', (tester) async {
-      final appels = _Appels()
-        ..reponse = {
-          'id': 'e3',
-          'courrielEnvoye': false,
-          'lienInvitation': 'https://exemple.test/creer#e=e3&t=jeton',
-        };
-      await _ouvrirAnciens(tester, appels);
-      await tester.tap(find.byKey(const ValueKey('ancien_menu_e3')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Réactiver'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ancien_confirmer_reactivation')));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('Courriel non envoyé'), findsOneWidget);
-      expect(find.textContaining('https://exemple.test/creer'), findsOneWidget);
-    });
+    testWidgets(
+      'réactiver : courriel impossible → le lien de secours est montré',
+      (tester) async {
+        final appels = _Appels()
+          ..reponse = {
+            'id': 'e3',
+            'courrielEnvoye': false,
+            'lienInvitation': 'https://exemple.test/creer#e=e3&t=jeton',
+          };
+        await _ouvrirAnciens(tester, appels);
+        await tester.tap(find.byKey(const ValueKey('ancien_menu_e3')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Réactiver'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('ancien_confirmer_reactivation')),
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Courriel non envoyé'), findsOneWidget);
+        expect(
+          find.textContaining('https://exemple.test/creer'),
+          findsOneWidget,
+        );
+      },
+    );
 
-    testWidgets('réactiver : annuler n\'appelle rien ; une erreur affiche son message', (tester) async {
-      final appels = _Appels();
-      await _ouvrirAnciens(tester, appels);
-      await tester.tap(find.byKey(const ValueKey('ancien_menu_e3')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Réactiver'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Annuler'));
-      await tester.pumpAndSettle();
-      expect(appels.faits, isEmpty);
+    testWidgets(
+      'réactiver : annuler n\'appelle rien ; une erreur affiche son message',
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrirAnciens(tester, appels);
+        await tester.tap(find.byKey(const ValueKey('ancien_menu_e3')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Réactiver'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Annuler'));
+        await tester.pumpAndSettle();
+        expect(appels.faits, isEmpty);
 
-      appels.erreur = Exception('refus');
-      await tester.tap(find.byKey(const ValueKey('ancien_menu_e3')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Réactiver'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const ValueKey('ancien_confirmer_reactivation')));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Erreur de réseau'), findsOneWidget);
-    });
+        appels.erreur = Exception('refus');
+        await tester.tap(find.byKey(const ValueKey('ancien_menu_e3')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Réactiver'));
+        await tester.pumpAndSettle();
+        await tester.tap(
+          find.byKey(const ValueKey('ancien_confirmer_reactivation')),
+        );
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Erreur de réseau'), findsOneWidget);
+      },
+    );
 
-    testWidgets('supprimer la fiche : avertissement d\'irréversibilité, puis suppression', (tester) async {
-      final appels = _Appels();
-      await _ouvrirAnciens(tester, appels);
-      await tester.tap(find.byKey(const ValueKey('ancien_menu_e4')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Supprimer la fiche maintenant'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('irréversible'), findsOneWidget);
-      expect(find.textContaining('registres de la compagnie'), findsOneWidget);
-      expect(appels.faits, isEmpty);
-      await tester.tap(find.byKey(const ValueKey('ancien_confirmer_suppression')));
-      await tester.pumpAndSettle();
-      expect(appels.faits.single.key, 'supprimerEmploye');
-      expect(appels.faits.single.value, {'employeeId': 'e4'});
-      expect(find.text('Fiche supprimée.'), findsOneWidget);
-    });
+    testWidgets(
+      'supprimer la fiche : avertissement d\'irréversibilité, puis suppression',
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrirAnciens(tester, appels);
+        await tester.tap(find.byKey(const ValueKey('ancien_menu_e4')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Supprimer la fiche maintenant'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('irréversible'), findsOneWidget);
+        expect(
+          find.textContaining('registres de la compagnie'),
+          findsOneWidget,
+        );
+        expect(appels.faits, isEmpty);
+        await tester.tap(
+          find.byKey(const ValueKey('ancien_confirmer_suppression')),
+        );
+        await tester.pumpAndSettle();
+        expect(appels.faits.single.key, 'supprimerEmploye');
+        expect(appels.faits.single.value, {'employeeId': 'e4'});
+        expect(find.text('Fiche supprimée.'), findsOneWidget);
+      },
+    );
 
     testWidgets('supprimer : annuler n\'appelle rien', (tester) async {
       final appels = _Appels();

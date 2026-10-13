@@ -86,15 +86,16 @@ void main() {
       expect(find.byTooltip('Supprimer'), findsNWidgets(2));
     });
 
-    testWidgets('admin, aucun document : invitation à en déposer, bouton présent', (
-      tester,
-    ) async {
-      AppSession.notifier.value = _employe(EmployeeRole.admin);
-      await tester.pumpWidget(_documents(peutGerer: true, docs: const []));
-      await tester.pumpAndSettle();
-      expect(find.text('Déposer des documents'), findsOneWidget);
-      expect(find.textContaining('Déposez des plans'), findsOneWidget);
-    });
+    testWidgets(
+      'admin, aucun document : invitation à en déposer, bouton présent',
+      (tester) async {
+        AppSession.notifier.value = _employe(EmployeeRole.admin);
+        await tester.pumpWidget(_documents(peutGerer: true, docs: const []));
+        await tester.pumpAndSettle();
+        expect(find.text('Déposer des documents'), findsOneWidget);
+        expect(find.textContaining('Déposez des plans'), findsOneWidget);
+      },
+    );
 
     testWidgets('consultation seule : ni dépôt ni corbeille', (tester) async {
       AppSession.notifier.value = _employe(EmployeeRole.plus);

@@ -42,7 +42,10 @@ class EtiquettesCoupes {
   });
 }
 
-EtiquettesCoupes etiquettesCoupes(ResultatEscalier r, {required bool metrique}) {
+EtiquettesCoupes etiquettesCoupes(
+  ResultatEscalier r, {
+  required bool metrique,
+}) {
   String l(double po) => formatLongueur(po, metrique: metrique);
   return EtiquettesCoupes(
     contremarche: l(r.contremarche),
@@ -69,14 +72,23 @@ class SchemaCoupes extends StatelessWidget {
 
   final ResultatEscalier resultat;
   final bool metrique;
-  const SchemaCoupes({super.key, required this.resultat, required this.metrique});
+  const SchemaCoupes({
+    super.key,
+    required this.resultat,
+    required this.metrique,
+  });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final e = etiquettesCoupes(resultat, metrique: metrique);
     final styleLegende = Theme.of(context).textTheme.bodySmall;
-    Widget panneau(String cle, String titre, CustomPainter peintre, String legende) {
+    Widget panneau(
+      String cle,
+      String titre,
+      CustomPainter peintre,
+      String legende,
+    ) {
       return Column(
         key: ValueKey(cle),
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -87,7 +99,10 @@ class SchemaCoupes extends StatelessWidget {
           ),
           AspectRatio(
             aspectRatio: 1.9,
-            child: CustomPaint(painter: peintre, child: const SizedBox.expand()),
+            child: CustomPaint(
+              painter: peintre,
+              child: const SizedBox.expand(),
+            ),
           ),
           Padding(
             padding: const EdgeInsets.only(top: 4),
@@ -113,23 +128,23 @@ class SchemaCoupes extends StatelessWidget {
           'Gabarit : pente et mesures de l\'équerre',
           _PeintreGabarit(resultat, e, couleurs),
           'Pente ${e.pente}. À l\'équerre : contremarche ${e.contremarche} d\'un côté, '
-          'giron ${e.giron} de l\'autre (diagonale ${e.diagonale}). La coupe '
-          'd\'aplomb s\'écarte de ${e.anglePlomb} de la coupe d\'équerre, la coupe '
-          'de niveau de ${e.angleNiveau}.',
+              'giron ${e.giron} de l\'autre (diagonale ${e.diagonale}). La coupe '
+              'd\'aplomb s\'écarte de ${e.anglePlomb} de la coupe d\'équerre, la coupe '
+              'de niveau de ${e.angleNiveau}.',
         ),
         panneau(
           'schema_pied',
           'Pied du limon',
           _PeintrePied(resultat, e, couleurs),
           'Coupe d\'aplomb de ${e.aplombBas} (contremarche moins l\'épaisseur de la '
-          'marche) ; coupe de niveau de ${e.niveauPied} posée sur le plancher du bas.',
+              'marche) ; coupe de niveau de ${e.niveauPied} posée sur le plancher du bas.',
         ),
         panneau(
           'schema_tete',
           'Tête du limon',
           _PeintreTete(resultat, e, couleurs),
           'Coupe d\'aplomb de ${e.aplombTete} contre la poutre du haut ; pointe du '
-          'haut à ${e.pointeHaute} du plancher du bas.',
+              'haut à ${e.pointeHaute} du plancher du bas.',
         ),
       ],
     );
@@ -182,7 +197,8 @@ void _texte(
   var pos = position;
   if (limite != null) {
     // Étendue du texte une fois tourné (horizontal ou vertical seulement).
-    final vertical = rotation.abs() > math.pi / 4 && rotation.abs() < 3 * math.pi / 4;
+    final vertical =
+        rotation.abs() > math.pi / 4 && rotation.abs() < 3 * math.pi / 4;
     final largeur = vertical ? tp.height : tp.width;
     final hauteur = vertical ? tp.width : tp.height;
     final gauche = switch (alignement) {
@@ -193,7 +209,8 @@ void _texte(
     var dxCorr = 0.0;
     if (rotation.abs() < math.pi / 4 || vertical) {
       if (gauche < 2) dxCorr = 2 - gauche;
-      if (gauche + largeur > limite.width - 2) dxCorr = limite.width - 2 - (gauche + largeur);
+      if (gauche + largeur > limite.width - 2)
+        dxCorr = limite.width - 2 - (gauche + largeur);
       var dyCorr = 0.0;
       if (pos.dy - hauteur / 2 < 2) dyCorr = 2 - (pos.dy - hauteur / 2);
       if (pos.dy + hauteur / 2 > limite.height - 2) {
@@ -227,7 +244,9 @@ void _texte(
 void _cote(Canvas canvas, Offset a, Offset b, Paint paint, {double arret = 4}) {
   canvas.drawLine(a, b, paint);
   final d = b - a;
-  final n = d.distance == 0 ? const Offset(0, 1) : Offset(-d.dy, d.dx) / d.distance;
+  final n = d.distance == 0
+      ? const Offset(0, 1)
+      : Offset(-d.dy, d.dx) / d.distance;
   canvas.drawLine(a - n * arret, a + n * arret, paint);
   canvas.drawLine(b - n * arret, b + n * arret, paint);
 }
@@ -312,9 +331,21 @@ class _PeintreGabarit extends CustomPainter {
       ..strokeWidth = 1.6;
     // Pente, au pied.
     final rayon = math.min(largeur, hauteur) * 0.42 + 12;
-    canvas.drawArc(Rect.fromCircle(center: a, radius: rayon), -theta, theta, false, arcPaint);
-    t(e.pente,
-      a + Offset((rayon + 6) * math.cos(theta / 2), -(rayon + 6) * math.sin(theta / 2) * 0.6) + const Offset(24, 0),
+    canvas.drawArc(
+      Rect.fromCircle(center: a, radius: rayon),
+      -theta,
+      theta,
+      false,
+      arcPaint,
+    );
+    t(
+      e.pente,
+      a +
+          Offset(
+            (rayon + 6) * math.cos(theta / 2),
+            -(rayon + 6) * math.sin(theta / 2) * 0.6,
+          ) +
+          const Offset(24, 0),
       c.cote,
       alignement: _Alignement.centre,
     );
@@ -327,7 +358,12 @@ class _PeintreGabarit extends CustomPainter {
       false,
       arcPaint,
     );
-    t(e.angleHaut, cc + Offset(-rayon2 - 4, rayon2 + 6), c.cote, alignement: _Alignement.droite);
+    t(
+      e.angleHaut,
+      cc + Offset(-rayon2 - 4, rayon2 + 6),
+      c.cote,
+      alignement: _Alignement.droite,
+    );
 
     // Cotes : giron en bas, contremarche à droite, diagonale sur la pente.
     final cote = Paint()
@@ -336,17 +372,20 @@ class _PeintreGabarit extends CustomPainter {
     _cote(canvas, a + const Offset(0, 14), b + const Offset(0, 14), cote);
     t('Giron ${e.giron}', Offset((a.dx + b.dx) / 2, a.dy + 26), c.cote);
     _cote(canvas, b + const Offset(14, 0), cc + const Offset(14, 0), cote);
-    t('Contremarche',
+    t(
+      'Contremarche',
       Offset(b.dx + 30, (b.dy + cc.dy) / 2 - 8),
       c.cote,
       alignement: _Alignement.gauche,
     );
-    t(e.contremarche,
+    t(
+      e.contremarche,
       Offset(b.dx + 30, (b.dy + cc.dy) / 2 + 8),
       c.cote,
       alignement: _Alignement.gauche,
     );
-    t('Diagonale ${e.diagonale}',
+    t(
+      'Diagonale ${e.diagonale}',
       Offset((a.dx + cc.dx) / 2 - 10, (a.dy + cc.dy) / 2 - 12),
       c.trait,
       rotation: -theta,
@@ -370,7 +409,10 @@ class _Fenetre {
   late final double ox, oy;
 
   _Fenetre(this.xMin, this.xMax, this.yMin, this.yMax, this.taille) {
-    echelle = math.min(taille.width / (xMax - xMin), taille.height / (yMax - yMin));
+    echelle = math.min(
+      taille.width / (xMax - xMin),
+      taille.height / (yMax - yMin),
+    );
     ox = (taille.width - (xMax - xMin) * echelle) / 2;
     oy = taille.height - (taille.height - (yMax - yMin) * echelle) / 2;
   }
@@ -379,7 +421,12 @@ class _Fenetre {
       Offset(ox + (x - xMin) * echelle, oy - (y - yMin) * echelle);
 }
 
-void _peindreProfil(Canvas canvas, ResultatEscalier r, _Fenetre f, _Couleurs c) {
+void _peindreProfil(
+  Canvas canvas,
+  ResultatEscalier r,
+  _Fenetre f,
+  _Couleurs c,
+) {
   final trait = Paint()
     ..color = c.trait
     ..style = PaintingStyle.stroke
@@ -399,7 +446,10 @@ void _peindreProfil(Canvas canvas, ResultatEscalier r, _Fenetre f, _Couleurs c) 
   for (final t in r.table) {
     final x0 = (t.marche - 1) * r.giron - s.nez;
     final x1 = t.marche * r.giron;
-    final rect = Rect.fromPoints(f.p(x0, t.hauteurDessus), f.p(x1, t.hauteurSiege));
+    final rect = Rect.fromPoints(
+      f.p(x0, t.hauteurDessus),
+      f.p(x1, t.hauteurSiege),
+    );
     canvas.drawRect(rect, Paint()..color = c.marche);
     canvas.drawRect(rect, trait);
   }
@@ -446,7 +496,13 @@ class _PeintrePied extends CustomPainter {
       ..color = c.trait.withValues(alpha: 0.7)
       ..strokeWidth = 2;
     canvas.drawLine(f.p(f.xMin, 0), f.p(f.xMax, 0), sol);
-    t('Plancher du bas', f.p(f.xMax, -0.9), c.trait, alignement: _Alignement.droite, taille: 10);
+    t(
+      'Plancher du bas',
+      f.p(f.xMax, -0.9),
+      c.trait,
+      alignement: _Alignement.droite,
+      taille: 10,
+    );
     _peindreProfil(canvas, r, f, c);
 
     final cote = Paint()
@@ -455,7 +511,8 @@ class _PeintrePied extends CustomPainter {
     // Coupe d'aplomb du bas : verticale, à gauche.
     final xa = -2.2;
     _cote(canvas, f.p(xa, 0), f.p(xa, r.hauteurDepart), cote);
-    t('Aplomb ${e.aplombBas}',
+    t(
+      'Aplomb ${e.aplombBas}',
       f.p(xa - 0.9, r.hauteurDepart / 2),
       c.cote,
       rotation: -math.pi / 2,
@@ -525,7 +582,13 @@ class _PeintreTete extends CustomPainter {
       ..color = c.trait.withValues(alpha: 0.7)
       ..strokeWidth = 2;
     canvas.drawLine(f.p(r.course, h), f.p(f.xMax, h), sol);
-    t('Plancher du haut', f.p(f.xMax, h + 1.3), c.trait, alignement: _Alignement.droite, taille: 10);
+    t(
+      'Plancher du haut',
+      f.p(f.xMax, h + 1.3),
+      c.trait,
+      alignement: _Alignement.droite,
+      taille: 10,
+    );
     _peindreProfil(canvas, r, f, c);
 
     final cote = Paint()
@@ -534,7 +597,8 @@ class _PeintreTete extends CustomPainter {
     // Coupe d'aplomb de la tête : contre la poutre, à droite.
     final xa = r.course + 2.2;
     _cote(canvas, f.p(xa, haut - r.coupeTete), f.p(xa, haut), cote);
-    t('Aplomb ${e.aplombTete}',
+    t(
+      'Aplomb ${e.aplombTete}',
       f.p(xa + 1.1, haut - r.coupeTete / 2),
       c.cote,
       rotation: -math.pi / 2,
@@ -542,7 +606,8 @@ class _PeintreTete extends CustomPainter {
     // Pointe du haut.
     final pointe = f.p(r.course, haut);
     canvas.drawCircle(pointe, 3.5, Paint()..color = c.cote);
-    t('Pointe à ${e.pointeHaute}',
+    t(
+      'Pointe à ${e.pointeHaute}',
       pointe + const Offset(-10, -16),
       c.cote,
       alignement: _Alignement.droite,

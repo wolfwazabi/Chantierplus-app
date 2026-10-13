@@ -17,6 +17,7 @@ import 'screens/admin/admin_home_screen.dart';
 import 'screens/admin/compagnies_attente_screen.dart';
 import 'widgets/barre_onglets.dart';
 import 'widgets/fermer_clavier.dart';
+import 'widgets/actualiser.dart';
 
 // Clé de site reCAPTCHA Enterprise (web), fournie à la compilation :
 // flutter build web --dart-define=RECAPTCHA_ENTERPRISE_SITE_KEY=...
@@ -83,6 +84,8 @@ class ConstructionApp extends StatelessWidget {
         title: 'Chantier+',
         debugShowCheckedModeBanner: false,
         theme: ThemeCompagnie.construire(couleur),
+        // Toute page défile toujours : tirer vers le bas actualise, même une page courte.
+        scrollBehavior: const DefilementActualisable(),
         // Toucher une zone vide ferme le clavier, partout dans l'app.
         builder: (context, child) =>
             FermerClavier(child: child ?? const SizedBox.shrink()),

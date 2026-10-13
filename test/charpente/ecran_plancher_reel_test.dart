@@ -73,7 +73,10 @@ void main() {
     await _choisir(t, 'cote_maison_null', 'Côté 3 — 15\'');
 
     // Étriers à un bout, solives intérieures seulement.
-    await _tap(t, find.descendant(of: _cle('etriers'), matching: find.text('Un bout')));
+    await _tap(
+      t,
+      find.descendant(of: _cle('etriers'), matching: find.text('Un bout')),
+    );
     await _tap(t, _cle('etriers_bordures'));
 
     // Entremises automatiques en pose alternée ; coupes séparées.
@@ -86,9 +89,21 @@ void main() {
     await _saisir(t, 'poutres_patte', '16"');
 
     // Résultats du plancher.
-    expect(_present('15 (dont 4 de bordure)'), isTrue, reason: '15 (dont 4 de bordure)');
-    expect(_present('2 de 3 plis en 2×8'), isTrue, reason: '2 de 3 plis en 2×8');
-    expect(_present('6 · entraxe 6\' 6"'), isTrue, reason: '6 · entraxe 6\' 6"');
+    expect(
+      _present('15 (dont 4 de bordure)'),
+      isTrue,
+      reason: '15 (dont 4 de bordure)',
+    );
+    expect(
+      _present('2 de 3 plis en 2×8'),
+      isTrue,
+      reason: '2 de 3 plis en 2×8',
+    );
+    expect(
+      _present('6 · entraxe 6\' 6"'),
+      isTrue,
+      reason: '6 · entraxe 6\' 6"',
+    );
     expect(_present('6 de 1\' 4"'), isTrue, reason: 'pattes');
     expect(_present('1 boîte'), isTrue, reason: '1 boîte');
     expect(find.text('Poutres (2×8 traité)'), findsOneWidget);
@@ -100,7 +115,11 @@ void main() {
     expect(_present("2×8 × 16' traité"), isTrue, reason: "2×8 × 16' traité");
     expect(_present("6×6 × 8' traité"), isTrue, reason: "6×6 × 8' traité");
     expect(_present('Clous d\'étriers'), isTrue, reason: 'Clous d\'étriers');
-    expect(_present('Étrier de solive pour 2×8'), isTrue, reason: 'Étrier de solive pour 2×8');
+    expect(
+      _present('Étrier de solive pour 2×8'),
+      isTrue,
+      reason: 'Étrier de solive pour 2×8',
+    );
   });
 
   testWidgets('côté de la maison : « Aucun » rétablit les rives doublées', (
@@ -115,37 +134,39 @@ void main() {
     expect(_cle('cote_maison_null'), findsOneWidget);
   });
 
-  testWidgets('poutres : réglages visibles seulement quand elles sont actives', (
-    t,
-  ) async {
-    await _ouvrir(t);
-    expect(_cle('poutres_nombre'), findsNothing);
-    await _tap(t, _cle('poutres_actives'));
-    for (final k in [
-      'poutres_nombre',
-      'poutres_plis',
-      'poutres_pieux',
-      'poutres_retrait',
-      'poutres_patte',
-    ]) {
-      expect(_cle(k), findsOneWidget, reason: k);
-    }
-    await _tap(t, _cle('poutres_actives'));
-    expect(_cle('poutres_nombre'), findsNothing);
-  });
+  testWidgets(
+    'poutres : réglages visibles seulement quand elles sont actives',
+    (t) async {
+      await _ouvrir(t);
+      expect(_cle('poutres_nombre'), findsNothing);
+      await _tap(t, _cle('poutres_actives'));
+      for (final k in [
+        'poutres_nombre',
+        'poutres_plis',
+        'poutres_pieux',
+        'poutres_retrait',
+        'poutres_patte',
+      ]) {
+        expect(_cle(k), findsOneWidget, reason: k);
+      }
+      await _tap(t, _cle('poutres_actives'));
+      expect(_cle('poutres_nombre'), findsNothing);
+    },
+  );
 
-  testWidgets('entremises : automatiques ou à la main, jamais les deux champs', (
-    t,
-  ) async {
-    await _ouvrir(t);
-    expect(_cle('entremises'), findsOneWidget);
-    expect(_cle('entremises_espacement'), findsNothing);
-    expect(_cle('entremises_alternees'), findsNothing);
-    await _tap(t, _cle('entremises_auto'));
-    expect(_cle('entremises'), findsNothing);
-    expect(_cle('entremises_espacement'), findsOneWidget);
-    expect(_cle('entremises_alternees'), findsOneWidget);
-  });
+  testWidgets(
+    'entremises : automatiques ou à la main, jamais les deux champs',
+    (t) async {
+      await _ouvrir(t);
+      expect(_cle('entremises'), findsOneWidget);
+      expect(_cle('entremises_espacement'), findsNothing);
+      expect(_cle('entremises_alternees'), findsNothing);
+      await _tap(t, _cle('entremises_auto'));
+      expect(_cle('entremises'), findsNothing);
+      expect(_cle('entremises_espacement'), findsOneWidget);
+      expect(_cle('entremises_alternees'), findsOneWidget);
+    },
+  );
 
   testWidgets('clous d\'étriers : réglables, sans étrier ils disparaissent', (
     t,
@@ -153,10 +174,16 @@ void main() {
     await _ouvrir(t);
     // Étriers aux deux bouts par défaut.
     expect(_cle('clous_etriers'), findsOneWidget);
-    await _tap(t, find.descendant(of: _cle('etriers'), matching: find.text('Aucun')));
+    await _tap(
+      t,
+      find.descendant(of: _cle('etriers'), matching: find.text('Aucun')),
+    );
     expect(_cle('clous_etriers'), findsNothing);
     expect(_cle('etriers_bordures'), findsNothing);
-    await _tap(t, find.descendant(of: _cle('etriers'), matching: find.text('Un bout')));
+    await _tap(
+      t,
+      find.descendant(of: _cle('etriers'), matching: find.text('Un bout')),
+    );
     await _tap(t, _cle('clous_etriers'));
     expect(_cle('clous_par_etrier'), findsOneWidget);
     await _saisir(t, 'clous_par_etrier', '12');

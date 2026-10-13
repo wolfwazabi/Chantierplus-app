@@ -68,11 +68,13 @@ void ouvrirFormulaireChantier(
                   if (companyId == null) return;
 
                   if (docId == null) {
-                    await FirebaseFirestore.instance.collection('chantiers').add({
-                      'companyId': companyId,
-                      'nom': nom,
-                      'adresse': adresse,
-                    });
+                    await FirebaseFirestore.instance
+                        .collection('chantiers')
+                        .add({
+                          'companyId': companyId,
+                          'nom': nom,
+                          'adresse': adresse,
+                        });
                   } else {
                     await FirebaseFirestore.instance
                         .collection('chantiers')

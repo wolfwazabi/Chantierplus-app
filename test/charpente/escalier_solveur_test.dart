@@ -7,53 +7,73 @@ import 'package:construction_app/charpente/escalier.dart';
 import 'package:construction_app/charpente/escalier_solveur.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-SolutionEscalier _res(DonneesEscalier d, {UsageEscalier usage = UsageEscalier.prive, bool metrique = false}) =>
-    resoudreEscalier(d, usage: usage, metrique: metrique);
+SolutionEscalier _res(
+  DonneesEscalier d, {
+  UsageEscalier usage = UsageEscalier.prive,
+  bool metrique = false,
+}) => resoudreEscalier(d, usage: usage, metrique: metrique);
 
 void main() {
-  group('hauteur + course : le nombre de contremarches qui respecte le Code', () {
-    test('108 po sur 135 po : un seul nombre possible, 14 contremarches', () {
-      // n = 14 : R = 108/14 = 7,714 po (196 mm ≤ 200) ; G = 135/13 = 10,385 po (263,8 mm ≥ 255).
-      // n = 15 : G = 135/14 = 9,643 po = 244,9 mm < 255 : refusé. n = 13 : R = 8,31 po > 200 mm.
-      final s = _res(const DonneesEscalier(hauteur: 108, course: 135));
-      expect(s.nombreContremarches, 14);
-      expect(s.contremarche, closeTo(108 / 14, 1e-12));
-      expect(s.giron, closeTo(135 / 13, 1e-12));
-      expect(s.hauteur, 108);
-      expect(s.course, 135);
-      expect(s.donnees, {DonneeEscalier.hauteur, DonneeEscalier.course});
-      expect(s.trouvees, {DonneeEscalier.giron, DonneeEscalier.contremarche, DonneeEscalier.nombre});
-      expect(s.autresChoix, isEmpty);
-    });
+  group(
+    'hauteur + course : le nombre de contremarches qui respecte le Code',
+    () {
+      test('108 po sur 135 po : un seul nombre possible, 14 contremarches', () {
+        // n = 14 : R = 108/14 = 7,714 po (196 mm ≤ 200) ; G = 135/13 = 10,385 po (263,8 mm ≥ 255).
+        // n = 15 : G = 135/14 = 9,643 po = 244,9 mm < 255 : refusé. n = 13 : R = 8,31 po > 200 mm.
+        final s = _res(const DonneesEscalier(hauteur: 108, course: 135));
+        expect(s.nombreContremarches, 14);
+        expect(s.contremarche, closeTo(108 / 14, 1e-12));
+        expect(s.giron, closeTo(135 / 13, 1e-12));
+        expect(s.hauteur, 108);
+        expect(s.course, 135);
+        expect(s.donnees, {DonneeEscalier.hauteur, DonneeEscalier.course});
+        expect(s.trouvees, {
+          DonneeEscalier.giron,
+          DonneeEscalier.contremarche,
+          DonneeEscalier.nombre,
+        });
+        expect(s.autresChoix, isEmpty);
+      });
 
-    test('course plus longue : le plus confortable parmi plusieurs nombres conformes', () {
-      // H = 108, L = 150 : n = 14 → R 7,714 / G 11,538 (2R+G = 26,97 po) ; n = 15 → 7,2 / 10,714
-      // (25,11 po) ; n = 16 → 6,75 / 10 (23,5 po, giron 254 mm refusé). Le plus près de 25 po : n = 15.
-      final s = _res(const DonneesEscalier(hauteur: 108, course: 150));
-      expect(s.nombreContremarches, 15);
-      expect(s.giron, closeTo(150 / 14, 1e-12));
-      expect(s.autresChoix.map((c) => c.nombreContremarches), [14]);
-    });
+      test('course plus longue : le plus confortable parmi plusieurs nombres conformes', () {
+        // H = 108, L = 150 : n = 14 → R 7,714 / G 11,538 (2R+G = 26,97 po) ; n = 15 → 7,2 / 10,714
+        // (25,11 po) ; n = 16 → 6,75 / 10 (23,5 po, giron 254 mm refusé). Le plus près de 25 po : n = 15.
+        final s = _res(const DonneesEscalier(hauteur: 108, course: 150));
+        expect(s.nombreContremarches, 15);
+        expect(s.giron, closeTo(150 / 14, 1e-12));
+        expect(s.autresChoix.map((c) => c.nombreContremarches), [14]);
+      });
 
-    test('course impossible : le moins éloigné du Code, signalé', () {
-      // H = 108, L = 60 : aucun giron permis. n = 14 est le moins éloigné (giron 4,6 po).
-      final s = _res(const DonneesEscalier(hauteur: 108, course: 60));
-      expect(s.nombreContremarches, 14);
-      expect(s.notes.join(' '), contains('Aucun nombre de contremarches ne respecte le Code'));
-      expect(calculerEscalier(_spec(s)).conforme, isFalse);
-    });
-  });
+      test('course impossible : le moins éloigné du Code, signalé', () {
+        // H = 108, L = 60 : aucun giron permis. n = 14 est le moins éloigné (giron 4,6 po).
+        final s = _res(const DonneesEscalier(hauteur: 108, course: 60));
+        expect(s.nombreContremarches, 14);
+        expect(
+          s.notes.join(' '),
+          contains('Aucun nombre de contremarches ne respecte le Code'),
+        );
+        expect(calculerEscalier(_spec(s)).conforme, isFalse);
+      });
+    },
+  );
 
   group('hauteur + giron : la course en découle', () {
-    test('108 po avec un giron de 10 1/4 po : 15 contremarches, course 143 1/2 po', () {
-      // Coûts |2R + G − 25| : n = 15 → 0,35 po ; n = 14 → 0,68 po ; n = 16 → 1,25 po.
-      final s = _res(const DonneesEscalier(hauteur: 108, giron: 10.25));
-      expect(s.nombreContremarches, 15);
-      expect(s.contremarche, closeTo(7.2, 1e-12));
-      expect(s.giron, 10.25);
-      expect(s.course, closeTo(143.5, 1e-12));
-      expect(s.trouvees, {DonneeEscalier.course, DonneeEscalier.contremarche, DonneeEscalier.nombre});
-    });
+    test(
+      '108 po avec un giron de 10 1/4 po : 15 contremarches, course 143 1/2 po',
+      () {
+        // Coûts |2R + G − 25| : n = 15 → 0,35 po ; n = 14 → 0,68 po ; n = 16 → 1,25 po.
+        final s = _res(const DonneesEscalier(hauteur: 108, giron: 10.25));
+        expect(s.nombreContremarches, 15);
+        expect(s.contremarche, closeTo(7.2, 1e-12));
+        expect(s.giron, 10.25);
+        expect(s.course, closeTo(143.5, 1e-12));
+        expect(s.trouvees, {
+          DonneeEscalier.course,
+          DonneeEscalier.contremarche,
+          DonneeEscalier.nombre,
+        });
+      },
+    );
 
     test('autres choix : conformes, du meilleur au moins bon, sans le choix retenu', () {
       final s = _res(const DonneesEscalier(hauteur: 108, giron: 10.25));
@@ -71,12 +91,15 @@ void main() {
       }
     });
 
-    test('un giron en dessous du Code : calculé quand même, le Code le signalera', () {
-      final s = _res(const DonneesEscalier(hauteur: 108, giron: 8));
-      expect(s.giron, 8);
-      final r = calculerEscalier(_spec(s));
-      expect(r.conforme, isFalse);
-    });
+    test(
+      'un giron en dessous du Code : calculé quand même, le Code le signalera',
+      () {
+        final s = _res(const DonneesEscalier(hauteur: 108, giron: 8));
+        expect(s.giron, 8);
+        final r = calculerEscalier(_spec(s));
+        expect(r.conforme, isFalse);
+      },
+    );
   });
 
   group('hauteur seule : l\'escalier idéal', () {
@@ -93,7 +116,10 @@ void main() {
 
     test('escalier commun : contremarche max 180 mm et giron min 280 mm', () {
       // 108 po : n = 16 (6,75 po = 171 mm) ; giron = 25 − 13,5 = 11,5 po (292 mm ≥ 280).
-      final s = _res(const DonneesEscalier(hauteur: 108), usage: UsageEscalier.commun);
+      final s = _res(
+        const DonneesEscalier(hauteur: 108),
+        usage: UsageEscalier.commun,
+      );
       expect(s.nombreContremarches, 16);
       expect(s.giron, 11.5);
     });
@@ -106,15 +132,18 @@ void main() {
       expect(s.giron * 25.4, lessThanOrEqualTo(355));
     });
 
-    test('un giron idéal sous le minimum du Code est remonté, jamais en dessous', () {
-      // H = 108, R = 7,5 → n = 14 (R 7,714) ; 25 − 15,43 = 9,57 po < 10,04 po (255 mm) :
-      // remonté à 10 1/16 po (255,6 mm), au 1/16 po au-dessus du minimum.
-      final s = _res(const DonneesEscalier(hauteur: 108, contremarche: 7.5));
-      expect(s.nombreContremarches, 14);
-      expect(s.giron, 10.0625);
-      expect(s.giron * 25.4, greaterThanOrEqualTo(255));
-      expect(s.course, closeTo(13 * 10.0625, 1e-12));
-    });
+    test(
+      'un giron idéal sous le minimum du Code est remonté, jamais en dessous',
+      () {
+        // H = 108, R = 7,5 → n = 14 (R 7,714) ; 25 − 15,43 = 9,57 po < 10,04 po (255 mm) :
+        // remonté à 10 1/16 po (255,6 mm), au 1/16 po au-dessus du minimum.
+        final s = _res(const DonneesEscalier(hauteur: 108, contremarche: 7.5));
+        expect(s.nombreContremarches, 14);
+        expect(s.giron, 10.0625);
+        expect(s.giron * 25.4, greaterThanOrEqualTo(255));
+        expect(s.course, closeTo(13 * 10.0625, 1e-12));
+      },
+    );
   });
 
   group('hauteur + contremarche, ou hauteur + nombre', () {
@@ -140,7 +169,9 @@ void main() {
     });
 
     test('le nombre imposé gagne sur la contremarche demandée', () {
-      final s = _res(const DonneesEscalier(hauteur: 108, nombre: 16, contremarche: 7.5));
+      final s = _res(
+        const DonneesEscalier(hauteur: 108, nombre: 16, contremarche: 7.5),
+      );
       expect(s.nombreContremarches, 16);
       expect(s.contremarche, 6.75);
       expect(s.notes.join(' '), contains('Contremarche ajustée'));
@@ -214,7 +245,13 @@ void main() {
     test('contremarche + giron seulement : la hauteur ou la course manque', () {
       expect(
         () => _res(const DonneesEscalier(contremarche: 7, giron: 10.5)),
-        throwsA(isA<EscalierInvalide>().having((e) => e.message, 'message', contains('insuffisantes'))),
+        throwsA(
+          isA<EscalierInvalide>().having(
+            (e) => e.message,
+            'message',
+            contains('insuffisantes'),
+          ),
+        ),
       );
     });
 
@@ -229,18 +266,39 @@ void main() {
     });
 
     test('valeurs invalides', () {
-      expect(() => _res(const DonneesEscalier(hauteur: 0)), throwsA(isA<EscalierInvalide>()));
-      expect(() => _res(const DonneesEscalier(hauteur: -5, giron: 10)), throwsA(isA<EscalierInvalide>()));
-      expect(() => _res(const DonneesEscalier(hauteur: double.nan)), throwsA(isA<EscalierInvalide>()));
-      expect(() => _res(const DonneesEscalier(hauteur: double.infinity, giron: 10)), throwsA(isA<EscalierInvalide>()));
-      expect(() => _res(const DonneesEscalier(hauteur: 108, nombre: 1)), throwsA(isA<EscalierInvalide>()));
-      expect(() => _res(const DonneesEscalier(hauteur: 108, nombre: 101)), throwsA(isA<EscalierInvalide>()));
+      expect(
+        () => _res(const DonneesEscalier(hauteur: 0)),
+        throwsA(isA<EscalierInvalide>()),
+      );
+      expect(
+        () => _res(const DonneesEscalier(hauteur: -5, giron: 10)),
+        throwsA(isA<EscalierInvalide>()),
+      );
+      expect(
+        () => _res(const DonneesEscalier(hauteur: double.nan)),
+        throwsA(isA<EscalierInvalide>()),
+      );
+      expect(
+        () => _res(const DonneesEscalier(hauteur: double.infinity, giron: 10)),
+        throwsA(isA<EscalierInvalide>()),
+      );
+      expect(
+        () => _res(const DonneesEscalier(hauteur: 108, nombre: 1)),
+        throwsA(isA<EscalierInvalide>()),
+      );
+      expect(
+        () => _res(const DonneesEscalier(hauteur: 108, nombre: 101)),
+        throwsA(isA<EscalierInvalide>()),
+      );
     });
   });
 
   group('notes en métrique', () {
     test('mm au lieu des pouces', () {
-      final s = _res(const DonneesEscalier(course: 144, giron: 10.5), metrique: true);
+      final s = _res(
+        const DonneesEscalier(course: 144, giron: 10.5),
+        metrique: true,
+      );
       final texte = s.notes.join(' ');
       expect(texte, contains('mm'));
       expect(texte, isNot(contains('"')));
@@ -266,13 +324,22 @@ void main() {
         } on EscalierInvalide {
           continue; // giron hors de ce que le calcul accepte (plus de 24 po) : cas irréaliste
         }
-        final mauvais = r.erreurs.where((v) => v.id == 'contremarche' || v.id == 'giron');
+        final mauvais = r.erreurs.where(
+          (v) => v.id == 'contremarche' || v.id == 'giron',
+        );
         if (!s.notes.any((n) => n.contains('Aucun nombre'))) {
           avecChoix++;
-          expect(mauvais, isEmpty, reason: 'h=$h l=$l n=${s.nombreContremarches}');
+          expect(
+            mauvais,
+            isEmpty,
+            reason: 'h=$h l=$l n=${s.nombreContremarches}',
+          );
         }
       }
-      expect(avecChoix, greaterThan(50)); // le test examine bien des cas conformes
+      expect(
+        avecChoix,
+        greaterThan(50),
+      ); // le test examine bien des cas conformes
     });
 
     test('hauteur + giron : contremarche dans le Code ; la course est (n − 1) × giron', () {
@@ -282,8 +349,16 @@ void main() {
         final s = _res(DonneesEscalier(hauteur: h, giron: g));
         expect(s.nombreContremarches * s.contremarche, closeTo(h, 1e-9));
         expect(s.course, closeTo((s.nombreContremarches - 1) * g, 1e-9));
-        expect(s.contremarche * 25.4, lessThanOrEqualTo(200.06), reason: 'h=$h g=$g');
-        expect(s.contremarche * 25.4, greaterThanOrEqualTo(124.9), reason: 'h=$h g=$g');
+        expect(
+          s.contremarche * 25.4,
+          lessThanOrEqualTo(200.06),
+          reason: 'h=$h g=$g',
+        );
+        expect(
+          s.contremarche * 25.4,
+          greaterThanOrEqualTo(124.9),
+          reason: 'h=$h g=$g',
+        );
       }
     });
 
@@ -292,24 +367,41 @@ void main() {
         final h = 30 + hasard.nextDouble() * 160;
         final s = _res(DonneesEscalier(hauteur: h));
         expect(s.nombreContremarches * s.contremarche, closeTo(h, 1e-9));
-        expect(s.contremarche * 25.4, inInclusiveRange(124.9, 200.06), reason: 'h=$h');
+        expect(
+          s.contremarche * 25.4,
+          inInclusiveRange(124.9, 200.06),
+          reason: 'h=$h',
+        );
         expect(s.giron * 25.4, inInclusiveRange(254.9, 355.1), reason: 'h=$h');
         // Un seizième de pouce près : le giron idéal est arrondi au 1/16 po.
-        expect((s.giron / (1 / 16)) - (s.giron / (1 / 16)).roundToDouble(), closeTo(0, 1e-9));
+        expect(
+          (s.giron / (1 / 16)) - (s.giron / (1 / 16)).roundToDouble(),
+          closeTo(0, 1e-9),
+        );
       }
     });
 
-    test('course + giron (hauteur trouvée) : relations exactes et Code respecté', () {
-      for (var i = 0; i < 300; i++) {
-        final l = 60 + hasard.nextDouble() * 260;
-        final g = 10.05 + hasard.nextDouble() * 3.9;
-        final s = _res(DonneesEscalier(course: l, giron: g));
-        expect(s.course, l);
-        expect((s.nombreContremarches - 1) * s.giron, closeTo(l, 1e-9));
-        expect(s.nombreContremarches * s.contremarche, closeTo(s.hauteur, 1e-9));
-        expect(s.contremarche * 25.4, inInclusiveRange(124.9, 200.06), reason: 'l=$l g=$g');
-      }
-    });
+    test(
+      'course + giron (hauteur trouvée) : relations exactes et Code respecté',
+      () {
+        for (var i = 0; i < 300; i++) {
+          final l = 60 + hasard.nextDouble() * 260;
+          final g = 10.05 + hasard.nextDouble() * 3.9;
+          final s = _res(DonneesEscalier(course: l, giron: g));
+          expect(s.course, l);
+          expect((s.nombreContremarches - 1) * s.giron, closeTo(l, 1e-9));
+          expect(
+            s.nombreContremarches * s.contremarche,
+            closeTo(s.hauteur, 1e-9),
+          );
+          expect(
+            s.contremarche * 25.4,
+            inInclusiveRange(124.9, 200.06),
+            reason: 'l=$l g=$g',
+          );
+        }
+      },
+    );
   });
 
   group('avec le calcul des limons', () {

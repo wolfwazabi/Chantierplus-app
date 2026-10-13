@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/app_session.dart';
 import 'semaine_detail_screen.dart';
 import '../../services/theme_compagnie.dart';
+import '../../widgets/actualiser.dart';
 
 class SemaineListeScreen extends StatelessWidget {
   const SemaineListeScreen({super.key});
@@ -22,11 +23,11 @@ class SemaineListeScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Heures employés')),
       body: companyId == null
           ? const Center(child: Text('Aucune compagnie associée.'))
-          : StreamBuilder<QuerySnapshot>(
+          : FluxActualisable<QuerySnapshot>(
               // Le filtre companyId est obligatoire : les Security Rules ne filtrent
               // pas les résultats, elles refusent toute requête qui pourrait
               // retourner un document d'une autre compagnie.
-              stream: FirebaseFirestore.instance
+              creerFlux: () => FirebaseFirestore.instance
                   .collection('feuilles_temps')
                   .where('companyId', isEqualTo: companyId)
                   .orderBy('lundiDate', descending: true)

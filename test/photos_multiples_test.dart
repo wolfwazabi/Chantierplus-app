@@ -18,9 +18,11 @@ final Uint8List _png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
 );
 
-XFile _photo(String nom) => XFile.fromData(_png, name: nom, mimeType: 'image/png');
+XFile _photo(String nom) =>
+    XFile.fromData(_png, name: nom, mimeType: 'image/png');
 Finder _cle(String k) => find.byKey(ValueKey(k));
-String _lien(int n) => 'https://firebasestorage.googleapis.com/v0/b/x/o/photo$n.jpg';
+String _lien(int n) =>
+    'https://firebasestorage.googleapis.com/v0/b/x/o/photo$n.jpg';
 
 Employee _emp(String id, String nom, EmployeeRole role) =>
     Employee(id: id, companyId: 'A', companyNom: 'Alpha', nom: nom, role: role);
@@ -57,16 +59,20 @@ void main() {
     echecEnvoi = 0;
     galerie = [];
     camera = null;
-    AppSession.notifier.value = moi ?? _emp('plusA', 'Plus A', EmployeeRole.plus);
+    AppSession.notifier.value =
+        moi ?? _emp('plusA', 'Plus A', EmployeeRole.plus);
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: ChantierScreen(
             fluxChantiers: Stream.value(_chantiers),
             fluxMateriel: Stream.value(flux),
-            contenuOnglet: (nom, id) => nom == 'materiel' ? null : Text('ONGLET $nom'),
-            ajouterEntree: (collection, data) async => ajouts.add((collection, data)),
-            modifierEntree: (collection, id, data) async => modifs.add((collection, id, data)),
+            contenuOnglet: (nom, id) =>
+                nom == 'materiel' ? null : Text('ONGLET $nom'),
+            ajouterEntree: (collection, data) async =>
+                ajouts.add((collection, data)),
+            modifierEntree: (collection, id, data) async =>
+                modifs.add((collection, id, data)),
             televerserPhoto: (chemin, octets) async {
               if (echecEnvoi > 0) {
                 echecEnvoi--;
@@ -118,26 +124,36 @@ void main() {
 
   // ===========================================================================
   group('ajouter une demande avec plusieurs photos', () {
-    testWidgets('sans photo : « Ajouter des photos », et la demande part sans champ de photo', (tester) async {
-      await ouvrir(tester);
-      expect(find.text('Ajouter des photos'), findsOneWidget);
-      await ajouter(tester, 'Clous 3 po');
-      final data = ajouts.single.$2;
-      expect(data.containsKey('photoUrl'), isFalse);
-      expect(data.containsKey('photoUrls'), isFalse);
-    });
+    testWidgets(
+      'sans photo : « Ajouter des photos », et la demande part sans champ de photo',
+      (tester) async {
+        await ouvrir(tester);
+        expect(find.text('Ajouter des photos'), findsOneWidget);
+        await ajouter(tester, 'Clous 3 po');
+        final data = ajouts.single.$2;
+        expect(data.containsKey('photoUrl'), isFalse);
+        expect(data.containsKey('photoUrls'), isFalse);
+      },
+    );
 
-    testWidgets('plusieurs photos de la galerie d\'un coup : un aperçu chacune', (tester) async {
-      await ouvrir(tester);
-      galerie = [_photo('a.jpg'), _photo('b.jpg'), _photo('c.jpg')];
-      await choisirGalerie(tester);
-      for (var i = 0; i < 3; i++) {
-        expect(_cle('photo_retirer_nouvelle_$i'), findsOneWidget, reason: 'aperçu $i');
-      }
-      expect(find.text('Ajouter des photos (3/6)'), findsOneWidget);
-      // La galerie a été ouverte avec le maximum permis.
-      expect(limites, [6]);
-    });
+    testWidgets(
+      'plusieurs photos de la galerie d\'un coup : un aperçu chacune',
+      (tester) async {
+        await ouvrir(tester);
+        galerie = [_photo('a.jpg'), _photo('b.jpg'), _photo('c.jpg')];
+        await choisirGalerie(tester);
+        for (var i = 0; i < 3; i++) {
+          expect(
+            _cle('photo_retirer_nouvelle_$i'),
+            findsOneWidget,
+            reason: 'aperçu $i',
+          );
+        }
+        expect(find.text('Ajouter des photos (3/6)'), findsOneWidget);
+        // La galerie a été ouverte avec le maximum permis.
+        expect(limites, [6]);
+      },
+    );
 
     testWidgets('retirer une photo avant l\'envoi', (tester) async {
       await ouvrir(tester);
@@ -150,32 +166,41 @@ void main() {
       expect(find.text('Ajouter des photos (2/6)'), findsOneWidget);
     });
 
-    testWidgets('envoi : toutes les photos, dans l\'ordre ; la première est photoUrl ; tout est vidé ensuite', (tester) async {
-      await ouvrir(tester);
-      galerie = [_photo('a.jpg'), _photo('b.jpg'), _photo('c.jpg')];
-      await choisirGalerie(tester);
-      await tester.tap(_cle('photo_retirer_nouvelle_1')); // on garde a et c
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField).at(1), '2');
-      await ajouter(tester, 'Clous 3 po');
-      expect(chemins.length, 2);
-      for (final c in chemins) {
-        expect(c, startsWith('chantiers/A/c1/chantier_materiel/'));
-      }
-      expect(chemins[0], contains('_0_'));
-      expect(chemins[1], contains('_1_'));
-      expect(chemins[0], isNot(equals(chemins[1])));
-      final (collection, data) = ajouts.single;
-      expect(collection, 'chantier_materiel');
-      expect(data['photoUrl'], _lien(1));
-      expect(data['photoUrls'], [_lien(1), _lien(2)]);
-      expect(data['texte'], 'Clous 3 po');
-      expect(data['quantite'], '2');
-      // Tout est vidé, prêt pour la demande suivante.
-      expect(_cle('photo_retirer_nouvelle_0'), findsNothing);
-      expect(find.text('Ajouter des photos'), findsOneWidget);
-      expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, '');
-    });
+    testWidgets(
+      'envoi : toutes les photos, dans l\'ordre ; la première est photoUrl ; tout est vidé ensuite',
+      (tester) async {
+        await ouvrir(tester);
+        galerie = [_photo('a.jpg'), _photo('b.jpg'), _photo('c.jpg')];
+        await choisirGalerie(tester);
+        await tester.tap(_cle('photo_retirer_nouvelle_1')); // on garde a et c
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField).at(1), '2');
+        await ajouter(tester, 'Clous 3 po');
+        expect(chemins.length, 2);
+        for (final c in chemins) {
+          expect(c, startsWith('chantiers/A/c1/chantier_materiel/'));
+        }
+        expect(chemins[0], contains('_0_'));
+        expect(chemins[1], contains('_1_'));
+        expect(chemins[0], isNot(equals(chemins[1])));
+        final (collection, data) = ajouts.single;
+        expect(collection, 'chantier_materiel');
+        expect(data['photoUrl'], _lien(1));
+        expect(data['photoUrls'], [_lien(1), _lien(2)]);
+        expect(data['texte'], 'Clous 3 po');
+        expect(data['quantite'], '2');
+        // Tout est vidé, prêt pour la demande suivante.
+        expect(_cle('photo_retirer_nouvelle_0'), findsNothing);
+        expect(find.text('Ajouter des photos'), findsOneWidget);
+        expect(
+          tester
+              .widget<TextField>(find.byType(TextField).first)
+              .controller!
+              .text,
+          '',
+        );
+      },
+    );
 
     testWidgets('l\'appareil photo et la galerie se combinent', (tester) async {
       await ouvrir(tester);
@@ -190,7 +215,9 @@ void main() {
       expect((ajouts.single.$2['photoUrls'] as List).length, 3);
     });
 
-    testWidgets('annuler l\'appareil photo ou la galerie : rien ne change', (tester) async {
+    testWidgets('annuler l\'appareil photo ou la galerie : rien ne change', (
+      tester,
+    ) async {
       await ouvrir(tester);
       camera = null;
       await prendre(tester);
@@ -199,36 +226,60 @@ void main() {
       expect(find.text('Ajouter des photos'), findsOneWidget);
     });
 
-    testWidgets('maximum de 6 : les photos en trop sont ignorées, avec un message', (tester) async {
-      await ouvrir(tester);
-      galerie = [for (var i = 0; i < 9; i++) _photo('p$i.jpg')];
-      await choisirGalerie(tester);
-      expect(find.text('Maximum de 6 photos : 3 photos ignorées.'), findsOneWidget);
-      expect(find.text('Maximum atteint (6/6)'), findsOneWidget);
-      // Le bouton est désactivé tant qu'on n'en retire pas une.
-      expect(tester.widget<OutlinedButton>(_cle('photos_ajouter')).onPressed, isNull);
-      await tester.tap(_cle('photo_retirer_nouvelle_5'));
-      await tester.pumpAndSettle();
-      expect(tester.widget<OutlinedButton>(_cle('photos_ajouter')).onPressed, isNotNull);
-      expect(find.text('Ajouter des photos (5/6)'), findsOneWidget);
-    });
+    testWidgets(
+      'maximum de 6 : les photos en trop sont ignorées, avec un message',
+      (tester) async {
+        await ouvrir(tester);
+        galerie = [for (var i = 0; i < 9; i++) _photo('p$i.jpg')];
+        await choisirGalerie(tester);
+        expect(
+          find.text('Maximum de 6 photos : 3 photos ignorées.'),
+          findsOneWidget,
+        );
+        expect(find.text('Maximum atteint (6/6)'), findsOneWidget);
+        // Le bouton est désactivé tant qu'on n'en retire pas une.
+        expect(
+          tester.widget<OutlinedButton>(_cle('photos_ajouter')).onPressed,
+          isNull,
+        );
+        await tester.tap(_cle('photo_retirer_nouvelle_5'));
+        await tester.pumpAndSettle();
+        expect(
+          tester.widget<OutlinedButton>(_cle('photos_ajouter')).onPressed,
+          isNotNull,
+        );
+        expect(find.text('Ajouter des photos (5/6)'), findsOneWidget);
+      },
+    );
 
-    testWidgets('échec de l\'envoi : message, tout reste à l\'écran, on réessaie sans rechoisir', (tester) async {
-      await ouvrir(tester);
-      galerie = [_photo('a.jpg'), _photo('b.jpg')];
-      await choisirGalerie(tester);
-      echecEnvoi = 1;
-      await ajouter(tester, 'Niveau');
-      expect(find.textContaining('n\'a pas pu être ajoutée'), findsOneWidget);
-      expect(ajouts, isEmpty);
-      expect(_cle('photo_retirer_nouvelle_1'), findsOneWidget); // photos gardées
-      expect(tester.widget<TextField>(find.byType(TextField).first).controller!.text, 'Niveau');
-      // Deuxième essai : tout part.
-      await tester.tap(find.text('Ajouter'));
-      await tester.pumpAndSettle();
-      expect(ajouts.length, 1);
-      expect(ajouts.single.$2['photoUrls'], [_lien(1), _lien(2)]);
-    });
+    testWidgets(
+      'échec de l\'envoi : message, tout reste à l\'écran, on réessaie sans rechoisir',
+      (tester) async {
+        await ouvrir(tester);
+        galerie = [_photo('a.jpg'), _photo('b.jpg')];
+        await choisirGalerie(tester);
+        echecEnvoi = 1;
+        await ajouter(tester, 'Niveau');
+        expect(find.textContaining('n\'a pas pu être ajoutée'), findsOneWidget);
+        expect(ajouts, isEmpty);
+        expect(
+          _cle('photo_retirer_nouvelle_1'),
+          findsOneWidget,
+        ); // photos gardées
+        expect(
+          tester
+              .widget<TextField>(find.byType(TextField).first)
+              .controller!
+              .text,
+          'Niveau',
+        );
+        // Deuxième essai : tout part.
+        await tester.tap(find.text('Ajouter'));
+        await tester.pumpAndSettle();
+        expect(ajouts.length, 1);
+        expect(ajouts.single.$2['photoUrls'], [_lien(1), _lien(2)]);
+      },
+    );
 
     testWidgets('Général : photos multiples ET auteur', (tester) async {
       await ouvrir(tester, general: true);
@@ -239,15 +290,23 @@ void main() {
       expect(data['chantierId'], '_general');
       expect(data['ajoutePar'], 'plusA');
       expect(data['photoUrls'], [_lien(1), _lien(2)]);
-      expect(chemins.first, startsWith('chantiers/A/_general/chantier_materiel/'));
+      expect(
+        chemins.first,
+        startsWith('chantiers/A/_general/chantier_materiel/'),
+      );
     });
   });
 
   // ===========================================================================
   group('modifier les photos d\'une demande', () {
-    List<MapEntry<String, Map<String, dynamic>>> demande({List<String>? photos, String? photoSeule}) => [
+    List<MapEntry<String, Map<String, dynamic>>> demande({
+      List<String>? photos,
+      String? photoSeule,
+    }) => [
       MapEntry('m1', {
-        'texte': 'Sangles', 'quantite': '4', 'complete': false,
+        'texte': 'Sangles',
+        'quantite': '4',
+        'complete': false,
         'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 3)),
         if (photos != null) ...{'photoUrl': photos.first, 'photoUrls': photos},
         'photoUrl': ?photoSeule,
@@ -261,7 +320,9 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('les photos de la demande s\'affichent, avec leur retrait', (tester) async {
+    testWidgets('les photos de la demande s\'affichent, avec leur retrait', (
+      tester,
+    ) async {
       await ouvrir(tester, flux: demande(photos: [_lien(7), _lien(8)]));
       await ouvrirEdition(tester);
       expect(_cle('photo_retirer_existante_0'), findsOneWidget);
@@ -269,34 +330,50 @@ void main() {
       expect(find.text('Ajouter des photos (2/6)'), findsOneWidget);
     });
 
-    testWidgets('une ancienne demande (photoUrl seule) montre sa photo', (tester) async {
+    testWidgets('une ancienne demande (photoUrl seule) montre sa photo', (
+      tester,
+    ) async {
       await ouvrir(tester, flux: demande(photoSeule: _lien(7)));
       await ouvrirEdition(tester);
       expect(_cle('photo_retirer_existante_0'), findsOneWidget);
       expect(_cle('photo_retirer_existante_1'), findsNothing);
     });
 
-    testWidgets('retirer la première et en ajouter une : la liste suit, la première devient photoUrl', (tester) async {
-      await ouvrir(tester, flux: demande(photos: [_lien(7), _lien(8)]));
-      await ouvrirEdition(tester);
-      await tester.tap(_cle('photo_retirer_existante_0'));
-      await tester.pumpAndSettle();
-      camera = _photo('neuve.jpg');
-      await prendre(tester);
-      await tester.tap(_cle('modifier_enregistrer'));
-      await tester.pumpAndSettle();
-      final (collection, id, data) = modifs.single;
-      expect(collection, 'chantier_materiel');
-      expect(id, 'm1');
-      expect(data['photoUrl'], _lien(8));
-      expect(data['photoUrls'], [_lien(8), _lien(1)]); // l'ancienne, puis la nouvelle
-      expect(_cle('modifier_enregistrer'), findsNothing); // la feuille est fermée
-    });
+    testWidgets(
+      'retirer la première et en ajouter une : la liste suit, la première devient photoUrl',
+      (tester) async {
+        await ouvrir(tester, flux: demande(photos: [_lien(7), _lien(8)]));
+        await ouvrirEdition(tester);
+        await tester.tap(_cle('photo_retirer_existante_0'));
+        await tester.pumpAndSettle();
+        camera = _photo('neuve.jpg');
+        await prendre(tester);
+        await tester.tap(_cle('modifier_enregistrer'));
+        await tester.pumpAndSettle();
+        final (collection, id, data) = modifs.single;
+        expect(collection, 'chantier_materiel');
+        expect(id, 'm1');
+        expect(data['photoUrl'], _lien(8));
+        expect(data['photoUrls'], [
+          _lien(8),
+          _lien(1),
+        ]); // l'ancienne, puis la nouvelle
+        expect(
+          _cle('modifier_enregistrer'),
+          findsNothing,
+        ); // la feuille est fermée
+      },
+    );
 
-    testWidgets('sans changer les photos : elles ne sont pas réécrites', (tester) async {
+    testWidgets('sans changer les photos : elles ne sont pas réécrites', (
+      tester,
+    ) async {
       await ouvrir(tester, flux: demande(photos: [_lien(7), _lien(8)]));
       await ouvrirEdition(tester);
-      await tester.enterText(find.widgetWithText(TextField, 'Sangles'), 'Sangles 2 po');
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Sangles'),
+        'Sangles 2 po',
+      );
       await tester.tap(_cle('modifier_enregistrer'));
       await tester.pumpAndSettle();
       final data = modifs.single.$3;
@@ -306,7 +383,9 @@ void main() {
       expect(chemins, isEmpty); // rien d'envoyé
     });
 
-    testWidgets('tout retirer : les deux champs sont supprimés', (tester) async {
+    testWidgets('tout retirer : les deux champs sont supprimés', (
+      tester,
+    ) async {
       await ouvrir(tester, flux: demande(photos: [_lien(7), _lien(8)]));
       await ouvrirEdition(tester);
       await tester.tap(_cle('photo_retirer_existante_1'));
@@ -320,34 +399,41 @@ void main() {
       expect(data['photoUrls'], isA<FieldValue>());
     });
 
-    testWidgets('échec de l\'envoi : message, la feuille reste ouverte pour réessayer', (tester) async {
-      await ouvrir(tester, flux: demande(photos: [_lien(7)]));
-      await ouvrirEdition(tester);
-      camera = _photo('neuve.jpg');
-      await prendre(tester);
-      echecEnvoi = 1;
-      await tester.tap(_cle('modifier_enregistrer'));
-      await tester.pumpAndSettle();
-      expect(find.textContaining('Modification impossible'), findsOneWidget);
-      expect(modifs, isEmpty);
-      expect(_cle('modifier_enregistrer'), findsOneWidget);
-      await tester.tap(_cle('modifier_enregistrer'));
-      await tester.pumpAndSettle();
-      expect(modifs.length, 1);
-    });
+    testWidgets(
+      'échec de l\'envoi : message, la feuille reste ouverte pour réessayer',
+      (tester) async {
+        await ouvrir(tester, flux: demande(photos: [_lien(7)]));
+        await ouvrirEdition(tester);
+        camera = _photo('neuve.jpg');
+        await prendre(tester);
+        echecEnvoi = 1;
+        await tester.tap(_cle('modifier_enregistrer'));
+        await tester.pumpAndSettle();
+        expect(find.textContaining('Modification impossible'), findsOneWidget);
+        expect(modifs, isEmpty);
+        expect(_cle('modifier_enregistrer'), findsOneWidget);
+        await tester.tap(_cle('modifier_enregistrer'));
+        await tester.pumpAndSettle();
+        expect(modifs.length, 1);
+      },
+    );
   });
 
   // ===========================================================================
   group('voir les photos d\'une demande', () {
     List<MapEntry<String, Map<String, dynamic>>> avec(List<String> photos) => [
       MapEntry('m1', {
-        'texte': 'Sangles', 'complete': false,
+        'texte': 'Sangles',
+        'complete': false,
         'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 3)),
-        'photoUrl': photos.first, 'photoUrls': photos,
+        'photoUrl': photos.first,
+        'photoUrls': photos,
       }),
     ];
 
-    testWidgets('plusieurs photos : une vignette avec le nombre', (tester) async {
+    testWidgets('plusieurs photos : une vignette avec le nombre', (
+      tester,
+    ) async {
       await ouvrir(tester, flux: avec([_lien(1), _lien(2), _lien(3)]));
       expect(_cle('vignette_photos'), findsOneWidget);
       expect(
@@ -362,104 +448,148 @@ void main() {
       expect(_cle('vignette_nombre'), findsNothing);
     });
 
-    testWidgets('un toucher ouvre la visionneuse : on passe d\'une photo à l\'autre, puis on ferme', (tester) async {
-      await ouvrir(tester, flux: avec([_lien(1), _lien(2), _lien(3)]));
-      await tester.tap(_cle('vignette_photos'));
-      await tester.pumpAndSettle();
-      expect(_cle('galerie_photos'), findsOneWidget);
-      expect(find.text('1 / 3'), findsOneWidget);
-      await tester.fling(
-        find.descendant(of: _cle('galerie_photos'), matching: find.byType(PageView)),
-        const Offset(-500, 0),
-        1500,
-      );
-      await tester.pumpAndSettle();
-      expect(find.text('2 / 3'), findsOneWidget);
-      await tester.tap(_cle('galerie_fermer'));
-      await tester.pumpAndSettle();
-      expect(_cle('galerie_photos'), findsNothing);
-    });
+    testWidgets(
+      'un toucher ouvre la visionneuse : on passe d\'une photo à l\'autre, puis on ferme',
+      (tester) async {
+        await ouvrir(tester, flux: avec([_lien(1), _lien(2), _lien(3)]));
+        await tester.tap(_cle('vignette_photos'));
+        await tester.pumpAndSettle();
+        expect(_cle('galerie_photos'), findsOneWidget);
+        expect(find.text('1 / 3'), findsOneWidget);
+        await tester.fling(
+          find.descendant(
+            of: _cle('galerie_photos'),
+            matching: find.byType(PageView),
+          ),
+          const Offset(-500, 0),
+          1500,
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('2 / 3'), findsOneWidget);
+        await tester.tap(_cle('galerie_fermer'));
+        await tester.pumpAndSettle();
+        expect(_cle('galerie_photos'), findsNothing);
+      },
+    );
 
-    testWidgets('une demande sans photo : l\'icône habituelle, pas de vignette', (tester) async {
-      await ouvrir(
-        tester,
-        flux: [
-          MapEntry('m2', {
-            'texte': 'Clous', 'complete': false,
-            'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 3)),
-          }),
-        ],
-      );
-      expect(_cle('vignette_photos'), findsNothing);
-      expect(find.byIcon(Icons.shopping_cart), findsWidgets);
-    });
+    testWidgets(
+      'une demande sans photo : l\'icône habituelle, pas de vignette',
+      (tester) async {
+        await ouvrir(
+          tester,
+          flux: [
+            MapEntry('m2', {
+              'texte': 'Clous',
+              'complete': false,
+              'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 3)),
+            }),
+          ],
+        );
+        expect(_cle('vignette_photos'), findsNothing);
+        expect(find.byIcon(Icons.shopping_cart), findsWidgets);
+      },
+    );
   });
 
   // ===========================================================================
-  group('demande transférée à la Liste d\'achats : visible pour son auteur', () {
-    List<MapEntry<String, Map<String, dynamic>>> donnees() => [
-      MapEntry('m1', {
-        'texte': 'Sangles', 'complete': false, 'ajoutePar': 'plusA', 'ajouteParNom': 'Plus A',
-        'transfere': true, 'transfereParNom': 'Admin A',
-        'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 3)),
-      }),
-      MapEntry('m2', {
-        'texte': 'Cordes', 'complete': false, 'ajoutePar': 'plusA', 'ajouteParNom': 'Plus A',
-        'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 2)),
-      }),
-      MapEntry('m3', {
-        'texte': 'Bâche', 'complete': true, 'ajoutePar': 'plusA', 'ajouteParNom': 'Plus A',
-        'transfere': true, 'transfereParNom': 'Admin A',
-        'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 1)),
-        'dateComplete': Timestamp.fromDate(DateTime.utc(2026, 10, 4)),
-      }),
-    ];
+  group(
+    'demande transférée à la Liste d\'achats : visible pour son auteur',
+    () {
+      List<MapEntry<String, Map<String, dynamic>>> donnees() => [
+        MapEntry('m1', {
+          'texte': 'Sangles',
+          'complete': false,
+          'ajoutePar': 'plusA',
+          'ajouteParNom': 'Plus A',
+          'transfere': true,
+          'transfereParNom': 'Admin A',
+          'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 3)),
+        }),
+        MapEntry('m2', {
+          'texte': 'Cordes',
+          'complete': false,
+          'ajoutePar': 'plusA',
+          'ajouteParNom': 'Plus A',
+          'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 2)),
+        }),
+        MapEntry('m3', {
+          'texte': 'Bâche',
+          'complete': true,
+          'ajoutePar': 'plusA',
+          'ajouteParNom': 'Plus A',
+          'transfere': true,
+          'transfereParNom': 'Admin A',
+          'dateAjout': Timestamp.fromDate(DateTime.utc(2026, 10, 1)),
+          'dateComplete': Timestamp.fromDate(DateTime.utc(2026, 10, 4)),
+        }),
+      ];
 
-    testWidgets('le contremaître la voit avec la mention, sans pouvoir la modifier ni la supprimer', (tester) async {
-      await ouvrir(tester, flux: donnees(), general: true);
-      expect(find.text('Sangles'), findsOneWidget);
-      expect(
-        find.text('Dans la Liste d\'achats (transféré par Admin A)'),
-        findsOneWidget,
+      testWidgets(
+        'le contremaître la voit avec la mention, sans pouvoir la modifier ni la supprimer',
+        (tester) async {
+          await ouvrir(tester, flux: donnees(), general: true);
+          expect(find.text('Sangles'), findsOneWidget);
+          expect(
+            find.text('Dans la Liste d\'achats (transféré par Admin A)'),
+            findsOneWidget,
+          );
+          expect(_cle('menu_m1'), findsNothing);
+          expect(
+            find.descendant(
+              of: _cle('entree_m1'),
+              matching: find.byIcon(Icons.delete_outline),
+            ),
+            findsNothing,
+          );
+          // Sa demande ordinaire garde son menu et sa corbeille.
+          expect(_cle('menu_m2'), findsOneWidget);
+          expect(
+            find.descendant(
+              of: _cle('entree_m2'),
+              matching: find.byIcon(Icons.delete_outline),
+            ),
+            findsOneWidget,
+          );
+          expect(_cle('transfere_m2'), findsNothing);
+        },
       );
-      expect(_cle('menu_m1'), findsNothing);
-      expect(
-        find.descendant(of: _cle('entree_m1'), matching: find.byIcon(Icons.delete_outline)),
-        findsNothing,
-      );
-      // Sa demande ordinaire garde son menu et sa corbeille.
-      expect(_cle('menu_m2'), findsOneWidget);
-      expect(
-        find.descendant(of: _cle('entree_m2'), matching: find.byIcon(Icons.delete_outline)),
-        findsOneWidget,
-      );
-      expect(_cle('transfere_m2'), findsNothing);
-    });
 
-    testWidgets('une fois faite (achetée), elle passe dans l\'historique, sans actions', (tester) async {
-      await ouvrir(tester, flux: donnees(), general: true);
-      await tester.tap(find.text('Voir l\'historique'));
-      await tester.pumpAndSettle();
-      expect(find.text('Bâche'), findsOneWidget);
-      expect(find.textContaining('Réglé le'), findsOneWidget);
-      expect(_cle('transfere_m3'), findsNothing); // faite : plus de mention « en cours »
-      expect(_cle('menu_m3'), findsNothing);
-    });
+      testWidgets(
+        'une fois faite (achetée), elle passe dans l\'historique, sans actions',
+        (tester) async {
+          await ouvrir(tester, flux: donnees(), general: true);
+          await tester.tap(find.text('Voir l\'historique'));
+          await tester.pumpAndSettle();
+          expect(find.text('Bâche'), findsOneWidget);
+          expect(find.textContaining('Réglé le'), findsOneWidget);
+          expect(
+            _cle('transfere_m3'),
+            findsNothing,
+          ); // faite : plus de mention « en cours »
+          expect(_cle('menu_m3'), findsNothing);
+        },
+      );
 
-    testWidgets('un admin garde tous les gestes sur une demande transférée', (tester) async {
-      await ouvrir(
+      testWidgets('un admin garde tous les gestes sur une demande transférée', (
         tester,
-        moi: _emp('adminA', 'Admin A', EmployeeRole.admin),
-        flux: donnees(),
-        general: true,
-      );
-      await tester.tap(_cle('filtre_plusA'));
-      await tester.pumpAndSettle();
-      expect(_cle('menu_m1'), findsOneWidget);
-      expect(
-        find.descendant(of: _cle('entree_m1'), matching: find.byIcon(Icons.delete_outline)),
-        findsOneWidget,
-      );
-    });
-  });
+      ) async {
+        await ouvrir(
+          tester,
+          moi: _emp('adminA', 'Admin A', EmployeeRole.admin),
+          flux: donnees(),
+          general: true,
+        );
+        await tester.tap(_cle('filtre_plusA'));
+        await tester.pumpAndSettle();
+        expect(_cle('menu_m1'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: _cle('entree_m1'),
+            matching: find.byIcon(Icons.delete_outline),
+          ),
+          findsOneWidget,
+        );
+      });
+    },
+  );
 }

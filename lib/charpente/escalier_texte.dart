@@ -46,7 +46,9 @@ String texteEscalier(ResultatEscalier r, {required bool metrique}) {
   final s = r.spec;
   final b = StringBuffer()
     ..writeln('ESCALIER — LIMONS')
-    ..writeln('Hauteur totale (plancher fini à plancher fini) : ${l(s.hauteurTotale)}')
+    ..writeln(
+      'Hauteur totale (plancher fini à plancher fini) : ${l(s.hauteurTotale)}',
+    )
     ..writeln('Largeur : ${l(s.largeur)}')
     ..writeln(
       '${r.nombreContremarches} contremarches de ${l(r.contremarche)} '
@@ -61,13 +63,19 @@ String texteEscalier(ResultatEscalier r, {required bool metrique}) {
     ..writeln('Pente : ${formatAngle(r.angle)}')
     ..writeln()
     ..writeln('LIMON (${s.section.nom})')
-    ..writeln('Planche à commander : ${formatPlanche(r.longueurCommerciale, metrique: metrique)}')
+    ..writeln(
+      'Planche à commander : ${formatPlanche(r.longueurCommerciale, metrique: metrique)}',
+    )
     ..writeln('Longueur de coupe : ${l(r.longueurLimon)}')
     ..writeln('Gorge sous les entailles : ${l(r.gorge)}')
     ..writeln('Coupe de départ (aplomb) : ${l(r.hauteurDepart)} de haut')
     ..writeln('Pied : coupe de niveau de ${l(r.coupePied)}')
-    ..writeln('Tête : coupe d\'aplomb de ${l(r.coupeTete)} contre la poutre du haut')
-    ..writeln('Pointe du haut : ${l(r.hauteurPointeHaute)} au-dessus du plancher du bas')
+    ..writeln(
+      'Tête : coupe d\'aplomb de ${l(r.coupeTete)} contre la poutre du haut',
+    )
+    ..writeln(
+      'Pointe du haut : ${l(r.hauteurPointeHaute)} au-dessus du plancher du bas',
+    )
     ..writeln()
     ..writeln('TRAÇAGE (depuis le plancher fini du bas)')
     ..writeln('Marche | Dessus | Siège du limon | Course');
@@ -85,7 +93,9 @@ String texteEscalier(ResultatEscalier r, {required bool metrique}) {
   }
   b
     ..writeln()
-    ..writeln('VÉRIFICATIONS (CNB 2015, section 9.8, Code de construction du Québec)');
+    ..writeln(
+      'VÉRIFICATIONS (CNB 2015, section 9.8, Code de construction du Québec)',
+    );
   for (final v in r.verifications) {
     final marque = switch (v.niveau) {
       Niveau.ok => 'OK',
@@ -93,7 +103,9 @@ String texteEscalier(ResultatEscalier r, {required bool metrique}) {
       Niveau.avertissement => 'ATTENTION',
       Niveau.erreur => 'NON CONFORME',
     };
-    b.writeln('[$marque] ${v.message}${v.reference == null ? '' : ' (${v.reference})'}');
+    b.writeln(
+      '[$marque] ${v.message}${v.reference == null ? '' : ' (${v.reference})'}',
+    );
   }
   b
     ..writeln()

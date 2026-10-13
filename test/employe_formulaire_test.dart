@@ -77,38 +77,45 @@ void main() {
   tearDown(() => AppSession.notifier.value = null);
 
   group('EmployeFormulaireScreen : renvoi de l\'invitation', () {
-    testWidgets('sans NIP : « Renvoyer l\'invitation » remplace « Réinitialiser »', (
+    testWidgets(
+      'sans NIP : « Renvoyer l\'invitation » remplace « Réinitialiser »',
+      (tester) async {
+        await _ouvrir(tester, _Appels(), donnees: _sansNip);
+        expect(find.text('Renvoyer l\'invitation'), findsOneWidget);
+        expect(find.text('Réinitialiser le NIP'), findsNothing);
+      },
+    );
+
+    testWidgets('avec un NIP : seulement « Réinitialiser le NIP »', (
       tester,
     ) async {
-      await _ouvrir(tester, _Appels(), donnees: _sansNip);
-      expect(find.text('Renvoyer l\'invitation'), findsOneWidget);
-      expect(find.text('Réinitialiser le NIP'), findsNothing);
-    });
-
-    testWidgets('avec un NIP : seulement « Réinitialiser le NIP »', (tester) async {
       await _ouvrir(tester, _Appels(), donnees: _avecNip);
       expect(find.text('Réinitialiser le NIP'), findsOneWidget);
       expect(find.text('Renvoyer l\'invitation'), findsNothing);
     });
 
-    testWidgets('le bouton envoie renvoiInvitation (sans réinitialiser) et ferme l\'écran', (
-      tester,
-    ) async {
-      final appels = _Appels();
-      await _ouvrir(tester, appels, donnees: _sansNip);
-      await tester.tap(find.text('Renvoyer l\'invitation'));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'le bouton envoie renvoiInvitation (sans réinitialiser) et ferme l\'écran',
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrir(tester, appels, donnees: _sansNip);
+        await tester.tap(find.text('Renvoyer l\'invitation'));
+        await tester.pumpAndSettle();
 
-      expect(appels.envoyes, hasLength(1));
-      final d = appels.envoyes.single;
-      expect(d['employeeId'], 'e1');
-      expect(d['renvoiInvitation'], true);
-      expect(d['reinitialiserNip'], false);
-      expect(d['courriel'], 'remi@exemple.ca');
-      expect(d['role'], 'employe');
-      expect(find.text('Invitation renvoyée à remi@exemple.ca.'), findsOneWidget);
-      expect(find.byType(EmployeFormulaireScreen), findsNothing);
-    });
+        expect(appels.envoyes, hasLength(1));
+        final d = appels.envoyes.single;
+        expect(d['employeeId'], 'e1');
+        expect(d['renvoiInvitation'], true);
+        expect(d['reinitialiserNip'], false);
+        expect(d['courriel'], 'remi@exemple.ca');
+        expect(d['role'], 'employe');
+        expect(
+          find.text('Invitation renvoyée à remi@exemple.ca.'),
+          findsOneWidget,
+        );
+        expect(find.byType(EmployeFormulaireScreen), findsNothing);
+      },
+    );
 
     testWidgets('« Enregistrer » n\'envoie jamais de renvoi', (tester) async {
       final appels = _Appels();
@@ -119,35 +126,40 @@ void main() {
       expect(appels.envoyes.single['reinitialiserNip'], false);
     });
 
-    testWidgets('refus du serveur : le message s\'affiche et l\'écran reste ouvert', (
-      tester,
-    ) async {
-      final appels = _Appels()..erreur = Exception('refus');
-      await _ouvrir(tester, appels, donnees: _sansNip);
-      await tester.tap(find.text('Renvoyer l\'invitation'));
-      await tester.pumpAndSettle();
-      expect(find.byType(EmployeFormulaireScreen), findsOneWidget);
-      expect(find.textContaining('Erreur de réseau'), findsOneWidget);
-    });
+    testWidgets(
+      'refus du serveur : le message s\'affiche et l\'écran reste ouvert',
+      (tester) async {
+        final appels = _Appels()..erreur = Exception('refus');
+        await _ouvrir(tester, appels, donnees: _sansNip);
+        await tester.tap(find.text('Renvoyer l\'invitation'));
+        await tester.pumpAndSettle();
+        expect(find.byType(EmployeFormulaireScreen), findsOneWidget);
+        expect(find.textContaining('Erreur de réseau'), findsOneWidget);
+      },
+    );
 
-    testWidgets('courriel qui n\'a pas pu partir : le lien de secours est montré', (
-      tester,
-    ) async {
-      final appels = _Appels()
-        ..reponse = {
-          'id': 'e1',
-          'courrielEnvoye': false,
-          'lienInvitation': 'https://exemple.test/creer#e=e1&t=jeton',
-        };
-      await _ouvrir(tester, appels, donnees: _sansNip);
-      await tester.tap(find.text('Renvoyer l\'invitation'));
-      // La boîte de dialogue reste ouverte (curseur du texte sélectionnable) :
-      // pas de pumpAndSettle.
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(find.text('Courriel non envoyé'), findsOneWidget);
-      expect(find.textContaining('https://exemple.test/creer'), findsOneWidget);
-    });
+    testWidgets(
+      'courriel qui n\'a pas pu partir : le lien de secours est montré',
+      (tester) async {
+        final appels = _Appels()
+          ..reponse = {
+            'id': 'e1',
+            'courrielEnvoye': false,
+            'lienInvitation': 'https://exemple.test/creer#e=e1&t=jeton',
+          };
+        await _ouvrir(tester, appels, donnees: _sansNip);
+        await tester.tap(find.text('Renvoyer l\'invitation'));
+        // La boîte de dialogue reste ouverte (curseur du texte sélectionnable) :
+        // pas de pumpAndSettle.
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 400));
+        expect(find.text('Courriel non envoyé'), findsOneWidget);
+        expect(
+          find.textContaining('https://exemple.test/creer'),
+          findsOneWidget,
+        );
+      },
+    );
 
     testWidgets('courriel invalide : rien n\'est envoyé', (tester) async {
       final appels = _Appels();

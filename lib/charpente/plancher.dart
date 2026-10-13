@@ -239,13 +239,12 @@ class SpecPlancher {
     if (!(margePanneauxPourcent >= 0 && margePanneauxPourcent <= 50)) {
       throw const SpecInvalide('Marge sur les feuilles : entre 0 et 50 %.');
     }
-    if (coteMaison != null && (coteMaison! < 0 || coteMaison! >= forme.nombre)) {
+    if (coteMaison != null &&
+        (coteMaison! < 0 || coteMaison! >= forme.nombre)) {
       throw const SpecInvalide('Côté de la maison : ce côté n\'existe pas.');
     }
     if (!(espacementMaxEntremises >= 24 && espacementMaxEntremises <= 240)) {
-      throw const SpecInvalide(
-        'Portée sans entremises : entre 2 et 20 pi.',
-      );
+      throw const SpecInvalide('Portée sans entremises : entre 2 et 20 pi.');
     }
     if (clousParEtrier < 1 || clousParEtrier > 40) {
       throw const SpecInvalide('Clous par étrier : de 1 à 40.');

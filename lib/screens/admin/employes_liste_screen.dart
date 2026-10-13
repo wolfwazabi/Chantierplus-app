@@ -7,6 +7,7 @@ import '../../services/fiches_employes.dart';
 import '../../services/fonctions.dart';
 import 'anciens_employes_screen.dart';
 import 'employe_formulaire_screen.dart';
+import '../../widgets/actualiser.dart';
 
 class EmployesListeScreen extends StatelessWidget {
   /// Tests : remplacent la lecture des fiches et l'appel aux fonctions.
@@ -101,10 +102,7 @@ class EmployesListeScreen extends StatelessWidget {
             TextButton(
               key: const ValueKey('employe_confirmer_retrait'),
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(
-                'Retirer',
-                style: TextStyle(color: Colors.red),
-              ),
+              child: const Text('Retirer', style: TextStyle(color: Colors.red)),
             ),
           ],
         ),
@@ -120,7 +118,9 @@ class EmployesListeScreen extends StatelessWidget {
       });
       messages.showSnackBar(
         SnackBar(
-          content: Text('$nom n\'a plus accès. Fiche gardée dans « Anciens employés ».'),
+          content: Text(
+            '$nom n\'a plus accès. Fiche gardée dans « Anciens employés ».',
+          ),
         ),
       );
     } catch (e) {
@@ -160,8 +160,8 @@ class EmployesListeScreen extends StatelessWidget {
       ),
       body: companyId == null
           ? const Center(child: Text('Aucune compagnie associée.'))
-          : StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
-              stream: flux ?? fluxFichesEmployes(companyId),
+          : FluxActualisable<List<MapEntry<String, Map<String, dynamic>>>>(
+              creerFlux: () => flux ?? fluxFichesEmployes(companyId),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(child: Text('Erreur : ${snapshot.error}'));
@@ -171,14 +171,13 @@ class EmployesListeScreen extends StatelessWidget {
                 }
                 // Les anciens employés (actif == false) ont leur propre écran. Le
                 // filtre se fait ici : Firestore ne sait pas chercher un champ absent.
-                final docs = snapshot.data!
-                    .where((f) => employeActif(f.value))
-                    .toList()
-                  ..sort(
-                    (a, b) => ((a.value['nom'] ?? '') as String).compareTo(
-                      (b.value['nom'] ?? '') as String,
-                    ),
-                  );
+                final docs =
+                    snapshot.data!.where((f) => employeActif(f.value)).toList()
+                      ..sort(
+                        (a, b) => ((a.value['nom'] ?? '') as String).compareTo(
+                          (b.value['nom'] ?? '') as String,
+                        ),
+                      );
 
                 if (docs.isEmpty) {
                   return const Center(

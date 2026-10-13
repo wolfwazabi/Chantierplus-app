@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../services/app_session.dart';
 import '../../services/fonctions.dart';
 import 'confirmation_suppression_compagnie.dart';
+import '../../widgets/actualiser.dart';
 
 class CompagniesAttenteScreen extends StatelessWidget {
   const CompagniesAttenteScreen({super.key});
@@ -110,8 +111,8 @@ class CompagniesAttenteScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Demandes de compagnies')),
-      body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
+      body: FluxActualisable<QuerySnapshot>(
+        creerFlux: () => FirebaseFirestore.instance
             .collection('companies')
             .orderBy('dateCreation', descending: true)
             .snapshots(),

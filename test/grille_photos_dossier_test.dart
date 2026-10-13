@@ -5,7 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   final photos = [
     for (var i = 1; i <= 5; i++)
-      PhotoDossier('p$i', 'https://exemple.invalid/$i.jpg', 'chantiers/A/c/photos/$i.jpg'),
+      PhotoDossier(
+        'p$i',
+        'https://exemple.invalid/$i.jpg',
+        'chantiers/A/c/photos/$i.jpg',
+      ),
   ];
   late List<List<String>> appels;
 
@@ -28,7 +32,8 @@ void main() {
               photos: liste ?? photos,
               onSupprimer:
                   onSupprimer ??
-                  (choisies) async => appels.add([for (final p in choisies) p.id]),
+                  (choisies) async =>
+                      appels.add([for (final p in choisies) p.id]),
             ),
           ),
         ),
@@ -39,37 +44,39 @@ void main() {
   bool actif(WidgetTester tester, String k) =>
       tester.widget<ButtonStyleButton>(cle(k)).onPressed != null;
 
-  testWidgets('au départ : photos affichées, aucune sélection, rien à supprimer', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    for (final p in photos) {
-      expect(cle('photo_${p.id}'), findsOneWidget);
-    }
-    expect(cle('photos_selectionner'), findsOneWidget);
-    expect(cle('photos_supprimer_selection'), findsNothing);
-  });
+  testWidgets(
+    'au départ : photos affichées, aucune sélection, rien à supprimer',
+    (tester) async {
+      await ouvrir(tester);
+      for (final p in photos) {
+        expect(cle('photo_${p.id}'), findsOneWidget);
+      }
+      expect(cle('photos_selectionner'), findsOneWidget);
+      expect(cle('photos_supprimer_selection'), findsNothing);
+    },
+  );
 
-  testWidgets('sélection : appui long puis touches, compteur et bouton à jour', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    await tester.longPress(cle('photo_p2'));
-    await tester.pump();
-    expect(find.text('1 sélectionnée'), findsOneWidget);
-    expect(cle('choisie_p2'), findsOneWidget);
-    expect(cle('libre_p1'), findsOneWidget);
+  testWidgets(
+    'sélection : appui long puis touches, compteur et bouton à jour',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.longPress(cle('photo_p2'));
+      await tester.pump();
+      expect(find.text('1 sélectionnée'), findsOneWidget);
+      expect(cle('choisie_p2'), findsOneWidget);
+      expect(cle('libre_p1'), findsOneWidget);
 
-    await tester.tap(cle('photo_p4'));
-    await tester.pump();
-    expect(find.text('2 sélectionnées'), findsOneWidget);
+      await tester.tap(cle('photo_p4'));
+      await tester.pump();
+      expect(find.text('2 sélectionnées'), findsOneWidget);
 
-    // Toucher une photo choisie la retire.
-    await tester.tap(cle('photo_p2'));
-    await tester.pump();
-    expect(find.text('1 sélectionnée'), findsOneWidget);
-    expect(cle('libre_p2'), findsOneWidget);
-  });
+      // Toucher une photo choisie la retire.
+      await tester.tap(cle('photo_p2'));
+      await tester.pump();
+      expect(find.text('1 sélectionnée'), findsOneWidget);
+      expect(cle('libre_p2'), findsOneWidget);
+    },
+  );
 
   testWidgets('« Sélectionner » : rien de choisi, suppression désactivée', (
     tester,
@@ -84,63 +91,66 @@ void main() {
     expect(cle('photos_selectionner'), findsOneWidget);
   });
 
-  testWidgets('suppression de plusieurs photos : confirmation, puis seules les photos choisies partent', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    await tester.longPress(cle('photo_p1'));
-    await tester.pump();
-    await tester.tap(cle('photo_p3'));
-    await tester.pump();
-    await tester.tap(cle('photos_supprimer_selection'));
-    await tester.pumpAndSettle();
+  testWidgets(
+    'suppression de plusieurs photos : confirmation, puis seules les photos choisies partent',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.longPress(cle('photo_p1'));
+      await tester.pump();
+      await tester.tap(cle('photo_p3'));
+      await tester.pump();
+      await tester.tap(cle('photos_supprimer_selection'));
+      await tester.pumpAndSettle();
 
-    expect(find.text('Supprimer ces 2 photos ?'), findsOneWidget);
-    expect(find.textContaining('irréversible'), findsOneWidget);
-    expect(appels, isEmpty, reason: 'rien ne part avant la confirmation');
-    await tester.tap(cle('confirmer_action'));
-    await tester.pumpAndSettle();
+      expect(find.text('Supprimer ces 2 photos ?'), findsOneWidget);
+      expect(find.textContaining('irréversible'), findsOneWidget);
+      expect(appels, isEmpty, reason: 'rien ne part avant la confirmation');
+      await tester.tap(cle('confirmer_action'));
+      await tester.pumpAndSettle();
 
-    expect(appels, [
-      ['p1', 'p3'],
-    ]);
-    // Retour à l'affichage normal.
-    expect(cle('photos_selectionner'), findsOneWidget);
-  });
+      expect(appels, [
+        ['p1', 'p3'],
+      ]);
+      // Retour à l'affichage normal.
+      expect(cle('photos_selectionner'), findsOneWidget);
+    },
+  );
 
-  testWidgets('annuler la confirmation : rien n\'est supprimé, la sélection reste', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    await tester.longPress(cle('photo_p1'));
-    await tester.pump();
-    await tester.tap(cle('photos_supprimer_selection'));
-    await tester.pumpAndSettle();
-    expect(find.text('Supprimer cette photo ?'), findsOneWidget);
-    await tester.tap(find.text('Annuler').last);
-    await tester.pumpAndSettle();
-    expect(appels, isEmpty);
-    expect(find.text('1 sélectionnée'), findsOneWidget);
-  });
+  testWidgets(
+    'annuler la confirmation : rien n\'est supprimé, la sélection reste',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.longPress(cle('photo_p1'));
+      await tester.pump();
+      await tester.tap(cle('photos_supprimer_selection'));
+      await tester.pumpAndSettle();
+      expect(find.text('Supprimer cette photo ?'), findsOneWidget);
+      await tester.tap(find.text('Annuler').last);
+      await tester.pumpAndSettle();
+      expect(appels, isEmpty);
+      expect(find.text('1 sélectionnée'), findsOneWidget);
+    },
+  );
 
-  testWidgets('une photo touchée s\'agrandit ; « Supprimer » demande confirmation', (
-    tester,
-  ) async {
-    await ouvrir(tester);
-    await tester.tap(cle('photo_p5'));
-    await tester.pumpAndSettle();
-    expect(cle('photo_supprimer'), findsOneWidget);
+  testWidgets(
+    'une photo touchée s\'agrandit ; « Supprimer » demande confirmation',
+    (tester) async {
+      await ouvrir(tester);
+      await tester.tap(cle('photo_p5'));
+      await tester.pumpAndSettle();
+      expect(cle('photo_supprimer'), findsOneWidget);
 
-    await tester.tap(cle('photo_supprimer'));
-    await tester.pumpAndSettle();
-    expect(find.text('Supprimer cette photo ?'), findsOneWidget);
-    expect(appels, isEmpty);
-    await tester.tap(cle('confirmer_action'));
-    await tester.pumpAndSettle();
-    expect(appels, [
-      ['p5'],
-    ]);
-  });
+      await tester.tap(cle('photo_supprimer'));
+      await tester.pumpAndSettle();
+      expect(find.text('Supprimer cette photo ?'), findsOneWidget);
+      expect(appels, isEmpty);
+      await tester.tap(cle('confirmer_action'));
+      await tester.pumpAndSettle();
+      expect(appels, [
+        ['p5'],
+      ]);
+    },
+  );
 
   testWidgets('fermer l\'agrandissement sans supprimer : rien ne part', (
     tester,

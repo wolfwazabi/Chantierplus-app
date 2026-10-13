@@ -28,7 +28,8 @@ const double confortCibleMm = 635;
 const double contremarcheIdealePo = 7.25;
 
 const double _pas = 1 / 16;
-const double _tolPo = 0.05 / mmParPouce; // même tolérance que le calcul (0,05 mm)
+const double _tolPo =
+    0.05 / mmParPouce; // même tolérance que le calcul (0,05 mm)
 
 /// Ce qu'on connaît d'un escalier (en pouces). Null : inconnu.
 class DonneesEscalier {
@@ -159,8 +160,7 @@ SolutionEscalier resoudreEscalier(
 
   // Hors du Code (en pouces) : 0 si dans les bornes.
   double ecartCode(double r, double g) {
-    double hors(double v, double min, double? max) =>
-        v < min - _tolPo
+    double hors(double v, double min, double? max) => v < min - _tolPo
         ? min - v
         : (max != null && v > max + _tolPo ? v - max : 0);
     return hors(r, rMin, rMax) + hors(g, gMin, gMax);
@@ -210,14 +210,15 @@ SolutionEscalier resoudreEscalier(
 
     final bas = math.max(2, (h / (rMax + _tolPo)).ceil());
     final haut = math.min(100, (h / (rMin - _tolPo)).floor());
-    final tous = <ChoixEscalier>[
-      for (var v = bas; v <= haut; v++) ?evaluer(v),
-    ];
-    final conformes = tous.where((c) => ecartCode(c.contremarche, c.giron) == 0).toList()
-      ..sort((a, b) {
-        final c = a.cout.compareTo(b.cout);
-        return c != 0 ? c : b.nombreContremarches.compareTo(a.nombreContremarches);
-      });
+    final tous = <ChoixEscalier>[for (var v = bas; v <= haut; v++) ?evaluer(v)];
+    final conformes =
+        tous.where((c) => ecartCode(c.contremarche, c.giron) == 0).toList()
+          ..sort((a, b) {
+            final c = a.cout.compareTo(b.cout);
+            return c != 0
+                ? c
+                : b.nombreContremarches.compareTo(a.nombreContremarches);
+          });
     ChoixEscalier meilleur;
     if (conformes.isNotEmpty) {
       meilleur = conformes.first;
@@ -225,14 +226,25 @@ SolutionEscalier resoudreEscalier(
     } else {
       // Rien ne respecte le Code avec ces données : le moins mauvais, qui sera
       // signalé par la vérification du Code.
-      final voisins = <ChoixEscalier>[
-        for (var v = math.max(2, bas - 3); v <= math.min(100, math.max(bas, haut) + 3); v++) ?evaluer(v),
-      ]..sort((a, b) {
-          final c = ecartCode(a.contremarche, a.giron).compareTo(ecartCode(b.contremarche, b.giron));
-          return c != 0 ? c : a.cout.compareTo(b.cout);
-        });
+      final voisins =
+          <ChoixEscalier>[
+            for (
+              var v = math.max(2, bas - 3);
+              v <= math.min(100, math.max(bas, haut) + 3);
+              v++
+            )
+              ?evaluer(v),
+          ]..sort((a, b) {
+            final c = ecartCode(
+              a.contremarche,
+              a.giron,
+            ).compareTo(ecartCode(b.contremarche, b.giron));
+            return c != 0 ? c : a.cout.compareTo(b.cout);
+          });
       if (voisins.isEmpty) {
-        throw const EscalierInvalide('Ces données ne permettent aucun escalier.');
+        throw const EscalierInvalide(
+          'Ces données ne permettent aucun escalier.',
+        );
       }
       meilleur = voisins.first;
       notes.add(
@@ -281,7 +293,9 @@ SolutionEscalier resoudreEscalier(
 
   // Explications.
   String po(double v) => formatLongueur(v, metrique: metrique);
-  if (d.hauteur != null && d.contremarche != null && (r - d.contremarche!).abs() > _pas / 2) {
+  if (d.hauteur != null &&
+      d.contremarche != null &&
+      (r - d.contremarche!).abs() > _pas / 2) {
     notes.add(
       'Contremarche ajustée à ${po(r)} : $n contremarches pour la hauteur de '
       '${po(h)}.',
@@ -296,12 +310,17 @@ SolutionEscalier resoudreEscalier(
     notes.add('Hauteur trouvée : ${po(h)} ($n contremarches de ${po(r)}).');
   }
   if (d.course == null && d.giron == null) {
-    notes.add('Giron idéal : ${po(g)} (confort : giron + 2 × contremarche ≈ 25 po).');
+    notes.add(
+      'Giron idéal : ${po(g)} (confort : giron + 2 × contremarche ≈ 25 po).',
+    );
   }
   if (d.course == null && d.giron != null) {
     notes.add('Course trouvée : ${po(l)} (${n - 1} marches de ${po(g)}).');
   }
-  if (d.hauteur == null && d.contremarche == null && d.giron != null && d.course != null) {
+  if (d.hauteur == null &&
+      d.contremarche == null &&
+      d.giron != null &&
+      d.course != null) {
     notes.add('Contremarche idéale : ${po(r)}.');
   }
 

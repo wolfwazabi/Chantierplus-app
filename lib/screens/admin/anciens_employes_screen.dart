@@ -5,6 +5,7 @@ import '../../services/app_session.dart';
 import '../../services/fiches_employes.dart';
 import '../../services/fonctions.dart';
 import '../../widgets/lien_invitation.dart';
+import '../../widgets/actualiser.dart';
 
 /// Anciens employés : accès retiré, nom et courriel gardés 24 mois (loi 25) pour pouvoir
 /// les réactiver (employés saisonniers). L'admin peut aussi supprimer une fiche tout de
@@ -53,7 +54,9 @@ class AnciensEmployesScreen extends StatelessWidget {
       } else {
         messages.showSnackBar(
           SnackBar(
-            content: Text('${e.nom} est réactivé : courriel envoyé à ${e.courriel}.'),
+            content: Text(
+              '${e.nom} est réactivé : courriel envoyé à ${e.courriel}.',
+            ),
             backgroundColor: Colors.green,
           ),
         );
@@ -61,7 +64,9 @@ class AnciensEmployesScreen extends StatelessWidget {
     } catch (err) {
       messages.showSnackBar(
         SnackBar(
-          content: Text(Fonctions.message(err, 'Erreur lors de la réactivation.')),
+          content: Text(
+            Fonctions.message(err, 'Erreur lors de la réactivation.'),
+          ),
           backgroundColor: Colors.red,
         ),
       );
@@ -96,9 +101,7 @@ class AnciensEmployesScreen extends StatelessWidget {
     final messages = ScaffoldMessenger.of(context);
     try {
       await _appeler('supprimerEmploye', {'employeeId': e.id});
-      messages.showSnackBar(
-        const SnackBar(content: Text('Fiche supprimée.')),
-      );
+      messages.showSnackBar(const SnackBar(content: Text('Fiche supprimée.')));
     } catch (err) {
       messages.showSnackBar(
         SnackBar(
@@ -117,8 +120,8 @@ class AnciensEmployesScreen extends StatelessWidget {
       appBar: AppBar(title: const Text('Anciens employés')),
       body: companyId == null
           ? const Center(child: Text('Aucune compagnie associée.'))
-          : StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
-              stream: flux ?? fluxFichesEmployes(companyId),
+          : FluxActualisable<List<MapEntry<String, Map<String, dynamic>>>>(
+              creerFlux: () => flux ?? fluxFichesEmployes(companyId),
               builder: (context, snapshot) {
                 if (snapshot.hasError) {
                   return Center(child: Text('Erreur : ${snapshot.error}'));
@@ -142,8 +145,8 @@ class AnciensEmployesScreen extends StatelessWidget {
                     const Divider(height: 1),
                     Expanded(
                       child: anciens.isEmpty
-                          ? const Center(
-                              child: Text(
+                          ? messageActualisable(
+                              const Text(
                                 'Aucun ancien employé.',
                                 key: ValueKey('anciens_vide'),
                               ),
@@ -161,7 +164,9 @@ class AnciensEmployesScreen extends StatelessWidget {
                                       e.nom.isNotEmpty
                                           ? e.nom[0].toUpperCase()
                                           : '?',
-                                      style: const TextStyle(color: Colors.white),
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                      ),
                                     ),
                                   ),
                                   title: Text(e.nom),

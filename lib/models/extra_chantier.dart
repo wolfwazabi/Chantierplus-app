@@ -58,7 +58,9 @@ class ExtraChantier {
   /// Le chemin de la photo [url] dans le Storage (null si inconnu).
   String? cheminDe(String url) {
     final i = photos.indexOf(url);
-    return i < 0 || i >= chemins.length || chemins[i].isEmpty ? null : chemins[i];
+    return i < 0 || i >= chemins.length || chemins[i].isEmpty
+        ? null
+        : chemins[i];
   }
 }
 
@@ -70,14 +72,15 @@ List<String> cheminsPhotosDe(Map<String, dynamic> data, int nombre) {
     return [for (final c in liste) c is String ? c : ''];
   }
   final un = data['cheminPhoto'];
-  return [
-    for (var i = 0; i < nombre; i++) i == 0 && un is String ? un : '',
-  ];
+  return [for (var i = 0; i < nombre; i++) i == 0 && un is String ? un : ''];
 }
 
 /// Champs Firestore des photos d'un extra : la première (`photoUrl`, `cheminPhoto`,
 /// pour l'export et les anciennes versions) et toutes (`photoUrls`, `cheminsPhotos`).
-Map<String, dynamic> champsPhotosExtra(List<String> urls, List<String> chemins) {
+Map<String, dynamic> champsPhotosExtra(
+  List<String> urls,
+  List<String> chemins,
+) {
   final n = urls.length < chemins.length ? urls.length : chemins.length;
   final u = urls.take(n).take(maxPhotosParEntree).toList();
   final c = chemins.take(u.length).toList();

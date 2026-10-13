@@ -6,6 +6,7 @@ import '../../services/materiel_general_source.dart';
 import '../../services/theme_compagnie.dart';
 import '../../widgets/confirmer_action.dart';
 import '../../widgets/photos_multiples.dart';
+import '../../widgets/actualiser.dart';
 
 /// Pastille de couleur : nombre de changements pas encore vus. Rien à l'écran
 /// s'il n'y en a pas.
@@ -144,7 +145,10 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
   void _message(String texte, {bool erreur = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(texte), backgroundColor: erreur ? Colors.red : null),
+      SnackBar(
+        content: Text(texte),
+        backgroundColor: erreur ? Colors.red : null,
+      ),
     );
   }
 
@@ -232,7 +236,8 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
     final ok = await confirmerAction(
       context,
       titre: 'Supprimer cette demande ?',
-      texte: '« ${e.texte} » sera supprimée pour tous. Cette action est irréversible.',
+      texte:
+          '« ${e.texte} » sera supprimée pour tous. Cette action est irréversible.',
       action: 'Supprimer',
     );
     if (!ok) return;
@@ -398,7 +403,10 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
                 e.complete ? 'Remettre comme manquant' : 'Marquer comme obtenu',
               ),
             ),
-          const PopupMenuItem(value: 'non_lu', child: Text('Marquer comme non lu')),
+          const PopupMenuItem(
+            value: 'non_lu',
+            child: Text('Marquer comme non lu'),
+          ),
           if (!e.complete && !e.transfere)
             const PopupMenuItem(
               value: 'transferer',
@@ -413,7 +421,11 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
     );
   }
 
-  Widget _groupe(GroupeAuteur g, VisitesGeneral visites, Set<String> idsExistants) {
+  Widget _groupe(
+    GroupeAuteur g,
+    VisitesGeneral visites,
+    Set<String> idsExistants,
+  ) {
     final cle = cleVu(g.auteurId);
     final baseline = _visiteAvant[cle];
     final drapeauxAvant = _nonLusAvant[cle] ?? const <String>{};
@@ -490,11 +502,13 @@ class _MaterielGeneralScreenState extends State<MaterielGeneralScreen> {
     }
     return Scaffold(
       appBar: AppBar(title: const Text('Général')),
-      body: StreamBuilder<List<EntreeMateriel>>(
-        stream: _entrees,
+      body: FluxActualisable<List<EntreeMateriel>>(
+        creerFlux: () => _entrees!,
         builder: (context, demandes) {
           if (demandes.hasError) {
-            return const Center(child: Text('Impossible de charger le matériel.'));
+            return const Center(
+              child: Text('Impossible de charger le matériel.'),
+            );
           }
           if (!demandes.hasData) {
             return const Center(child: CircularProgressIndicator());

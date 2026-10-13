@@ -8,6 +8,7 @@ import '../../services/app_session.dart';
 import '../../services/erreurs_firebase.dart';
 import '../../services/stockage.dart';
 import '../../services/theme_compagnie.dart';
+import '../../widgets/actualiser.dart';
 
 /// Taille maximale d'un document (identique à storage.rules / firestore.rules).
 const int tailleMaxDocument = 50 * 1024 * 1024;
@@ -339,8 +340,8 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
             ),
           ),
         Expanded(
-          child: StreamBuilder<List<MapEntry<String, Map<String, dynamic>>>>(
-            stream:
+          child: FluxActualisable<List<MapEntry<String, Map<String, dynamic>>>>(
+            creerFlux: () =>
                 widget.fluxDocuments ??
                 _collection
                     .where('companyId', isEqualTo: widget.companyId)
@@ -348,9 +349,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                     .orderBy('dateAjout', descending: true)
                     .snapshots()
                     .map(
-                      (s) => [
-                        for (final d in s.docs) MapEntry(d.id, d.data()),
-                      ],
+                      (s) => [for (final d in s.docs) MapEntry(d.id, d.data())],
                     ),
             builder: (context, snapshot) {
               if (snapshot.hasError) {
