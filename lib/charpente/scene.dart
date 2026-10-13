@@ -384,6 +384,7 @@ void _ajouterMurs(_Constructeur c, ResultatMurs r, Polygone? contour) {
         if (b.type != TypeMembre.lisseBasse &&
             b.type != TypeMembre.lisseHaute &&
             b.type != TypeMembre.appui &&
+            b.type != TypeMembre.traverse &&
             b.type != TypeMembre.linteau)
           'Hauteur : de ${c.l(b.z0)} à ${c.l(b.z1)}',
         'Mur : ${spec.nom}',

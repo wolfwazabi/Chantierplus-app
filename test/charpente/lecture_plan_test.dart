@@ -39,6 +39,8 @@ const _cheminsPermis = [
   'plancher.poutres.section',
   'plancher.poutres.pieux',
   'plancher.poutres.retraitPieux',
+  'murs.ouverturesContour.1.2.pose',
+  'murs.libres.1.ouvertures.3.pose',
 ];
 const _cheminsRefuses = [
   '',

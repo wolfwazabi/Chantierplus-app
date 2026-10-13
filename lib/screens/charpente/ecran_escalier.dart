@@ -131,6 +131,8 @@ class _EcranEscalierState extends State<EcranEscalier> {
 
   // ---------------------------------------------------------------- Formulaire
 
+  String _l(double po) => formatLongueur(po, metrique: Preferences.estMetrique);
+
   List<Widget> _formulaire() {
     const espace = SizedBox(height: 12);
     return [
@@ -139,8 +141,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
         contentPadding: EdgeInsets.zero,
         title: const Text('Partir de ce que je connais'),
         subtitle: const Text(
-          'Hauteur, course, giron, contremarche ou nombre : donnez-en 2 ou plus, '
-          'le calcul trouve le reste avec les dimensions idéales du Code.',
+          'Donnez 2 mesures ou plus : le calcul trouve le reste.',
         ),
         value: _modeDonnees,
         onChanged: (v) => setState(() => _modeDonnees = v),
@@ -251,60 +252,75 @@ class _EcranEscalierState extends State<EcranEscalier> {
           ),
         espace,
       ],
-      ChampLongueur(
-        key: const ValueKey('escalier_ep_marche'),
-        label: 'Épaisseur de la marche',
-        valeur: _epaisseurMarche,
-        min: 0.25,
-        max: 4,
-        onChange: (v) => setState(() => _epaisseurMarche = v),
-      ),
-      espace,
-      ChampLongueur(
-        key: const ValueKey('escalier_nez'),
-        label: 'Nez de marche (saillie)',
-        aide: 'Le Code limite la saillie à 25 mm.',
-        valeur: _nez,
-        min: 0,
-        max: 4,
-        onChange: (v) => setState(() => _nez = v),
-      ),
-      SwitchListTile(
-        key: const ValueKey('escalier_fermees'),
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Contremarches fermées'),
-        value: _fermees,
-        onChanged: (v) => setState(() => _fermees = v),
-      ),
-      if (_fermees)
-        ChampLongueur(
-          key: const ValueKey('escalier_ep_contre'),
-          label: 'Épaisseur de la contremarche',
-          valeur: _epaisseurContremarche,
-          min: 0.25,
-          max: 2,
-          onChange: (v) => setState(() => _epaisseurContremarche = v),
-        ),
-      const TitreSection('Limons'),
-      SegmentedButton<SectionLimon>(
-        key: const ValueKey('escalier_section'),
-        showSelectedIcon: false,
-        segments: [
-          for (final s in SectionLimon.values)
-            ButtonSegment(value: s, label: Text(s.nom)),
+      SectionRepliable(
+        cle: 'escalier_marches',
+        titre: 'Marches et contremarches',
+        resume:
+            'Marche ${_l(_epaisseurMarche)} · nez ${_l(_nez)} · contremarches '
+            '${_fermees ? 'fermées (${_l(_epaisseurContremarche)})' : 'ouvertes'}',
+        enfants: [
+          ChampLongueur(
+            key: const ValueKey('escalier_ep_marche'),
+            label: 'Épaisseur de la marche',
+            valeur: _epaisseurMarche,
+            min: 0.25,
+            max: 4,
+            onChange: (v) => setState(() => _epaisseurMarche = v),
+          ),
+          espace,
+          ChampLongueur(
+            key: const ValueKey('escalier_nez'),
+            label: 'Nez de marche (saillie)',
+            aide: 'Le Code limite la saillie à 25 mm.',
+            valeur: _nez,
+            min: 0,
+            max: 4,
+            onChange: (v) => setState(() => _nez = v),
+          ),
+          SwitchListTile(
+            key: const ValueKey('escalier_fermees'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Contremarches fermées'),
+            value: _fermees,
+            onChanged: (v) => setState(() => _fermees = v),
+          ),
+          if (_fermees)
+            ChampLongueur(
+              key: const ValueKey('escalier_ep_contre'),
+              label: 'Épaisseur de la contremarche',
+              valeur: _epaisseurContremarche,
+              min: 0.25,
+              max: 2,
+              onChange: (v) => setState(() => _epaisseurContremarche = v),
+            ),
         ],
-        selected: {_section},
-        onSelectionChanged: (s) => setState(() => _section = s.first),
       ),
-      espace,
-      ChampLongueur(
-        key: const ValueKey('escalier_entraxe'),
-        label: 'Entraxe maximal des limons',
-        aide: '16 po pour des marches en 2 po d\'épaisseur.',
-        valeur: _entraxe,
-        min: 6,
-        max: 48,
-        onChange: (v) => setState(() => _entraxe = v),
+      SectionRepliable(
+        cle: 'escalier_limons',
+        titre: 'Limons',
+        resume: '${_section.nom} · entraxe maximal ${_l(_entraxe)}',
+        enfants: [
+          SegmentedButton<SectionLimon>(
+            key: const ValueKey('escalier_section'),
+            showSelectedIcon: false,
+            segments: [
+              for (final s in SectionLimon.values)
+                ButtonSegment(value: s, label: Text(s.nom)),
+            ],
+            selected: {_section},
+            onSelectionChanged: (s) => setState(() => _section = s.first),
+          ),
+          espace,
+          ChampLongueur(
+            key: const ValueKey('escalier_entraxe'),
+            label: 'Entraxe maximal des limons',
+            aide: '16 po pour des marches en 2 po d\'épaisseur.',
+            valeur: _entraxe,
+            min: 6,
+            max: 48,
+            onChange: (v) => setState(() => _entraxe = v),
+          ),
+        ],
       ),
     ];
   }

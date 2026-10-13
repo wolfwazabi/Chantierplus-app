@@ -1237,7 +1237,7 @@ const CHEMINS_PERMIS = [
   'murs.ouverturesContour.1.2.position', 'murs.ouverturesContour.1.2.type',
   'murs.libres.0.longueur', 'murs.libres.5.hauteur', 'murs.libres.1.ouvertures.0.largeur', 'murs.libres.1.ouvertures.3.type',
   'plancher.etriers', 'plancher.poutres.nombre', 'plancher.poutres.plis', 'plancher.poutres.section', 'plancher.poutres.pieux',
-  'plancher.poutres.retraitPieux',
+  'plancher.poutres.retraitPieux', 'murs.ouverturesContour.1.2.pose', 'murs.libres.1.ouvertures.3.pose',
 ];
 const CHEMINS_REFUSES = [
   '', 'plancher', 'plancher.entremises', 'plancher.poutres', 'plancher.poutres.hauteurPatte', 'plancher.poutres.x',
@@ -1252,5 +1252,218 @@ describe('chemins permis : mêmes tables que l\'application', () => {
   test('le serveur reconnaît les chemins permis et refuse les autres', () => {
     for (const c of CHEMINS_PERMIS) assert.ok(lp.genreDuChemin(c), c);
     for (const c of CHEMINS_REFUSES) assert.equal(lp.genreDuChemin(c), null, JSON.stringify(c));
+  });
+});
+
+// =================================================================================================
+describe('réglages habituels de l\'entrepreneur (là où le plan ne dit rien)', () => {
+  // Ce que l'application envoie (ReglagesHabituels.pourLecturePlan) : les choix, sans mesures.
+  const HABITUDES = {
+    v: 1,
+    plancher: {
+      espacement: 16, section: '2×8', bordureDouble: true, riveDouble: true, etriers: 'unBout',
+      entremises: 0, panneau: '4x8', decalageMin: 24, marge: 0, longueursPlanches: [96, 120, 144, 168, 192, 216, 240],
+      etriersBordures: false, entremisesAuto: true, entremisesEspacement: 96, entremisesAlternees: true,
+      coupesSeparees: true, clousEtriers: true, clousParEtrier: 8, clousParBoite: 120, margeClous: 5,
+      poutres: { nombre: 2, plis: 3, section: '2×8', pieux: 3, retraitPieux: 12, hauteurPatte: 16 },
+    },
+    murs: { params: { section: '2×6', espacement: 16, precoupes: false, plisLinteau: 3 } },
+  };
+  const reglages = () => lp.validerReglages(HABITUDES);
+  const lire = (entree, r = reglages()) => lp.normaliserLecture(entree, { reglages: r });
+
+  test('validerReglages : absent → null ; illisible ou trop gros → refusé', () => {
+    assert.equal(lp.validerReglages(undefined), null);
+    assert.equal(lp.validerReglages(null), null);
+    assert.equal(lp.validerReglages({}), null);
+    for (const mauvais of ['x', 3, [1, 2], true]) rejetteSync(() => lp.validerReglages(mauvais), 'invalid-argument');
+    rejetteSync(() => lp.validerReglages({ plancher: { x: 'a'.repeat(9000) } }), 'invalid-argument');
+  });
+
+  test('validerReglages : seulement les choix permis, bornés comme un projet ; jamais une mesure', () => {
+    const r = lp.validerReglages({
+      plancher: {
+        ...HABITUDES.plancher,
+        forme: { type: 'rectangle', longueur: 999, largeur: 999 }, coteMaison: 2, angle: 30,
+        espacement: 500, section: '2×99', inconnu: 'x',
+      },
+      murs: { hauteur: 200, ouverturesContour: { 0: [] }, params: { lissesHautes: 9, precoupes: false } },
+    });
+    for (const mesure of ['forme', 'coteMaison', 'angle', 'inconnu']) assert.ok(!(mesure in r.plancher), mesure);
+    assert.deepEqual(Object.keys(r.params), ['lissesHautes', 'precoupes']);
+    assert.ok(!JSON.stringify(r).includes('999') && !JSON.stringify(r).includes('ouvertures'));
+    // Hors bornes ou valeur inconnue : la valeur par défaut du filtre, comme pour le modèle.
+    assert.equal(r.plancher.espacement, 16);
+    assert.equal(r.plancher.section, '2×10');
+    assert.equal(r.params.lissesHautes, 2);
+    assert.equal(r.plancher.riveDouble, true);
+    assert.deepEqual(r.poutres, HABITUDES.plancher.poutres);
+  });
+
+  test('validerReglages : poutres null (« sans poutres ») gardé ; poutres absentes : rien', () => {
+    assert.equal(lp.validerReglages({ plancher: { riveDouble: true, poutres: null } }).poutres, null);
+    assert.ok(!('poutres' in lp.validerReglages({ plancher: { riveDouble: true } })));
+  });
+
+  test('ce que le plan ne dit pas vient des habitudes ; ce qu\'il dit a le dernier mot', () => {
+    const entree = sortie({}, {
+      plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, espacement: 12, bordureDouble: false },
+    });
+    const { projet } = lire(entree);
+    const p = projet.plancher;
+    // Le plan : entraxe de 12 po, bordures simples.
+    assert.equal(p.espacement, 12);
+    assert.equal(p.bordureDouble, false);
+    // Les habitudes : le reste.
+    assert.equal(p.section, '2×8');
+    assert.equal(p.riveDouble, true);
+    assert.equal(p.etriers, 'unBout');
+    assert.equal(p.entremisesAuto, true);
+    assert.equal(p.entremisesEspacement, 96);
+    assert.equal(p.entremisesAlternees, true);
+    assert.equal(p.clousParEtrier, 8);
+    assert.deepEqual(p.poutres, HABITUDES.plancher.poutres);
+    assert.equal(projet.murs.params.section, '2×6');
+    assert.equal(projet.murs.params.precoupes, false);
+    assert.equal(projet.murs.params.plisLinteau, 3);
+    // Les mesures restent celles du plan.
+    assert.deepEqual(p.forme, { type: 'rectangle', longueur: 288, largeur: 240 });
+    assert.equal(projet.murs.hauteur, 97.125);
+    assert.equal(projet.murs.ouverturesContour['0'].length, 2);
+  });
+
+  test('les fiches le disent : « vos réglages habituels », à vérifier', () => {
+    const r = lire(sortie());
+    const section = valeur(r, 'plancher.section');
+    assert.equal(section.niveau, 'deduit');
+    assert.ok(section.raison.includes('2×8 (vos réglages habituels)'), section.raison);
+    assert.ok(valeur(r, 'plancher.etriers').raison.includes('un bout (vos réglages habituels)'));
+    assert.ok(valeur(r, 'murs.params.section').raison.includes('2×6 (vos réglages habituels)'));
+    // L'entraxe des solives est au plan (16 po) : pas de fiche « non indiqué ».
+    assert.equal(valeur(r, 'plancher.espacement'), undefined);
+    assert.ok(r.hypotheses.some((h) => h.includes('réglages habituels sont appliqués')));
+  });
+
+  test('sans réglages habituels : comme avant (valeurs par défaut « supposées »)', () => {
+    const r = lp.normaliserLecture(sortie());
+    assert.ok(valeur(r, 'plancher.section').raison.includes('supposée'));
+    assert.equal(r.projet.plancher.riveDouble, false);
+    assert.equal(r.projet.plancher.poutres, null);
+    assert.ok(!r.hypotheses.some((h) => h.includes('réglages habituels')));
+  });
+
+  test('poutres : absentes du plan → celles des habitudes, à confirmer une à une', () => {
+    const r = lire(sortie());
+    for (const champ of ['nombre', 'plis', 'section', 'pieux', 'retraitPieux']) {
+      assert.equal(valeur(r, `plancher.poutres.${champ}`)?.niveau, 'incertain', champ);
+    }
+  });
+
+  test('poutres : « pas de poutre au plan » (null) reste sans poutre ; données en partie → complétées', () => {
+    const sans = lire(sortie({}, { plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, poutres: null } }));
+    assert.equal(sans.projet.plancher.poutres, null);
+    const partie = lire(sortie({}, {
+      plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, poutres: { nombre: 3, plis: 2 } },
+    }));
+    assert.deepEqual(partie.projet.plancher.poutres, { nombre: 3, plis: 2, section: '2×8', pieux: 3, retraitPieux: 12, hauteurPatte: 16 });
+  });
+
+  test('appliquerReglages ne modifie jamais la réponse du modèle', () => {
+    const brut = sortie().projet;
+    const copie = JSON.parse(JSON.stringify(brut));
+    lp.appliquerReglages(brut, reglages());
+    assert.deepEqual(brut, copie);
+    assert.equal(lp.appliquerReglages(brut, null), brut);
+  });
+
+  test('la consigne demande de ne pas inventer les réglages', () => {
+    assert.ok(lp.PROMPT_PLAN.includes('RÉGLAGES DE CONSTRUCTION'));
+    assert.ok(lp.PROMPT_PLAN.includes('OMETS-LES'));
+  });
+
+  test('lirePlan : les réglages habituels complètent la lecture', async () => {
+    const fichiers = lp.validerFichiers([fichier(PDF, 'rdc.pdf')]);
+    const corps = { content: [{ type: 'tool_use', name: 'lire_plan', input: sortie() }], stop_reason: 'tool_use' };
+    const r = await lp.lirePlan({
+      fichiers, precisions: '', cle: 'k', url: 'http://x/v1/messages', modele: 'm', reglages: reglages(),
+      fetchImpl: async () => ({ status: 200, ok: true, json: async () => corps, text: async () => JSON.stringify(corps) }),
+    });
+    assert.equal(r.projet.plancher.riveDouble, true);
+    assert.equal(r.projet.murs.params.section, '2×6');
+  });
+});
+
+// =================================================================================================
+describe('pose du linteau (CNB 9.23.11.3) : lue sur le plan, toujours confirmée à la main', () => {
+  // Mur de 8 pi, 2 lisses hautes, linteau 2×8 : lisse haute à 93 po, lisse du dessus à 94 1/2 po.
+  const params = { section: '2×4', lissesHautes: 2, linteau: '2×8' };
+  const lire = (ouvertures) => lp.normaliserLecture(sortie({ valeurs: [] }, {
+    plancher: { forme: { type: 'rectangle', longueur: 156, largeur: 144 }, espacement: 16, section: '2×8' },
+    murs: { mode: 'contour', hauteur: 96, params, ouverturesContour: { 1: ouvertures } },
+  }));
+  // Allège 14 + cadre 74 + jeu du haut 3/4 + linteau 7 1/4 = 96 po : jusqu'au dessus du mur.
+  const fenetre = (over = {}) => ({ type: 'fenetre', nom: 'F1', largeur: 36, hauteur: 74, allege: 14, position: 72, ...over });
+  const HAUTEUR = 'murs.ouverturesContour.1.0.hauteur';
+  const POSE = 'murs.ouverturesContour.1.0.pose';
+
+  test('pose courante : absente du projet ; pose inconnue : ignorée', () => {
+    for (const pose of [undefined, 'sousLesLisses', 'inventee', 3]) {
+      const r = lire([fenetre({ pose })]);
+      assert.ok(!('pose' in r.projet.murs.ouverturesContour['1'][0]), String(pose));
+      assert.equal(valeur(r, POSE), undefined);
+    }
+  });
+
+  test('sans pose au plan : la fenêtre ne passe pas, sa hauteur est à confirmer avec le calcul', () => {
+    const v = valeur(lire([fenetre()]), HAUTEUR);
+    assert.equal(v.niveau, 'incertain');
+    assert.ok(v.raison.startsWith('Ne passe pas sous la lisse haute'), v.raison);
+    assert.ok(v.raison.includes('linteau à la place des lisses'), v.raison);
+  });
+
+  test('à la place des lisses : elle passe ; la pose elle-même est à confirmer', () => {
+    const r = lire([fenetre({ pose: 'aLaPlaceDesLisses' })]);
+    assert.equal(r.projet.murs.ouverturesContour['1'][0].pose, 'aLaPlaceDesLisses');
+    assert.ok(!valeur(r, HAUTEUR).raison.includes('Ne passe pas'), valeur(r, HAUTEUR).raison);
+    const pose = valeur(r, POSE);
+    assert.equal(pose.niveau, 'incertain');
+    assert.ok(pose.raison.includes('change la structure'));
+  });
+
+  test('une fiche « lue » du modèle pour la pose devient aussi « à confirmer »', () => {
+    const r = lp.normaliserLecture(sortie({
+      valeurs: [{ chemin: POSE, niveau: 'lu', lecture: 'LINTEAU DANS SABLIÈRE', raison: 'Note du plan.' }],
+    }, {
+      plancher: { forme: { type: 'rectangle', longueur: 156, largeur: 144 } },
+      murs: { mode: 'contour', hauteur: 96, params, ouverturesContour: { 1: [fenetre({ pose: 'aLaPlaceDesLisses' })] } },
+    }));
+    const v = valeur(r, POSE);
+    assert.equal(v.niveau, 'incertain');
+    assert.ok(v.raison.endsWith('Note du plan.'), v.raison);
+  });
+
+  test('sous une lisse simple : pas assez pour 96 po, la raison le dit', () => {
+    const v = valeur(lire([fenetre({ pose: 'sousLisseSimple' })]), HAUTEUR);
+    assert.ok(v.raison.startsWith('Ne passe pas, même avec la pose « sousLisseSimple »'), v.raison);
+    assert.ok(v.raison.includes('limite à 94 1/2 po (il manque 1 1/2 po)'), v.raison);
+  });
+
+  test('sans linteau : la baie monte jusqu\'au dessous des lisses (93 po)', () => {
+    // Allège 14 + cadre 78 1/4 + jeu du haut 3/4 = 93 po.
+    const passe = lire([fenetre({ hauteur: 78.25, pose: 'porteeParPoutre' })]);
+    assert.ok(!valeur(passe, HAUTEUR).raison.includes('Ne passe pas'));
+    const depasse = valeur(lire([fenetre({ hauteur: 79.25, pose: 'porteeParPoutre' })]), HAUTEUR);
+    assert.ok(depasse.raison.includes('limite à 93 po (il manque 1 po)'), depasse.raison);
+    assert.ok(!depasse.raison.includes('+ linteau'), depasse.raison);
+  });
+
+  test('la pose se corrige parmi les choix permis (mêmes que l\'application)', () => {
+    assert.equal(lp.genreDuChemin(POSE), 'choix');
+    assert.deepEqual(lp.choixDuChemin(POSE), ['sousLesLisses', 'sousLisseSimple', 'aLaPlaceDesLisses', 'porteeParPoutre']);
+  });
+
+  test('la consigne : une pose seulement si le plan la montre', () => {
+    assert.ok(lp.PROMPT_PLAN.includes('Ne choisis jamais une pose que le plan ne montre pas'));
+    assert.ok(lp.SCHEMA_PLAN && JSON.stringify(lp.SCHEMA_PLAN).includes('porteeParPoutre'));
   });
 });

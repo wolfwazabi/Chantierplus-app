@@ -22,12 +22,16 @@ class OngletPlancher extends StatelessWidget {
   /// Un toucher sur l'aperçu ouvre la vue 3D.
   final VoidCallback? ouvrir3D;
 
+  /// Barre « Mes réglages habituels », au-dessus des réglages.
+  final Widget? reglagesHabituels;
+
   const OngletPlancher({
     super.key,
     required this.projet,
     required this.resultats,
     required this.onChange,
     this.ouvrir3D,
+    this.reglagesHabituels,
   });
 
   ParametresPlancher get _p => projet.plancher;
@@ -46,9 +50,7 @@ class OngletPlancher extends StatelessWidget {
           key: const ValueKey('plancher_actif'),
           contentPadding: EdgeInsets.zero,
           title: const Text('Inclure un plancher'),
-          subtitle: const Text(
-            'Solives, solives de rive, étriers et sous-plancher',
-          ),
+          subtitle: const Text('Solives, rives, étriers et sous-plancher'),
           value: projet.plancherActif,
           onChanged: (v) => onChange(projet.copieAvec(plancherActif: v)),
         ),
@@ -62,151 +64,265 @@ class OngletPlancher extends StatelessWidget {
               controles: false,
               interactif: false,
               onTap: ouvrir3D,
-              hauteur: 240,
+              hauteur: 170,
             ),
           const TitreSection(
             'Forme du plancher',
-            aide:
-                'Mesures hors tout de l\'ossature (face extérieure des rives).',
+            aide: 'Mesures hors tout (face extérieure des rives).',
           ),
           _SelecteurForme(projet: projet, onChange: onChange),
           const TitreSection('Solives'),
-          _entraxe(),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<SectionBois>(
-            key: ValueKey('section_${_p.section.nom}'),
-            initialValue: _p.section,
-            decoration: const InputDecoration(
-              labelText: 'Section des solives et des rives',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: [
-              for (final s in sectionsPlancher)
-                DropdownMenuItem(
-                  value: s,
-                  child: Text('${s.nom} (${formatImperial(s.profondeur)})'),
-                ),
-            ],
-            onChanged: (s) => s == null ? null : _set(_p.copieAvec(section: s)),
-          ),
-          const SizedBox(height: 12),
-          _direction(),
-          SwitchListTile(
-            key: const ValueKey('rive_double'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Solives de rive doubles'),
-            subtitle: const Text(
-              'Deux épaisseurs côte à côte aux extrémités des solives',
-            ),
-            value: _p.riveDouble,
-            onChanged: (v) => _set(_p.copieAvec(riveDouble: v)),
-          ),
-          _coteMaison(),
-          SwitchListTile(
-            key: const ValueKey('bordure_double'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Solives de bordure doublées'),
-            subtitle: const Text(
-              'Les solives le long des côtés parallèles aux solives',
-            ),
-            value: _p.solivesDoublesAuxCotes,
-            onChanged: (v) => _set(_p.copieAvec(solivesDoublesAuxCotes: v)),
-          ),
-          const SizedBox(height: 4),
-          const Text('Étriers de solive'),
-          const SizedBox(height: 4),
-          SegmentedButton<ModeEtriers>(
-            key: const ValueKey('etriers'),
-            showSelectedIcon: false,
-            segments: const [
-              ButtonSegment(value: ModeEtriers.aucun, label: Text('Aucun')),
-              ButtonSegment(value: ModeEtriers.unBout, label: Text('Un bout')),
-              ButtonSegment(
-                value: ModeEtriers.deuxBouts,
-                label: Text('Deux bouts'),
-              ),
-            ],
-            selected: {_p.etriers},
-            onSelectionChanged: (s) => _set(_p.copieAvec(etriers: s.first)),
-          ),
-          if (_p.etriers != ModeEtriers.aucun) ..._etriersEtClous(),
-          const SizedBox(height: 12),
-          ..._entremises(),
-          SwitchListTile(
-            key: const ValueKey('coupes_separees'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Coupes séparées par catégorie'),
-            subtitle: const Text(
-              'Solives, rives et entremises dans leurs propres planches '
-              '(pas de bout de solive pour une entremise)',
-            ),
-            value: _p.coupesSeparees,
-            onChanged: (v) => _set(_p.copieAvec(coupesSeparees: v)),
-          ),
-          ..._poutres(),
-          const TitreSection(
-            'Sous-plancher',
-            aide:
-                'Feuilles posées en travers des solives, joints décalés, '
-                'chaque joint sur le centre d\'une solive.',
-          ),
-          DropdownButtonFormField<FormatPanneau>(
-            key: ValueKey('format_${_p.panneau.id}'),
-            initialValue: _p.panneau,
-            decoration: const InputDecoration(
-              labelText: 'Format des feuilles',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            items: [
-              for (final f in formatsPanneaux.where((f) => !f.estIsolant))
-                DropdownMenuItem(
-                  value: f,
-                  child: Text(
-                    _metrique
-                        ? '${f.nom} (${f.surfaceM2.toStringAsFixed(2)} m²)'
-                        : '${f.nom} (${f.surfacePi2.toStringAsFixed(0)} pi²)',
-                  ),
-                ),
-            ],
-            onChanged: (f) => f == null ? null : _set(_p.copieAvec(panneau: f)),
-          ),
-          const SizedBox(height: 12),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: ChampLongueur(
-                  label: 'Décalage minimal des joints',
-                  valeur: _p.decalageMin,
-                  min: 0,
-                  max: 96,
-                  aide: 'Entre deux rangées voisines',
-                  onChange: (v) => _set(_p.copieAvec(decalageMin: v)),
+                child: DropdownButtonFormField<SectionBois>(
+                  key: ValueKey('section_${_p.section.nom}'),
+                  initialValue: _p.section,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Section',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    for (final s in sectionsPlancher)
+                      DropdownMenuItem(
+                        value: s,
+                        child: Text(
+                          '${s.nom} (${formatImperial(s.profondeur)})',
+                        ),
+                      ),
+                  ],
+                  onChanged: (s) =>
+                      s == null ? null : _set(_p.copieAvec(section: s)),
                 ),
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: ChampNombre(
-                  label: 'Marge d\'achat',
-                  valeur: _p.margePanneauxPourcent,
-                  min: 0,
-                  max: 50,
-                  decimales: 0,
-                  suffixe: '%',
-                  aide: 'Sur les feuilles',
-                  onChange: (v) => _set(_p.copieAvec(margePanneauxPourcent: v)),
+                child: ChoixEntraxe(
+                  key: const ValueKey('entraxe'),
+                  valeur: _p.espacement,
+                  onChange: (v) => _set(_p.copieAvec(espacement: v)),
                 ),
               ),
             ],
           ),
-          const TitreSection('Longueurs de bois disponibles'),
-          _longueurs(),
+          const TitreSection('Réglages'),
+          ?reglagesHabituels,
+          SectionRepliable(
+            cle: 'direction_rives',
+            titre: 'Direction et rives',
+            resume: _resumeRives(),
+            enfants: [
+              _direction(),
+              SwitchListTile(
+                key: const ValueKey('rive_double'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Solives de rive doubles'),
+                subtitle: const Text('Deux épaisseurs aux bouts des solives'),
+                value: _p.riveDouble,
+                onChanged: (v) => _set(_p.copieAvec(riveDouble: v)),
+              ),
+              _coteMaison(),
+              SwitchListTile(
+                key: const ValueKey('bordure_double'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Solives de bordure doublées'),
+                subtitle: const Text(
+                  'Le long des côtés parallèles aux solives',
+                ),
+                value: _p.solivesDoublesAuxCotes,
+                onChanged: (v) => _set(_p.copieAvec(solivesDoublesAuxCotes: v)),
+              ),
+            ],
+          ),
+          SectionRepliable(
+            cle: 'etriers',
+            titre: 'Étriers et clous',
+            resume: _resumeEtriers(),
+            enfants: [
+              SegmentedButton<ModeEtriers>(
+                key: const ValueKey('etriers'),
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(value: ModeEtriers.aucun, label: Text('Aucun')),
+                  ButtonSegment(
+                    value: ModeEtriers.unBout,
+                    label: Text('Un bout'),
+                  ),
+                  ButtonSegment(
+                    value: ModeEtriers.deuxBouts,
+                    label: Text('Deux bouts'),
+                  ),
+                ],
+                selected: {_p.etriers},
+                onSelectionChanged: (s) => _set(_p.copieAvec(etriers: s.first)),
+              ),
+              if (_p.etriers != ModeEtriers.aucun) ..._etriersEtClous(),
+            ],
+          ),
+          SectionRepliable(
+            cle: 'entremises',
+            titre: 'Entremises',
+            resume: _resumeEntremises(),
+            enfants: _entremises(),
+          ),
+          SectionRepliable(
+            cle: 'poutres',
+            titre: 'Poutres et pieux vissés',
+            resume: _resumePoutres(),
+            enfants: _poutres(),
+          ),
+          SectionRepliable(
+            cle: 'sous_plancher',
+            titre: 'Sous-plancher',
+            resume: _resumeSousPlancher(),
+            enfants: [
+              Text(
+                'Feuilles en travers des solives, joints décalés, '
+                'chaque joint sur une solive.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<FormatPanneau>(
+                key: ValueKey('format_${_p.panneau.id}'),
+                initialValue: _p.panneau,
+                decoration: const InputDecoration(
+                  labelText: 'Format des feuilles',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  for (final f in formatsPanneaux.where((f) => !f.estIsolant))
+                    DropdownMenuItem(
+                      value: f,
+                      child: Text(
+                        _metrique
+                            ? '${f.nom} (${f.surfaceM2.toStringAsFixed(2)} m²)'
+                            : '${f.nom} (${f.surfacePi2.toStringAsFixed(0)} pi²)',
+                      ),
+                    ),
+                ],
+                onChanged: (f) =>
+                    f == null ? null : _set(_p.copieAvec(panneau: f)),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: ChampLongueur(
+                      label: 'Décalage des joints',
+                      valeur: _p.decalageMin,
+                      min: 0,
+                      max: 96,
+                      aide: 'Minimum entre 2 rangées',
+                      onChange: (v) => _set(_p.copieAvec(decalageMin: v)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ChampNombre(
+                      label: 'Marge d\'achat',
+                      valeur: _p.margePanneauxPourcent,
+                      min: 0,
+                      max: 50,
+                      decimales: 0,
+                      suffixe: '%',
+                      onChange: (v) =>
+                          _set(_p.copieAvec(margePanneauxPourcent: v)),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          SectionRepliable(
+            cle: 'bois',
+            titre: 'Bois',
+            resume: _resumeBois(),
+            enfants: [
+              SwitchListTile(
+                key: const ValueKey('coupes_separees'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Coupes séparées par catégorie'),
+                subtitle: const Text(
+                  'Solives, rives et entremises dans leurs propres planches',
+                ),
+                value: _p.coupesSeparees,
+                onChanged: (v) => _set(_p.copieAvec(coupesSeparees: v)),
+              ),
+              const Text('Longueurs de bois disponibles'),
+              const SizedBox(height: 4),
+              _longueurs(),
+            ],
+          ),
           const TitreSection('Résultats'),
           if (res.plancher != null) _Resultats(res.plancher!, projet),
         ],
       ],
     );
+  }
+
+  // --- Résumés des réglages repliés --------------------------------------------
+
+  String _l(double po) => formatLongueur(po, metrique: _metrique);
+
+  String _resumeRives() {
+    final direction = _p.angleSolivesDeg == null
+        ? 'Direction automatique'
+        : 'Solives à ${formatAngle(_p.angleSolivesDeg!)}';
+    final maison = _p.coteMaison == null
+        ? ''
+        : ' (côté ${_p.coteMaison! + 1} : maison)';
+    return '$direction · rives ${_p.riveDouble ? 'doubles' : 'simples'}$maison · '
+        'bordures ${_p.solivesDoublesAuxCotes ? 'doublées' : 'simples'}';
+  }
+
+  String _resumeEtriers() {
+    if (_p.etriers == ModeEtriers.aucun) return 'Aucun étrier';
+    final bouts = _p.etriers == ModeEtriers.unBout ? 'Un bout' : 'Deux bouts';
+    final solives = _p.etriersBordures
+        ? 'toutes les solives'
+        : 'solives intérieures';
+    final clous = _p.clousEtriers
+        ? '${_p.clousParEtrier} clous par étrier'
+        : 'clous non comptés';
+    return '$bouts · $solives · $clous';
+  }
+
+  String _resumeEntremises() {
+    final alternees = _p.entremisesAlternees ? ' · pose alternée' : '';
+    if (_p.entremisesAuto) {
+      return 'Automatiques : une rangée aux ${_l(_p.entremisesEspacement)}$alternees';
+    }
+    final n = _p.rangeesEntremises;
+    if (n == 0) return 'Aucune';
+    return '$n rangée${n > 1 ? 's' : ''}$alternees';
+  }
+
+  String _resumePoutres() {
+    final po = _p.poutres;
+    if (po == null) return 'Aucune';
+    final patte = po.hauteurPatte > 0
+        ? ' · pattes de ${_l(po.hauteurPatte)}'
+        : '';
+    return '${po.nombre} poutre${po.nombre > 1 ? 's' : ''} de ${po.plis} plis en '
+        '${po.section.nom} · ${po.pieuxParPoutre} pieux par poutre$patte';
+  }
+
+  String _resumeSousPlancher() =>
+      '${_p.panneau.nom} · joints décalés de ${_l(_p.decalageMin)} · '
+      'marge ${formatNombre(_p.margePanneauxPourcent, decimales: 0)} %';
+
+  String _resumeBois() {
+    final l = [..._p.longueursPlanches]..sort();
+    final planches = l.length == longueursPlanchesParDefaut.length
+        ? 'Planches de ${formatPlanche(l.first, metrique: _metrique)} à '
+              '${formatPlanche(l.last, metrique: _metrique)}'
+        : 'Planches : ${l.map((x) => formatPlanche(x, metrique: _metrique)).join(', ')}';
+    return '$planches · coupes ${_p.coupesSeparees ? 'séparées' : 'mélangées'}';
   }
 
   /// Côté du contour contre la maison : sa rive reste simple.
@@ -232,8 +348,8 @@ class OngletPlancher extends StatelessWidget {
         decoration: const InputDecoration(
           labelText: 'Côté de la maison',
           helperText:
-              'Sa solive de rive reste simple (doublée seulement si elle est '
-              'faite de plusieurs morceaux, joints alternés).',
+              'Sa rive reste simple (doublée seulement si elle est en '
+              'plusieurs morceaux).',
           helperMaxLines: 3,
           border: OutlineInputBorder(),
           isDense: true,
@@ -253,10 +369,7 @@ class OngletPlancher extends StatelessWidget {
       key: const ValueKey('etriers_bordures'),
       contentPadding: EdgeInsets.zero,
       title: const Text('Étriers sur les solives de bordure'),
-      subtitle: const Text(
-        'Décoché : seulement les solives intérieures (celles de bordure, '
-        'à l\'extérieur du plancher, n\'en ont pas)',
-      ),
+      subtitle: const Text('Sinon : solives intérieures seulement'),
       value: _p.etriersBordures,
       onChanged: (v) => _set(_p.copieAvec(etriersBordures: v)),
     ),
@@ -346,8 +459,7 @@ class OngletPlancher extends StatelessWidget {
       contentPadding: EdgeInsets.zero,
       title: const Text('Entremises automatiques'),
       subtitle: const Text(
-        'Une rangée chaque fois que la portée dépasse la portée sans '
-        'entremises (7 à 10 pi)',
+        'Une rangée chaque fois que la portée dépasse la distance choisie',
       ),
       value: _p.entremisesAuto,
       onChanged: (v) => _set(_p.copieAvec(entremisesAuto: v)),
@@ -397,15 +509,13 @@ class OngletPlancher extends StatelessWidget {
     void maj(ParametresPoutres Function(ParametresPoutres) f) =>
         _set(_p.copieAvec(poutres: () => f(po!)));
     return [
-      const TitreSection(
-        'Poutres et pieux vissés',
-        aide: 'Poutres en bois traité sur toute la largeur du plancher.',
-      ),
       SwitchListTile(
         key: const ValueKey('poutres_actives'),
         contentPadding: EdgeInsets.zero,
         title: const Text('Poutres sur pieux vissés'),
-        subtitle: const Text('Poutres, pieux et pattes en 6×6'),
+        subtitle: const Text(
+          'Bois traité sur toute la largeur ; pieux et pattes en 6×6',
+        ),
         value: po != null,
         onChanged: (v) => _set(
           _p.copieAvec(poutres: () => v ? const ParametresPoutres() : null),
@@ -490,42 +600,6 @@ class OngletPlancher extends StatelessWidget {
         ),
       ],
     ];
-  }
-
-  Widget _entraxe() {
-    final choix = espacementsStandards;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text('Entraxe des solives'),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 8,
-          children: [
-            for (final e in choix)
-              ChoiceChip(
-                key: ValueKey('entraxe_$e'),
-                label: Text(
-                  '${formatNombre(e, decimales: 1)} po (${(e * 25.4).round()} mm)',
-                ),
-                selected: (_p.espacement - e).abs() < 1e-9,
-                onSelected: (_) => _set(_p.copieAvec(espacement: e)),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        ChampNombre(
-          key: const ValueKey('entraxe_champ'),
-          label: 'Entraxe (centre à centre)',
-          valeur: _p.espacement,
-          min: 6,
-          max: 48,
-          decimales: 2,
-          suffixe: 'po',
-          onChange: (v) => _set(_p.copieAvec(espacement: v)),
-        ),
-      ],
-    );
   }
 
   Widget _direction() {

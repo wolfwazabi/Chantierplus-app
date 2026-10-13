@@ -298,7 +298,7 @@ ProjetCharpente projetDepuisPlan(Map<String, dynamic> json) {
 // =============================================================================
 
 final _ouverture = RegExp(
-  r'^(murs\.ouverturesContour\.\d{1,2}\.\d{1,2}|murs\.libres\.\d{1,2}\.ouvertures\.\d{1,2})\.(largeur|hauteur|allege|position|type)$',
+  r'^(murs\.ouverturesContour\.\d{1,2}\.\d{1,2}|murs\.libres\.\d{1,2}\.ouvertures\.\d{1,2})\.(largeur|hauteur|allege|position|type|pose)$',
 );
 
 /// Le genre d'un chemin permis ; null pour tout autre chemin.
@@ -329,7 +329,9 @@ GenreValeur? genreDuChemin(String chemin) {
   }
   final o = _ouverture.firstMatch(chemin);
   if (o != null) {
-    return o[2] == 'type' ? GenreValeur.choix : GenreValeur.longueur;
+    return o[2] == 'type' || o[2] == 'pose'
+        ? GenreValeur.choix
+        : GenreValeur.longueur;
   }
   return null;
 }
@@ -344,6 +346,9 @@ List<String> choixDuChemin(String chemin) {
   }
   if (chemin == 'murs.params.section') return const ['2×4', '2×6'];
   if (chemin.endsWith('.type')) return const ['porte', 'fenetre'];
+  if (chemin.endsWith('.pose')) {
+    return [for (final p in PoseLinteau.values) p.name];
+  }
   return const [];
 }
 
@@ -464,6 +469,7 @@ String _champ(String c) => switch (c) {
   'allege' => 'allège (du plancher au bas du cadre)',
   'position' => 'position (du coin extérieur au centre)',
   'type' => 'type (porte ou fenêtre)',
+  'pose' => 'pose du linteau',
   _ => c,
 };
 

@@ -39,9 +39,41 @@ class JeuxBaie {
 
 enum TypeOuverture { porte, fenetre }
 
+/// Comment la charge au-dessus d'une porte ou d'une fenêtre est reprise (CNB, partie 9 :
+/// 9.23.11.3 et 9.23.12). Les poses « remontées » gagnent de la hauteur quand l'ouverture monte
+/// près des lisses hautes (vitrage jusqu'à la sablière).
+enum PoseLinteau {
+  /// Le linteau passe sous les lisses hautes (pose courante).
+  sousLesLisses,
+
+  /// Une seule lisse haute passe au-dessus du linteau et le relie au mur ; la lisse du dessous
+  /// est coupée (9.23.11.3.(2)) : 1 1/2 po de plus.
+  sousLisseSimple,
+
+  /// Le linteau remplace les lisses hautes ; il est relié aux murs voisins par une plaque d'acier
+  /// galvanisé de 3 × 6 po (0,91 mm) ou une éclisse de bois 1 × 4 de 12 po, 3 clous de 2 1/2 po
+  /// de chaque côté (9.23.11.3.(4)) : 3 po de plus avec deux lisses.
+  aLaPlaceDesLisses,
+
+  /// Pas de linteau : la charge du toit est reprise par une poutre ou des poteaux conçus par un
+  /// ingénieur (non calculés ici). Le haut de la baie est fermé par une traverse.
+  porteeParPoutre,
+}
+
+/// Le nom d'une pose, pour l'écran et les messages.
+String libellePose(PoseLinteau p) => switch (p) {
+  PoseLinteau.sousLesLisses => 'Sous les lisses (courant)',
+  PoseLinteau.sousLisseSimple => 'Sous une lisse simple',
+  PoseLinteau.aLaPlaceDesLisses => 'À la place des lisses',
+  PoseLinteau.porteeParPoutre => 'Sans linteau (poutre, ingénieur)',
+};
+
 class Ouverture {
   final TypeOuverture type;
   final String nom;
+
+  /// Pose du linteau (voir [PoseLinteau]).
+  final PoseLinteau pose;
 
   /// Dimensions du DORMANT (cadre du produit), pas de la baie.
   final double largeurCadre;
@@ -66,6 +98,7 @@ class Ouverture {
     required this.position,
     this.jeuLargeur = JeuxBaie.largeurDefaut,
     this.jeuHauteur = JeuxBaie.hauteurDefaut,
+    this.pose = PoseLinteau.sousLesLisses,
   }) : allege = allege ?? (type == TypeOuverture.porte ? 0 : 36);
 
   /// La même ouverture, avec une autre position (distance du début du mur au centre).
@@ -78,6 +111,20 @@ class Ouverture {
     position: nouvellePosition,
     jeuLargeur: jeuLargeur,
     jeuHauteur: jeuHauteur,
+    pose: pose,
+  );
+
+  /// La même ouverture, avec une autre pose du linteau.
+  Ouverture avecPose(PoseLinteau nouvelle) => Ouverture(
+    type: type,
+    nom: nom,
+    largeurCadre: largeurCadre,
+    hauteurCadre: hauteurCadre,
+    allege: allege,
+    position: position,
+    jeuLargeur: jeuLargeur,
+    jeuHauteur: jeuHauteur,
+    pose: nouvelle,
   );
 
   double get largeurBaie => largeurCadre + jeuLargeur;
@@ -350,6 +397,9 @@ enum TypeMembre {
   lisseBasse,
   lisseHaute,
   entremise,
+
+  /// Sans linteau : pièce à plat qui ferme le haut de la baie.
+  traverse,
 }
 
 String libelleMembre(TypeMembre t) => switch (t) {
@@ -364,6 +414,7 @@ String libelleMembre(TypeMembre t) => switch (t) {
   TypeMembre.lisseBasse => 'Lisse basse',
   TypeMembre.lisseHaute => 'Lisse haute',
   TypeMembre.entremise => 'Entremise',
+  TypeMembre.traverse => 'Traverse du haut de la baie',
 };
 
 /// Une pièce de bois du mur, en coordonnées du mur (x le long du mur, y dans
@@ -430,6 +481,10 @@ class ResultatMur {
   final double aireBrutePo2;
   final double aireNettePo2;
   final List<String> avertissements;
+
+  /// Plaques de liaison des linteaux posés à la place des lisses (2 par linteau).
+  final int plaquesLiaison;
+
   const ResultatMur({
     required this.spec,
     required this.membres,
@@ -438,6 +493,7 @@ class ResultatMur {
     required this.aireBrutePo2,
     required this.aireNettePo2,
     required this.avertissements,
+    this.plaquesLiaison = 0,
   });
 
   int compter(TypeMembre t) => membres.where((m) => m.type == t).length;
@@ -480,6 +536,9 @@ class ResultatMurs {
   });
 
   int compter(TypeMembre t) => murs.fold(0, (a, m) => a + m.compter(t));
+
+  /// Plaques de liaison (acier galvanisé 3 × 6 po) de tous les murs.
+  int get plaquesLiaison => murs.fold(0, (a, m) => a + m.plaquesLiaison);
 }
 
 // =============================================================================
@@ -494,6 +553,54 @@ class _Zone {
   bool chevauche(double x0, double x1) => x0 < b - 1e-9 && x1 > a + 1e-9;
 }
 
+/// Lisses hautes que le linteau d'une ouverture a le droit de couper, selon sa pose.
+int _lissesCoupables(PoseLinteau pose, ParametresMurs p) => switch (pose) {
+  PoseLinteau.sousLesLisses || PoseLinteau.porteeParPoutre => 0,
+  PoseLinteau.sousLisseSimple => p.lissesHautes - 1,
+  PoseLinteau.aLaPlaceDesLisses => p.lissesHautes,
+};
+
+/// Profondeur du linteau d'une ouverture (0 : sans linteau).
+double _profondeurLinteau(Ouverture o, ParametresMurs p) =>
+    o.pose == PoseLinteau.porteeParPoutre ? 0 : p.linteau.profondeur;
+
+/// Le plus haut que peut monter le dessus du linteau (sans linteau : le haut de la baie).
+double _dessusPermis(Ouverture o, ParametresMurs p, double h) =>
+    h - (p.lissesHautes - _lissesCoupables(o.pose, p)) * _epLisse;
+
+/// Pour l'écran : (dessus du linteau de [o], le plus haut permis par sa pose) dans un mur de
+/// hauteur [h]. Sans linteau : (haut de la baie, dessous des lisses hautes).
+(double, double) hauteursLinteau(Ouverture o, ParametresMurs p, double h) =>
+    (o.baieHaut + _profondeurLinteau(o, p), _dessusPermis(o, p, h));
+
+/// Lisses hautes que le linteau traverse (les plus basses d'abord) : elles sont coupées sur la
+/// longueur du linteau.
+int _lissesCoupees(Ouverture o, ParametresMurs p, double h) {
+  final dessus = o.baieHaut + _profondeurLinteau(o, p);
+  final dessousLisses = h - p.lissesHautes * _epLisse;
+  if (dessus <= dessousLisses + 1e-6) return 0;
+  return math.min(
+    p.lissesHautes,
+    ((dessus - dessousLisses - 1e-6) / _epLisse).floor() + 1,
+  );
+}
+
+/// Les morceaux de [0, longueur] hors des [trous] (qui ne se chevauchent pas).
+List<(double, double)> _morceaux(
+  double longueur,
+  List<(double, double)> trous,
+) {
+  final tries = [...trous]..sort((a, b) => a.$1.compareTo(b.$1));
+  final morceaux = <(double, double)>[];
+  var debut = 0.0;
+  for (final (a, b) in tries) {
+    if (a - debut > 1e-6) morceaux.add((debut, a));
+    debut = math.max(debut, b);
+  }
+  if (longueur - debut > 1e-6) morceaux.add((debut, longueur));
+  return morceaux;
+}
+
 /// Tous les problèmes des portes et fenêtres d'un mur, dans l'ordre où le calcul les rencontre
 /// (pas seulement le premier) : dimensions, trop près d'un bout, chevauchement, allège trop basse,
 /// linteau qui ne passe pas sous la lisse haute (avec le détail des hauteurs). Vide : tout entre.
@@ -502,7 +609,6 @@ List<String> problemesOuvertures(SpecMur spec, ParametresMurs p) {
   final d = p.section.profondeur;
   final h = spec.hauteur;
   final longueur = spec.longueur;
-  final lissesHaut = p.lissesHautes * _epLisse;
   final largeurDebut =
       _reculOnglet(spec.angleDebut, d) + t * (1 + spec.montantsCoinDebut);
   final largeurFin =
@@ -552,21 +658,57 @@ List<String> problemesOuvertures(SpecMur spec, ParametresMurs p) {
     if (o.baieBas < -1e-9) {
       problemes.add('$qui : l\'allège est plus basse que le jeu du bas.');
     }
-    final dessusLinteau = o.baieHaut + p.linteau.profondeur;
-    final lisse = h - lissesHaut;
-    if (dessusLinteau > lisse + 1e-6) {
+    final profondeur = _profondeurLinteau(o, p);
+    final dessus = o.baieHaut + profondeur;
+    final permis = _dessusPermis(o, p, h);
+    if (dessus > permis + 1e-6) {
       final hauteurs = o.type == TypeOuverture.porte
           ? 'cadre ${formatImperial(o.hauteurCadre)} + jeu ${formatImperial(o.jeuHauteur)}'
           : 'allège ${formatImperial(o.allege)} + cadre ${formatImperial(o.hauteurCadre)} '
                 '+ jeu du haut ${formatImperial(o.jeuHauteur / 2)}';
-      problemes.add(
-        '$qui : le linteau ${p.linteau.nom} ne passe pas sous la lisse haute. '
-        '$hauteurs + linteau ${formatImperial(p.linteau.profondeur)} = ${formatImperial(dessusLinteau)}, '
-        'mais la lisse haute est à ${formatImperial(lisse)} (mur de ${formatImperial(h)} moins '
-        '${p.lissesHautes} lisse${p.lissesHautes > 1 ? 's' : ''}) : il manque '
-        '${formatImperial(dessusLinteau - lisse)}. Mur plus haut, ouverture plus basse, linteau moins '
-        'profond, ou une poutre qui sert de linteau (à vérifier au plan).',
-      );
+      final manque = formatImperial(dessus - permis);
+      if (profondeur == 0) {
+        problemes.add(
+          '$qui : la baie dépasse le dessous des lisses hautes. $hauteurs = '
+          '${formatImperial(dessus)}, mais la lisse haute est à ${formatImperial(permis)} : '
+          'il manque $manque.',
+        );
+      } else {
+        final restantes = p.lissesHautes - _lissesCoupables(o.pose, p);
+        final (ou, limite) = switch (restantes) {
+          0 => (
+            'dans la hauteur du mur',
+            'le dessus du mur est à ${formatImperial(h)} (linteau à la place des lisses)',
+          ),
+          _ when restantes < p.lissesHautes => (
+            'sous la lisse simple',
+            'la lisse du dessus est à ${formatImperial(permis)} (mur de ${formatImperial(h)} '
+                'moins 1 lisse)',
+          ),
+          _ => (
+            'sous la lisse haute',
+            'la lisse haute est à ${formatImperial(permis)} (mur de ${formatImperial(h)} moins '
+                '${p.lissesHautes} lisse${p.lissesHautes > 1 ? 's' : ''})',
+          ),
+        };
+        // Une pose du linteau qui gagne assez de hauteur, proposée (Code, partie 9).
+        final mieux =
+            [PoseLinteau.sousLisseSimple, PoseLinteau.aLaPlaceDesLisses]
+                .where(
+                  (q) =>
+                      q.index > o.pose.index &&
+                      dessus <= _dessusPermis(o.avecPose(q), p, h) + 1e-6,
+                )
+                .firstOrNull;
+        problemes.add(
+          '$qui : le linteau ${p.linteau.nom} ne passe pas $ou. '
+          '$hauteurs + linteau ${formatImperial(profondeur)} = ${formatImperial(dessus)}, '
+          'mais $limite : il manque $manque. '
+          '${mieux == null ? '' : 'Avec la pose « ${libellePose(mieux)} », elle passe (modifier l\'ouverture). '}'
+          'Sinon : mur plus haut, ouverture plus basse, linteau moins profond, ou une poutre qui '
+          'sert de linteau (pose « sans linteau », conçue par un ingénieur).',
+        );
+      }
     }
   }
   return problemes;
@@ -772,6 +914,9 @@ ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
   }
 
   // --- Chaque ouverture : rois, jacks, linteau, appui, courts montants -------
+  // Lisses hautes coupées par un linteau remonté : (début, fin, nombre de lisses du bas coupées).
+  final coupuresLisses = <(double, double, int)>[];
+  var plaquesLiaison = 0;
   for (var i = 0; i < ouvertures.length; i++) {
     final o = ouvertures[i];
     final baieG = o.baieG, baieD = o.baieD;
@@ -795,8 +940,9 @@ ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
     }
     // Linteau : sur les jacks, de la baie + les jacks, en plis côte à côte.
     final longLinteau = o.largeurBaie + 2 * jacksW;
+    final profondeur = _profondeurLinteau(o, p);
     // Plis répartis sur l'épaisseur du mur (cales isolantes entre les plis).
-    for (var j = 0; j < p.plisLinteau; j++) {
+    for (var j = 0; j < p.plisLinteau && profondeur > 0; j++) {
       final y = p.plisLinteau == 1
           ? (d - t) / 2
           : j * (d - t) / (p.plisLinteau - 1);
@@ -805,14 +951,52 @@ ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
         baieG - jacksW,
         baieD + jacksW,
         haut,
-        haut + p.linteau.profondeur,
+        haut + profondeur,
         longLinteau,
         y0: y,
         y1: y + t,
       );
     }
-    // Courts montants au-dessus du linteau.
-    final espaceHaut = h - lissesHaut - (haut + p.linteau.profondeur);
+    // Lisses hautes que le linteau traverse : coupées sur sa longueur (pose remontée).
+    final coupees = _lissesCoupees(o, p, h);
+    if (coupees > 0) {
+      coupuresLisses.add((baieG - jacksW, baieD + jacksW, coupees));
+    }
+    // Dessous de la première lisse entière au-dessus (le dessus du mur si toutes sont coupées).
+    final sousLisse = h - (p.lissesHautes - coupees) * _epLisse;
+    // Sans linteau : une traverse à plat ferme le haut de la baie.
+    var dessous = haut + profondeur;
+    if (o.pose == PoseLinteau.porteeParPoutre) {
+      if (sousLisse - haut >= _epLisse - 1e-9) {
+        ajouter(
+          TypeMembre.traverse,
+          baieG - jacksW,
+          baieD + jacksW,
+          haut,
+          haut + _epLisse,
+          longLinteau,
+        );
+        dessous = haut + _epLisse;
+      }
+      avert.add(
+        '${o.libelle} : sans linteau. La charge au-dessus doit être reprise par une poutre ou des '
+        'poteaux conçus par un ingénieur (Loi sur les ingénieurs) ; ils ne sont pas comptés ici.',
+      );
+    } else if (coupees == p.lissesHautes) {
+      plaquesLiaison += 2;
+      avert.add(
+        '${o.libelle} : linteau à la place des lisses. Le relier aux murs voisins : plaque d\'acier '
+        'galvanisé de 3 × 6 po (0,91 mm) ou éclisse 1 × 4 de 12 po, 3 clous de 2 1/2 po de chaque '
+        'côté (CNB 9.23.11.3).',
+      );
+    } else if (coupees > 0) {
+      avert.add(
+        '${o.libelle} : la lisse du dessus passe sans joint au-dessus du linteau et le relie au mur '
+        '(CNB 9.23.11.3) ; la lisse du dessous est coupée.',
+      );
+    }
+    // Courts montants au-dessus du linteau (ou de la traverse).
+    final espaceHaut = sousLisse - dessous;
     final centres = cripplesParOuverture[i] ?? const [];
     if (espaceHaut >= 1.5 - 1e-9) {
       for (final c in centres) {
@@ -820,15 +1004,20 @@ ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
           TypeMembre.courtHaut,
           c - t / 2,
           c + t / 2,
-          haut + p.linteau.profondeur,
-          h - lissesHaut,
+          dessous,
+          sousLisse,
           espaceHaut,
         );
       }
     } else if (espaceHaut > 1e-9) {
       avert.add(
-        '${o.libelle} : ${formatImperial(espaceHaut)} entre le linteau et la lisse haute : '
-        'pas de court montant ; le linteau se pose sous la lisse (cale de ${formatImperial(espaceHaut)}).',
+        coupees == p.lissesHautes && profondeur > 0
+            ? '${o.libelle} : le dessus du linteau est ${formatImperial(espaceHaut)} sous le dessus '
+                  'du mur : cale de ${formatImperial(espaceHaut)} pour l\'affleurer aux lisses voisines.'
+            : '${o.libelle} : ${formatImperial(espaceHaut)} entre le ${profondeur > 0 ? 'linteau' : 'haut de la baie'} '
+                  'et la lisse haute : pas de court montant ; '
+                  '${profondeur > 0 ? 'le linteau se pose sous la lisse' : 'cale sous la lisse'} '
+                  '(cale de ${formatImperial(espaceHaut)}).',
       );
     }
     // Fenêtre : appui et courts montants sous l'appui.
@@ -883,15 +1072,22 @@ ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
   for (final (a, b) in segments) {
     ajouter(TypeMembre.lisseBasse, a, b, 0, _epLisse, b - a);
   }
+  // Lisse j (0 = la plus basse) : coupée au-dessus des linteaux qui la traversent.
   for (var j = 0; j < p.lissesHautes; j++) {
-    ajouter(
-      TypeMembre.lisseHaute,
-      0,
-      longueur,
-      h - (p.lissesHautes - j) * _epLisse,
-      h - (p.lissesHautes - j - 1) * _epLisse,
-      longueur,
-    );
+    final trous = [
+      for (final (a, b, n) in coupuresLisses)
+        if (j < n) (a, b),
+    ];
+    for (final (a, b) in _morceaux(longueur, trous)) {
+      ajouter(
+        TypeMembre.lisseHaute,
+        a,
+        b,
+        h - (p.lissesHautes - j) * _epLisse,
+        h - (p.lissesHautes - j - 1) * _epLisse,
+        b - a,
+      );
+    }
   }
 
   // --- Aires ----------------------------------------------------------------
@@ -1158,6 +1354,7 @@ ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
     aireBrutePo2: aireBrute,
     aireNettePo2: aireNette,
     avertissements: avert,
+    plaquesLiaison: plaquesLiaison,
   );
 }
 
@@ -1316,6 +1513,7 @@ ResultatMurs calculerMurs(List<SpecMur> specs, ParametresMurs params) {
         aireBrutePo2: m.aireBrutePo2,
         aireNettePo2: m.aireNettePo2,
         avertissements: m.avertissements,
+        plaquesLiaison: m.plaquesLiaison,
       ),
     );
   }

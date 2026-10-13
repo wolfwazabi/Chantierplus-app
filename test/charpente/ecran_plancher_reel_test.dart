@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'aide_reglages.dart';
+
 Finder _cle(String k) => find.byKey(ValueKey(k));
 Finder _champ(String cle) =>
     find.descendant(of: _cle(cle), matching: find.byType(TextField));
@@ -29,6 +31,8 @@ Future<void> _ouvrir(WidgetTester t) async {
     ),
   );
   await t.pumpAndSettle();
+  // Les réglages sont repliés : on les ouvre tous.
+  await deplierReglages(t);
 }
 
 Future<void> _tap(WidgetTester t, Finder f) async {

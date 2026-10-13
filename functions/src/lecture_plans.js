@@ -97,6 +97,82 @@ function validerFichiers(brut) {
 }
 
 // -----------------------------------------------------------------------------
+// Réglages habituels de l'entrepreneur
+// -----------------------------------------------------------------------------
+
+/** Choix de construction du plancher gardés d'un projet à l'autre (clés du projet). */
+const CLES_REGLAGES_PLANCHER = ["espacement", "section", "bordureDouble", "riveDouble", "etriers", "entremises",
+  "panneau", "decalageMin", "marge", "longueursPlanches", "etriersBordures", "entremisesAuto",
+  "entremisesEspacement", "entremisesAlternees", "coupesSeparees", "clousEtriers", "clousParEtrier",
+  "clousParBoite", "margeClous"];
+/** Ossature des murs (clés de murs.params). */
+const CLES_REGLAGES_MURS = ["espacement", "section", "lissesHautes", "jacksParCote", "linteau", "plisLinteau",
+  "plisAppui", "longueursPlanches", "precoupes", "panneau", "debordPlancher", "fourrureEntraxe",
+  "fourrureEpaisseur", "fourrureLargeur", "revetementEpaisseur", "margeMembrane", "margeRevetement",
+  "margeFeuilles"];
+const MAX_OCTETS_REGLAGES = 8000;
+
+/**
+ * Vérifie les réglages habituels envoyés par l'application ({ plancher: {...}, murs: { params } }).
+ * Retourne { plancher, params, poutres? } : seulement les clés présentes, passées par le même filtre
+ * que les projets (bornes, valeurs permises) ; null s'il n'y en a pas. Jamais de mesure (forme,
+ * hauteur, portes et fenêtres) : les clés inconnues sont ignorées.
+ */
+function validerReglages(brut) {
+  if (brut === undefined || brut === null) return null;
+  if (!base.estObjet(brut) || JSON.stringify(brut).length > MAX_OCTETS_REGLAGES) {
+    throw new HttpsError("invalid-argument", "Réglages habituels illisibles.");
+  }
+  const p = base.estObjet(brut.plancher) ? brut.plancher : {};
+  const m = base.estObjet(brut.murs) && base.estObjet(brut.murs.params) ? brut.murs.params : {};
+  const presentes = (o, cles) => cles.filter((k) => o[k] !== undefined && o[k] !== null);
+  const clesP = presentes(p, CLES_REGLAGES_PLANCHER);
+  const clesM = presentes(m, CLES_REGLAGES_MURS);
+  const avecPoutres = Object.prototype.hasOwnProperty.call(p, "poutres") &&
+    (p.poutres === null || base.estObjet(p.poutres));
+  // Un projet fictif passe par le filtre : chaque réglage est borné comme une valeur du modèle.
+  const {projet} = base.normaliserProjet({
+    plancher: {
+      ...Object.fromEntries(clesP.map((k) => [k, p[k]])),
+      poutres: avecPoutres ? p.poutres : null,
+      forme: {type: "rectangle", longueur: 120, largeur: 120},
+    },
+    murs: {params: Object.fromEntries(clesM.map((k) => [k, m[k]]))},
+  });
+  const r = {
+    plancher: Object.fromEntries(clesP.map((k) => [k, projet.plancher[k]])),
+    params: Object.fromEntries(clesM.map((k) => [k, projet.murs.params[k]])),
+  };
+  if (avecPoutres) r.poutres = projet.plancher.poutres;
+  return clesP.length || clesM.length || avecPoutres ? r : null;
+}
+
+/**
+ * Le projet brut du modèle, complété par les réglages habituels là où le modèle n'a rien mis (le plan
+ * ne le disait pas). Une valeur donnée par le modèle n'est jamais remplacée. Poutres : absentes →
+ * celles des habitudes ; données en partie → complétées ; null (« pas de poutre au plan ») → null.
+ */
+function appliquerReglages(brut, r) {
+  if (!r) return brut;
+  const absente = (o, k) => o[k] === undefined || o[k] === null;
+  const p = base.estObjet(brut.plancher) ? {...brut.plancher} : {};
+  for (const [k, v] of Object.entries(r.plancher)) if (absente(p, k)) p[k] = v;
+  if (r.poutres !== undefined) {
+    if (p.poutres === undefined) {
+      p.poutres = r.poutres;
+    } else if (base.estObjet(p.poutres) && base.estObjet(r.poutres)) {
+      const q = {...p.poutres};
+      for (const [k, v] of Object.entries(r.poutres)) if (absente(q, k)) q[k] = v;
+      p.poutres = q;
+    }
+  }
+  const m = base.estObjet(brut.murs) ? {...brut.murs} : {};
+  const params = base.estObjet(m.params) ? {...m.params} : {};
+  for (const [k, v] of Object.entries(r.params)) if (absente(params, k)) params[k] = v;
+  return {...brut, plancher: p, murs: {...m, params}};
+}
+
+// -----------------------------------------------------------------------------
 // Cotes imprimées : conversion en pouces par le serveur
 // -----------------------------------------------------------------------------
 
@@ -144,7 +220,7 @@ const arrondi = (n) => Math.round(n * 100) / 100;
 // Valeurs à confirmer : chemins permis, retrouvés dans le projet filtré
 // -----------------------------------------------------------------------------
 
-const CHAMPS_OUVERTURE = "largeur|hauteur|allege|position|type";
+const CHAMPS_OUVERTURE = "largeur|hauteur|allege|position|type|pose";
 
 /** Genre d'un chemin permis (null : chemin refusé). */
 function genreDuChemin(chemin) {
@@ -163,7 +239,7 @@ function genreDuChemin(chemin) {
   const ouv = new RegExp(`\\.(${CHAMPS_OUVERTURE})$`).exec(chemin);
   if (ouv && (/^murs\.ouverturesContour\.\d{1,2}\.\d{1,2}\.[a-z]+$/.test(chemin) ||
       /^murs\.libres\.\d{1,2}\.ouvertures\.\d{1,2}\.[a-z]+$/.test(chemin))) {
-    return ouv[1] === "type" ? "choix" : "longueur";
+    return ouv[1] === "type" || ouv[1] === "pose" ? "choix" : "longueur";
   }
   return null;
 }
@@ -174,6 +250,7 @@ function choixDuChemin(chemin) {
   if (chemin === "plancher.etriers") return MODES_ETRIERS;
   if (chemin === "murs.params.section") return SECTIONS_MURS;
   if (chemin.endsWith(".type")) return ["porte", "fenetre"];
+  if (chemin.endsWith(".pose")) return base.POSES_LINTEAU;
   return [];
 }
 
@@ -438,19 +515,27 @@ function enPouces(n) {
 function verifierHauteursOuvertures(parChemin, projet) {
   if (!projet.mursActifs) return;
   const p = projet.murs.params;
-  const linteau = PROFONDEUR_LINTEAU[p.linteau] ?? 7.25;
-  const lisses = p.lissesHautes * 1.5;
+  const profondeur = PROFONDEUR_LINTEAU[p.linteau] ?? 7.25;
+  // Lisses hautes que le linteau peut couper selon sa pose (CNB 9.23.11.3).
+  const coupables = {sousLesLisses: 0, porteeParPoutre: 0, sousLisseSimple: p.lissesHautes - 1,
+    aLaPlaceDesLisses: p.lissesHautes};
   const verifier = (prefixe, o, hauteurMur) => {
+    const pose = o.pose ?? "sousLesLisses";
+    const linteau = pose === "porteeParPoutre" ? 0 : profondeur;
     const haut = (o.type === "porte" ? 0 : o.allege - o.jeuHauteur / 2) + o.hauteur + o.jeuHauteur;
     const dessus = haut + linteau;
-    const lisse = hauteurMur - lisses;
+    const lisse = hauteurMur - (p.lissesHautes - coupables[pose]) * 1.5;
     if (dessus <= lisse + 1e-6) return;
     const detail = o.type === "porte" ?
       `cadre ${enPouces(o.hauteur)} + jeu ${enPouces(o.jeuHauteur)}` :
       `allège ${enPouces(o.allege)} + cadre ${enPouces(o.hauteur)} + jeu du haut ${enPouces(o.jeuHauteur / 2)}`;
-    const raison = `Ne passe pas sous la lisse haute : ${detail} + linteau ${p.linteau} ${enPouces(linteau)} = ` +
-      `${enPouces(dessus)}, lisse à ${enPouces(lisse)} (il manque ${enPouces(dessus - lisse)}). ` +
-      "Vérifiez au plan comment c'est réglé (poutre qui sert de linteau, imposte dans le pignon, mur plus haut).";
+    const avecLinteau = linteau ? ` + linteau ${p.linteau} ${enPouces(linteau)}` : "";
+    const raison = (pose === "sousLesLisses" ? "Ne passe pas sous la lisse haute : " :
+      `Ne passe pas, même avec la pose « ${pose} » : `) +
+      `${detail}${avecLinteau} = ${enPouces(dessus)}, ${pose === "sousLesLisses" ? "lisse" : "limite"} à ${enPouces(lisse)} ` +
+      `(il manque ${enPouces(dessus - lisse)}). ` +
+      "Vérifiez au plan comment c'est réglé (linteau à la place des lisses, poutre qui sert de linteau, " +
+      "imposte dans le pignon, mur plus haut).";
     const chemin = `${prefixe}.hauteur`;
     const fiche = parChemin.get(chemin);
     parChemin.set(chemin, {
@@ -464,6 +549,32 @@ function verifierHauteursOuvertures(parChemin, projet) {
     }
   } else {
     projet.murs.libres.forEach((m, i) => m.ouvertures.forEach((o, j) => verifier(`murs.libres.${i}.ouvertures.${j}`, o, m.hauteur)));
+  }
+}
+
+/**
+ * Une pose de linteau autre que la pose courante change la structure (« sans linteau » demande un
+ * ingénieur) : l'utilisateur la confirme toujours à la main.
+ */
+function verifierPosesLinteau(parChemin, projet) {
+  if (!projet.mursActifs) return;
+  const verifier = (prefixe, o) => {
+    if (!o.pose) return;
+    const chemin = `${prefixe}.pose`;
+    const fiche = parChemin.get(chemin);
+    const raison = "Pose du linteau lue sur le plan : à confirmer (elle change la structure ; " +
+      "« sans linteau » demande une poutre conçue par un ingénieur).";
+    parChemin.set(chemin, {
+      chemin, niveau: "incertain", lecture: fiche?.lecture ?? "", valeurPlan: null, verifiee: false,
+      raison: fiche?.raison ? `${raison} ${fiche.raison}` : raison,
+    });
+  };
+  if (projet.murs.mode === "contour") {
+    for (const [k, liste] of Object.entries(projet.murs.ouverturesContour)) {
+      liste.forEach((o, j) => verifier(`murs.ouverturesContour.${k}.${j}`, o));
+    }
+  } else {
+    projet.murs.libres.forEach((m, i) => m.ouvertures.forEach((o, j) => verifier(`murs.libres.${i}.ouvertures.${j}`, o)));
   }
 }
 
@@ -499,7 +610,9 @@ const brutNombre = (o, champ, min, max) => {
  * une fiche « à vérifier » chacun, qui se corrige. Une fiche du modèle n'est jamais remplacée.
  * Retourne aussi les hypothèses que le texte du modèle n'aurait pas dites.
  */
-function ajouterDefauts(parChemin, projet, brut) {
+function ajouterDefauts(parChemin, projet, brut, reglages = null) {
+  // Valeur que le plan ne donne pas, prise dans les réglages habituels de l'entrepreneur.
+  const habituel = (partie, cle) => reglages?.[partie]?.[cle] !== undefined;
   const defaut = (chemin, raison) => {
     if (!parChemin.has(chemin) && pertinent(chemin, projet)) {
       parChemin.set(chemin, {chemin, niveau: "deduit", raison, lecture: "", valeurPlan: null, verifiee: false});
@@ -508,22 +621,32 @@ function ajouterDefauts(parChemin, projet, brut) {
   const p = base.estObjet(brut?.plancher) ? brut.plancher : {};
   if (projet.plancherActif) {
     if (!SECTIONS_PLANCHER.includes(p.section)) {
-      defaut("plancher.section", `Section des solives non indiquée : ${projet.plancher.section} supposée.`);
+      defaut("plancher.section", habituel("plancher", "section") ?
+        `Section des solives non indiquée au plan : ${projet.plancher.section} (vos réglages habituels).` :
+        `Section des solives non indiquée : ${projet.plancher.section} supposée.`);
     }
     if (!brutNombre(p, "espacement", 6, 48)) {
-      defaut("plancher.espacement", `Entraxe des solives non indiqué : ${projet.plancher.espacement} po supposé.`);
+      defaut("plancher.espacement", habituel("plancher", "espacement") ?
+        `Entraxe des solives non indiqué au plan : ${projet.plancher.espacement} po (vos réglages habituels).` :
+        `Entraxe des solives non indiqué : ${projet.plancher.espacement} po supposé.`);
     }
     defaut("plancher.etriers", MODES_ETRIERS.includes(p.etriers) ?
       "Déduit de la structure du plan : à vérifier." :
-      `Étriers non indiqués : ${LIBELLES_ETRIERS[projet.plancher.etriers]} supposé.`);
+      habituel("plancher", "etriers") ?
+        `Étriers non indiqués au plan : ${LIBELLES_ETRIERS[projet.plancher.etriers]} (vos réglages habituels).` :
+        `Étriers non indiqués : ${LIBELLES_ETRIERS[projet.plancher.etriers]} supposé.`);
   }
   const params = base.estObjet(brut?.murs?.params) ? brut.murs.params : {};
   if (projet.mursActifs) {
     if (!SECTIONS_MURS.includes(params.section)) {
-      defaut("murs.params.section", `Section des montants non indiquée : ${projet.murs.params.section} supposée.`);
+      defaut("murs.params.section", habituel("params", "section") ?
+        `Section des montants non indiquée au plan : ${projet.murs.params.section} (vos réglages habituels).` :
+        `Section des montants non indiquée : ${projet.murs.params.section} supposée.`);
     }
     if (!brutNombre(params, "espacement", 6, 48)) {
-      defaut("murs.params.espacement", `Entraxe des montants non indiqué : ${projet.murs.params.espacement} po supposé.`);
+      defaut("murs.params.espacement", habituel("params", "espacement") ?
+        `Entraxe des montants non indiqué au plan : ${projet.murs.params.espacement} po (vos réglages habituels).` :
+        `Entraxe des montants non indiqué : ${projet.murs.params.espacement} po supposé.`);
     }
   }
 
@@ -562,13 +685,17 @@ function ajouterDefauts(parChemin, projet, brut) {
 // Normalisation de la réponse du modèle
 // -----------------------------------------------------------------------------
 
+const HYPOTHESE_REGLAGES = "Vos réglages habituels sont appliqués là où le plan ne dit rien " +
+  "(rives, bordures, étriers, entremises, poutres, clous, sous-plancher, bois, ossature des murs).";
+
 /**
  * Filtre la réponse du modèle. Retourne { explication, hypotheses, projet, valeurs, niveau,
  * echelle, confiance }. Lance failed-precondition si le document n'est pas un plan exploitable.
  * `completer` : ajoute les fiches que le modèle n'a pas données (couverture des longueurs critiques,
- * défauts) ; faux seulement pour tester le filtrage seul.
+ * défauts) ; faux seulement pour tester le filtrage seul. `reglages` : les réglages habituels
+ * (voir validerReglages), appliqués là où le modèle n'a rien mis.
  */
-function normaliserLecture(entree, {completer = true} = {}) {
+function normaliserLecture(entree, {completer = true, reglages = null} = {}) {
   const e = base.estObjet(entree) ? entree : {};
   if (e.lisible !== false && !base.estObjet(e.projet)) {
     throw new HttpsError("failed-precondition",
@@ -580,9 +707,11 @@ function normaliserLecture(entree, {completer = true} = {}) {
         `Ce document ne semble pas contenir un plan de construction lisible${probleme ? ` (${probleme})` : ""}. ` +
         "Envoyez une image plus nette ou la bonne page du plan.");
   }
+  const brut = base.estObjet(e.projet) ? e.projet : {};
   let normalise;
   try {
-    normalise = base.normaliserProjet(e.projet);
+    // Les réglages habituels complètent ce que le plan ne dit pas ; le plan a le dernier mot.
+    normalise = base.normaliserProjet(appliquerReglages(brut, reglages));
   } catch (err) {
     if (err instanceof HttpsError) {
       throw new HttpsError("failed-precondition",
@@ -600,9 +729,11 @@ function normaliserLecture(entree, {completer = true} = {}) {
 
   const parChemin = normaliserValeurs(e.valeurs, projet, base.estObjet(e.projet) ? e.projet : {});
   ajouterAbsentes(parChemin, projet, base.estObjet(e.projet) ? e.projet : {});
-  const automatiques = completer ? ajouterDefauts(parChemin, projet, base.estObjet(e.projet) ? e.projet : {}) : [];
+  const automatiques = completer ? ajouterDefauts(parChemin, projet, brut, reglages) : [];
+  if (reglages) automatiques.push(HYPOTHESE_REGLAGES);
   if (completer) ajouterCouverture(parChemin, projet);
   if (completer) verifierHauteursOuvertures(parChemin, projet);
+  if (completer) verifierPosesLinteau(parChemin, projet);
 
   const hypotheses = (Array.isArray(e.hypotheses) ? e.hypotheses : [])
       .map((h) => base.chaine(h, 300)).filter(Boolean).slice(0, 15);
@@ -714,8 +845,12 @@ MURS, PORTES ET FENÊTRES
 - Hauteur des murs : celle du plan (coupe, élévation). 8 pi de plancher fini à plafond fini ne donne pas toujours 97.125 : si tu hésites, garde la valeur du plan et marque-la « deduit ».
 - Murs : section des montants, entraxe : seulement si une coupe de mur ou une note les indique (« 2x6 @ 16" c/c ») ; sinon défauts + « hypotheses ». Panneau isolant structural (Isobrace, Sonoclimat…) : panneau « isobrace_r4 », niveau « deduit ».
 - Hauteur : une porte ou une fenêtre doit passer sous la lisse haute avec son linteau (allège + cadre + jeu + profondeur du linteau ≤ hauteur du mur − lisses hautes). Si ce n'est pas le cas au plan (vitrage jusqu'à la sablière, imposte ou trapèze dans le pignon, porte-patio avec imposte), cherche comment le plan le règle (poutre ou sablière qui sert de linteau, mur plus haut à cet endroit) et dis-le dans « hypotheses » ; l'application marquera la hauteur « à confirmer ».
+- Pose du linteau (« pose ») : SEULEMENT si le plan la montre : « aLaPlaceDesLisses » (linteau dans la sablière, à la place des lisses hautes), « sousLisseSimple » (une seule lisse haute au-dessus du linteau), « porteeParPoutre » (pas de linteau : vitrage jusqu'à la sablière sous une poutre portée par des poteaux). Ajoute alors une valeur au chemin …pose (niveau « deduit ») ; l'utilisateur la confirmera. Ne choisis jamais une pose que le plan ne montre pas.
 - Murs en panneaux préfabriqués (« panneau préfab., voir fabricant ») ou murs vitrés d'aluminium du fabricant : il n'y a pas d'ossature de bois à calculer. Mets mursActifs à faux et dis-le dans « explication » (les portes et fenêtres sont alors fournies avec les panneaux). Calcule les murs seulement s'ils sont en ossature de bois (montants).
 - Côté de la maison : il n'y a pas de nouveau mur de ce côté (c'est la maison) ; l'application compte un mur par côté du contour, dis-le dans « hypotheses » quand les murs sont calculés.
+
+RÉGLAGES DE CONSTRUCTION
+- Rives doubles, solives de bordure doublées, entremises, étriers des bordures, coupes séparées, clous, longueurs de bois, format et marges des feuilles ; pour les murs : lisses, montants précoupés, linteaux, montants de linteau, fourrures, revêtement : mets-les SEULEMENT si le plan les indique. Sinon OMETS-LES (ne mets pas de valeur par défaut) : l'application applique les réglages habituels de l'entrepreneur.
 
 CE QUE L'APPLICATION NE CALCULE PAS : toiture, fermes, fondations, escalier, finition intérieure. Si le plan en montre, ignore-les et dis-le en une phrase dans « explication ».
 
@@ -724,8 +859,8 @@ CHEMINS pour « valeurs » (les indices comptent à partir de 0, dans les listes
   plancher.forme.cotes.N · plancher.forme.angles.N (type cotes) · plancher.forme.points.N.0 · plancher.forme.points.N.1 (type points)
   plancher.espacement · plancher.section · murs.hauteur · murs.params.espacement · murs.params.section
   plancher.etriers · plancher.poutres.nombre | plis | section | pieux | retraitPieux
-  murs.ouverturesContour.K.J.largeur | hauteur | allege | position | type (K = indice du côté, J = rang de l'ouverture dans la liste de ce côté)
-  murs.libres.I.longueur | hauteur · murs.libres.I.ouvertures.J.largeur | hauteur | allege | position | type
+  murs.ouverturesContour.K.J.largeur | hauteur | allege | position | type | pose (K = indice du côté, J = rang de l'ouverture dans la liste de ce côté)
+  murs.libres.I.longueur | hauteur · murs.libres.I.ouvertures.J.largeur | hauteur | allege | position | type | pose
 Donne une entrée pour : chaque cote de la forme du plancher, la hauteur des murs, la largeur, la hauteur, l'allège (fenêtres) et la position de chaque porte et fenêtre, et toute autre valeur « deduit » ou « incertain ». Toute longueur du projet sans entrée sera marquée « incertain » par l'application : l'utilisateur devra la confirmer.
 
 Si les fichiers ne contiennent aucun plan exploitable, mets lisible à faux et explique pourquoi.
@@ -774,7 +909,7 @@ function construireRequetePlan({fichiers, precisions, modele, avecTemperature = 
  * `fetchImpl` : pour les tests.
  */
 async function lirePlan({fichiers, precisions, cle, url, modele, fetchImpl = fetch, delaiMs = 200000,
-  preparer = rendu.contenuDesFichiers, journal = () => {}}) {
+  preparer = rendu.contenuDesFichiers, journal = () => {}, reglages = null}) {
   if (!cle) throw new HttpsError("failed-precondition", "L'assistant IA n'est pas encore activé.");
   // Pages agrandies et découpées : les cotes d'un plan grand format deviennent lisibles.
   const contenuFichiers = await preparer(fichiers, journal);
@@ -809,13 +944,13 @@ async function lirePlan({fichiers, precisions, cle, url, modele, fetchImpl = fet
     throw new HttpsError("failed-precondition",
         "L'assistant n'a pas pu lire ce plan. Essayez une image plus nette ou précisez ce qu'il faut calculer.");
   }
-  return normaliserLecture(bloc.input);
+  return normaliserLecture(bloc.input, {reglages});
 }
 
 module.exports = {
   MODELE_PLANS,
   MAX_FICHIERS, MAX_OCTETS_FICHIER, MAX_OCTETS_IMAGE, MAX_OCTETS_TOTAL, MAX_PRECISIONS,
-  validerFichiers, typeDeFichier, parserCote, genreDuChemin, choixDuChemin,
+  validerFichiers, validerReglages, appliquerReglages, typeDeFichier, parserCote, genreDuChemin, choixDuChemin,
   construireRequetePlan, normaliserLecture, lirePlan,
   PROMPT_PLAN, SCHEMA_PLAN,
 };

@@ -772,6 +772,8 @@ Map<String, dynamic> _ouvertureJson(Ouverture o) => {
   'position': o.position,
   'jeuLargeur': o.jeuLargeur,
   'jeuHauteur': o.jeuHauteur,
+  // Absente : pose courante (projets d'avant ce réglage).
+  if (o.pose != PoseLinteau.sousLesLisses) 'pose': o.pose.name,
 };
 
 Ouverture _ouvertureDe(Object? j) {
@@ -786,7 +788,14 @@ Ouverture _ouvertureDe(Object? j) {
   if (nom is! String || nom.length > 60) {
     throw const FormatException('nom d\'ouverture invalide');
   }
+  final pose = j['pose'] == null
+      ? PoseLinteau.sousLesLisses
+      : PoseLinteau.values.where((e) => e.name == j['pose']).firstOrNull;
+  if (pose == null) {
+    throw const FormatException('pose du linteau inconnue');
+  }
   return Ouverture(
+    pose: pose,
     type: type.first,
     nom: nom,
     largeurCadre: _num(j, 'largeur', 0.01, pouceMaxSaisie),

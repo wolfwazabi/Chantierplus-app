@@ -1727,6 +1727,37 @@ describe('Lecture de plans (admin et contremaître ; PDF et photos ; valeurs à 
     assert.equal(recues[1].corps.messages[0].content[1].source.media_type, 'image/jpeg');
   });
 
+  test('réglages habituels : appliqués là où le plan ne dit rien, jamais transmis au modèle', async () => {
+    const reglages = {
+      v: 1,
+      plancher: { riveDouble: true, section: '2×8', etriers: 'unBout', entremisesAuto: true, espacement: 12,
+        poutres: { nombre: 2, plis: 3, section: '2×8', pieux: 3, retraitPieux: 12, hauteurPatte: 16 } },
+      murs: { params: { section: '2×6', precoupes: false } },
+    };
+    const r = await plus.appeler('lirePlanCharpente', donnees({ reglages }));
+    const p = r.projet.plancher;
+    assert.equal(p.riveDouble, true);
+    assert.equal(p.section, '2×8');
+    assert.equal(p.etriers, 'unBout');
+    assert.equal(p.entremisesAuto, true);
+    assert.equal(p.espacement, 16, 'l\'entraxe est au plan : le plan a le dernier mot');
+    assert.equal(p.poutres.hauteurPatte, 16);
+    assert.equal(r.projet.murs.params.section, '2×6');
+    assert.equal(r.projet.murs.params.precoupes, false);
+    assert.deepEqual(p.forme, { type: 'rectangle', longueur: 288, largeur: 240 });
+    const fiche = (c) => r.valeurs.find((v) => v.chemin === c);
+    assert.ok(fiche('plancher.section').raison.includes('vos réglages habituels'));
+    assert.equal(fiche('plancher.poutres.nombre').niveau, 'incertain', 'poutres des habitudes : à confirmer');
+    // Le modèle lit le plan seul : les réglages restent sur le serveur.
+    assert.ok(!JSON.stringify(recues[0].corps.messages).includes('riveDouble'));
+
+    // Illisibles : refusés avant l'API.
+    for (const mauvais of ['x', [1], 5, { plancher: { x: 'a'.repeat(9000) } }]) {
+      await rejette(plus.appeler('lirePlanCharpente', donnees({ reglages: mauvais })), 'invalid-argument');
+    }
+    assert.equal(recues.length, 1);
+  });
+
   test('une cote mal convertie par le modèle est repérée par le serveur et marquée « à confirmer »', async () => {
     prochaine = { status: 200, corps: sortieModele(lecture({}, { plancher: { forme: { type: 'rectangle', longueur: 280, largeur: 240 } } })) };
     const r = await plus.appeler('lirePlanCharpente', donnees());

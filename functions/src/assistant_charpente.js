@@ -110,11 +110,17 @@ function normaliserForme(f, corr) {
   return defaut;
 }
 
+/** Poses du linteau (voir PoseLinteau dans l'application) ; la première est la pose courante. */
+const POSES_LINTEAU = ["sousLesLisses", "sousLisseSimple", "aLaPlaceDesLisses", "porteeParPoutre"];
+
 function normaliserOuverture(o, corr) {
   if (!estObjet(o)) return null;
   const type = choix(o.type, ["porte", "fenetre"], null, "type d'ouverture", corr);
   if (type === null) return null;
+  // Pose du linteau : seulement si elle n'est pas la pose courante (même format que l'application).
+  const pose = POSES_LINTEAU.includes(o.pose) && o.pose !== POSES_LINTEAU[0] ? {pose: o.pose} : {};
   return {
+    ...pose,
     type,
     nom: chaine(o.nom, 60),
     largeur: nombre(o.largeur, {min: 1, max: POUCE_MAX, defaut: 36, nom: "largeur de l'ouverture", corr}),
@@ -292,6 +298,13 @@ const SCHEMA_OUVERTURE = {
     hauteur: {type: "number", description: "Hauteur du cadre (dormant), en pouces."},
     allege: {type: "number", description: "Fenêtre : hauteur du plancher au bas du cadre, en pouces (36 par défaut)."},
     position: {type: "number", description: "Distance, en pouces, du début du mur au CENTRE de l'ouverture."},
+    pose: {
+      type: "string",
+      enum: POSES_LINTEAU,
+      description: "Pose du linteau, seulement si elle n'est pas la pose courante : « sousLisseSimple » (une lisse " +
+        "haute au-dessus du linteau), « aLaPlaceDesLisses » (le linteau remplace les lisses hautes), « porteeParPoutre » " +
+        "(sans linteau : une poutre ou des poteaux conçus par un ingénieur reprennent la charge).",
+    },
   },
   required: ["type", "largeur", "hauteur", "position"],
 };
@@ -517,5 +530,5 @@ module.exports = {
   MAX_TEXTE, MAX_PROJET_ACTUEL,
   normaliserProjet, construireRequete, interroger, PROMPT_SYSTEME, SCHEMA_OUTIL,
   // Partagés avec la lecture de plans (lecture_plans.js).
-  appelerApi, estObjet, chaine, ouverturesRetenues, mursLibresRetenus, SCHEMA_OUVERTURE,
+  appelerApi, estObjet, chaine, ouverturesRetenues, mursLibresRetenus, SCHEMA_OUVERTURE, POSES_LINTEAU,
 };

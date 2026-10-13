@@ -70,7 +70,17 @@ part tel quel, comme avant. Les grandes photos (plus de 2200 px) sont découpée
   chevauchement, et surtout le linteau sous la lisse haute (allège + cadre + jeu + linteau ≤ hauteur du mur −
   lisses). La revue liste TOUS les problèmes avec le calcul (« … = 8' 8", lisse à 7' 9" : il manque 11" ») ;
   le serveur marque ces hauteurs « à confirmer » et le modèle doit dire comment le plan le règle (poutre qui
-  sert de linteau, imposte dans le pignon, mur plus haut).
+  sert de linteau, imposte dans le pignon, mur plus haut). Le message donne la **pose du linteau** qui ferait
+  passer l'ouverture (sous une lisse simple, à la place des lisses, ou sans linteau avec une poutre conçue
+  par un ingénieur : voir `calcul_charpente.md`) ; on la choisit dans la fiche de l'ouverture.
+- **Pose du linteau lue sur le plan.** Le modèle ne la donne que si le plan la montre (« pose » de
+  l'ouverture) ; elle est alors toujours « à confirmer » (elle change la structure), et les hauteurs sont
+  vérifiées avec elle.
+- **Réglages habituels.** L'application envoie les réglages habituels de l'entrepreneur (rives, bordures,
+  étriers, entremises, poutres, clous, sous-plancher, bois, ossature des murs ; jamais une mesure). Le
+  serveur les filtre comme un projet et les applique seulement là où le modèle n'a rien mis : ce que le plan
+  dit a toujours le dernier mot. Les fiches le disent (« 2×8 (vos réglages habituels) ») ; des poutres venues
+  des habitudes sont à confirmer une à une. Le modèle ne reçoit pas ces réglages.
 - **Rien ne disparaît sans bruit.** Une porte ou fenêtre placée sur un mur qui n'existe pas dans la
   forme du plancher est signalée en rouge (elle ne serait pas comptée).
 - **Position des portes et fenêtres.** Sur un plan elle se mesure du coin extérieur ; dans
@@ -125,7 +135,8 @@ puis passés dans le vrai filtre du serveur et le vrai calcul (sans l'API). Cons
 - Les plans contiennent tout le plancher : dimensions, solives, poutres, pieux, côté de la maison. Une lecture
   correcte, avec les réglages habituels de l'entrepreneur (bordures et rive avant doublées, entremises
   alternées, hauteur de patte), redonne ses commandes réelles (voir `exemples_reels_plancher.md`).
-- Ces réglages habituels ne sont pas sur les plans : sans eux, la lecture commande moins de solives.
+- Ces réglages habituels ne sont pas sur les plans : sans eux, la lecture commande moins de solives. Depuis,
+  l'application les garde (« Garder » dans les réglages) et la lecture les applique là où le plan ne dit rien.
 - Trois des quatre projets ont des murs en panneaux préfabriqués : pas d'ossature à calculer. Le quatrième
   (murs 2x6) a des vitrages jusqu'à la sablière et dans le pignon : le calcul des murs le signale.
 - Un solarium de 12 × 10 pi commandait cinq 2x8 de 20 pi pour ses solives de 10 pi : corrigé (des planches à
@@ -134,4 +145,6 @@ puis passés dans le vrai filtre du serveur et le vrai calcul (sans l'API). Cons
 ## Ce qui n'a PAS été testé
 
 La lecture par le vrai modèle sur de vrais plans : les tests simulent l'API. Premier essai à
-faire avec un plan réel, en comparant chaque valeur affichée au plan.
+faire avec un plan réel, en comparant chaque valeur affichée au plan. À surveiller aussi : que le
+modèle omette bien les réglages que le plan ne montre pas (sinon ses valeurs par défaut passent
+avant les réglages habituels) et qu'il ne propose une pose de linteau que si le plan la montre.

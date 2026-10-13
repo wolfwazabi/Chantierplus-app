@@ -37,6 +37,7 @@ class ChampLongueur extends StatefulWidget {
 
 class _ChampLongueurState extends State<ChampLongueur> {
   late final TextEditingController _ctrl;
+  final _focus = FocusNode();
   String? _erreur;
 
   bool get _metrique => widget.metrique ?? Preferences.estMetrique;
@@ -48,6 +49,10 @@ class _ChampLongueurState extends State<ChampLongueur> {
   void initState() {
     super.initState();
     _ctrl = TextEditingController(text: _formater(widget.valeur));
+    // L'exemple de saisie n'apparaît que pendant la saisie : l'écran reste léger.
+    _focus.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -67,6 +72,7 @@ class _ChampLongueurState extends State<ChampLongueur> {
   @override
   void dispose() {
     _ctrl.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
@@ -100,6 +106,7 @@ class _ChampLongueurState extends State<ChampLongueur> {
   Widget build(BuildContext context) {
     return TextField(
       controller: _ctrl,
+      focusNode: _focus,
       keyboardType: _metrique
           ? const TextInputType.numberWithOptions(decimal: true)
           : TextInputType.text,
@@ -107,7 +114,9 @@ class _ChampLongueurState extends State<ChampLongueur> {
         labelText: widget.label,
         helperText:
             widget.aide ??
-            (_metrique
+            (!_focus.hasFocus
+                ? null
+                : _metrique
                 ? 'En mètres (3,2) ou en millimètres (850 mm)'
                 : 'Ex. : 10\'6"  ·  10-6  ·  126"  (un nombre seul = pieds)'),
         helperMaxLines: 2,
@@ -132,6 +141,9 @@ class ChampNombre extends StatefulWidget {
   final String? suffixe;
   final String? aide;
 
+  /// Appelé quand le texte tapé n'est pas une valeur permise.
+  final VoidCallback? onInvalide;
+
   const ChampNombre({
     super.key,
     required this.label,
@@ -142,6 +154,7 @@ class ChampNombre extends StatefulWidget {
     this.decimales = 1,
     this.suffixe,
     this.aide,
+    this.onInvalide,
   });
 
   @override
@@ -184,6 +197,7 @@ class _ChampNombreState extends State<ChampNombre> {
     final v = _lire(t);
     if (v == null || !v.isFinite) {
       setState(() => _erreur = 'Nombre invalide.');
+      widget.onInvalide?.call();
       return;
     }
     if (v < widget.min || v > widget.max) {
@@ -192,6 +206,7 @@ class _ChampNombreState extends State<ChampNombre> {
             'Entre ${formatNombre(widget.min, decimales: widget.decimales)} et '
             '${formatNombre(widget.max, decimales: widget.decimales)}.',
       );
+      widget.onInvalide?.call();
       return;
     }
     setState(() => _erreur = null);
@@ -240,6 +255,165 @@ class TitreSection extends StatelessWidget {
             Text(aide!, style: Theme.of(context).textTheme.bodySmall),
         ],
       ),
+    );
+  }
+}
+
+/// Entraxes proposés dans le menu (pouces) ; « Autre… » permet n'importe quelle valeur.
+const entraxesCourants = <double>[12, 16, 19.2, 24];
+
+/// Menu de l'entraxe (centre à centre, en pouces) : les valeurs courantes, la valeur actuelle
+/// si elle est autre, et « Autre… » qui demande une valeur.
+class ChoixEntraxe extends StatelessWidget {
+  final double valeur;
+  final ValueChanged<double> onChange;
+  final String label;
+
+  const ChoixEntraxe({
+    super.key,
+    required this.valeur,
+    required this.onChange,
+    this.label = 'Entraxe',
+  });
+
+  static const double _autre = -1;
+
+  static String libelle(double po) {
+    final texte = '${formatNombre(po, decimales: 2)} po';
+    return Preferences.estMetrique
+        ? '$texte (${(po * 25.4).round()} mm)'
+        : texte;
+  }
+
+  Future<void> _demander(BuildContext context) async {
+    final v = await showDialog<double>(
+      context: context,
+      builder: (ctx) => _DialogueEntraxe(initiale: valeur),
+    );
+    if (v != null) onChange(v);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final courante = entraxesCourants.any((e) => (e - valeur).abs() < 1e-9);
+    return DropdownButtonFormField<double>(
+      key: ValueKey('entraxe_menu_$valeur'),
+      initialValue: valeur,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: [
+        for (final e in entraxesCourants)
+          DropdownMenuItem(value: e, child: Text(libelle(e))),
+        if (!courante)
+          DropdownMenuItem(value: valeur, child: Text(libelle(valeur))),
+        const DropdownMenuItem(value: _autre, child: Text('Autre…')),
+      ],
+      onChanged: (v) {
+        if (v == null) return;
+        if (v == _autre) {
+          _demander(context);
+        } else if ((v - valeur).abs() > 1e-9) {
+          onChange(v);
+        }
+      },
+    );
+  }
+}
+
+class _DialogueEntraxe extends StatefulWidget {
+  final double initiale;
+  const _DialogueEntraxe({required this.initiale});
+
+  @override
+  State<_DialogueEntraxe> createState() => _DialogueEntraxeState();
+}
+
+class _DialogueEntraxeState extends State<_DialogueEntraxe> {
+  late double _valeur = widget.initiale;
+  bool _valide = true;
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Entraxe'),
+      content: ChampNombre(
+        key: const ValueKey('entraxe_autre'),
+        label: 'Centre à centre',
+        valeur: _valeur,
+        min: 6,
+        max: 48,
+        decimales: 2,
+        suffixe: 'po',
+        onChange: (v) => setState(() {
+          _valeur = v;
+          _valide = true;
+        }),
+        onInvalide: () => setState(() => _valide = false),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Annuler'),
+        ),
+        FilledButton(
+          key: const ValueKey('entraxe_autre_ok'),
+          onPressed: _valide ? () => Navigator.pop(context, _valeur) : null,
+          child: const Text('OK'),
+        ),
+      ],
+    );
+  }
+}
+
+/// Groupe de réglages replié : son titre et le résumé des valeurs actuelles ; les champs
+/// s'affichent quand on l'ouvre. Clé : `groupe_<cle>`.
+class SectionRepliable extends StatelessWidget {
+  final String cle;
+  final String titre;
+  final String resume;
+  final List<Widget> enfants;
+
+  const SectionRepliable({
+    super.key,
+    required this.cle,
+    required this.titre,
+    required this.resume,
+    required this.enfants,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Le groupe reste ouvert ou fermé quand on change d'onglet : son état est gardé dans la page,
+    // sous un identifiant à lui (une PageStorageKey le mêlerait à celui des champs de texte).
+    final memoire = PageStorage.maybeOf(context);
+    final identifiant = 'groupe_$cle';
+    return ExpansionTile(
+      key: ValueKey(identifiant),
+      initiallyExpanded:
+          memoire?.readState(context, identifier: identifiant) == true,
+      onExpansionChanged: (v) =>
+          memoire?.writeState(context, v, identifier: identifiant),
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 12),
+      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+      expandedAlignment: Alignment.centerLeft,
+      shape: const Border(),
+      collapsedShape: const Border(),
+      title: Text(titre),
+      subtitle: Text(
+        resume,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+      children: enfants,
     );
   }
 }

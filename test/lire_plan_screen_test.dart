@@ -24,21 +24,23 @@ Finder _cle(String c) => find.byKey(ValueKey(c));
 class _Appels {
   final List<List<PlanFichier>> fichiers = [];
   final List<String> precisions = [];
+  final List<Map<String, dynamic>?> reglages = [];
 }
 
 AppelLecturePlan _serveur(
   Map<String, dynamic> reponse, {
   _Appels? appels,
   Completer<void>? attendre,
-}) => (fichiers, precisions) async {
+}) => (fichiers, precisions, reglages) async {
   appels?.fichiers.add(fichiers);
   appels?.precisions.add(precisions);
+  appels?.reglages.add(reglages);
   if (attendre != null) await attendre.future;
   return reponse;
 };
 
 AppelLecturePlan _serveurEnErreur(Object erreur) =>
-    (fichiers, precisions) async => throw erreur;
+    (fichiers, precisions, reglages) async => throw erreur;
 
 /// L'écran dans un hôte qui garde ce qu'il rend (le projet appliqué).
 class _Hote {
@@ -467,7 +469,11 @@ void main() {
 
     testWidgets('après une erreur, on peut réessayer', (t) async {
       var essai = 0;
-      Future<Map<String, dynamic>> appel(List<PlanFichier> f, String p) async {
+      Future<Map<String, dynamic>> appel(
+        List<PlanFichier> f,
+        String p,
+        Map<String, dynamic>? r,
+      ) async {
         essai++;
         if (essai == 1) {
           throw FirebaseFunctionsException(

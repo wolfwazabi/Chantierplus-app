@@ -6,10 +6,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../charpente/commande.dart';
 import '../../charpente/projet.dart';
+import '../../charpente/reglages_habituels.dart';
 import '../../services/preferences.dart';
 import '../../services/selecteur_plans.dart';
 import '../../services/theme_compagnie.dart';
 import 'assistant_charpente.dart';
+import 'barre_reglages.dart';
 import 'champs.dart';
 import 'lire_plan_screen.dart';
 import 'onglet_commande.dart';
@@ -69,7 +71,18 @@ class _CharpenteScreenState extends State<CharpenteScreen>
   Duration _dernierCalcul = Duration.zero;
   final _nom = TextEditingController();
 
+  /// Réglages habituels, gardés sur l'appareil (tous chantiers).
+  ReglagesHabituels _habitudes = ReglagesHabituels.vides;
+  static const _cleHabitudes = 'charpente.reglagesHabituels';
+
   String get _cle => 'charpente.brouillon.${widget.chantierId}';
+
+  /// Un nouveau calcul part des réglages habituels.
+  ProjetCharpente get _projetNeuf =>
+      _habitudes.appliquer(const ProjetCharpente());
+
+  static bool _memes(ProjetCharpente a, ProjetCharpente b) =>
+      jsonEncode(a.toJson()) == jsonEncode(b.toJson());
 
   @override
   void initState() {
@@ -83,7 +96,7 @@ class _CharpenteScreenState extends State<CharpenteScreen>
   void didUpdateWidget(CharpenteScreen old) {
     super.didUpdateWidget(old);
     if (old.chantierId != widget.chantierId) {
-      _projet = const ProjetCharpente();
+      _projet = _projetNeuf;
       _manuelles = [];
       _nom.clear();
       _recalculer();
@@ -114,13 +127,38 @@ class _CharpenteScreenState extends State<CharpenteScreen>
     _enAttente = false;
   }
 
+  static ReglagesHabituels _lireHabitudes(SharedPreferences prefs) {
+    try {
+      final texte = prefs.getString(_cleHabitudes);
+      return texte == null
+          ? ReglagesHabituels.vides
+          : ReglagesHabituels.depuis(jsonDecode(texte));
+    } catch (_) {
+      return ReglagesHabituels.vides;
+    }
+  }
+
   Future<void> _restaurer() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final texte = prefs.getString(_cle);
-      if (texte == null) {
+      final habitudes = _lireHabitudes(prefs);
+      if (!mounted) {
         return;
       }
+      final texte = prefs.getString(_cle);
+      if (texte == null) {
+        // Pas de calcul en cours sur ce chantier : on part des réglages habituels.
+        setState(() {
+          final intact = _memes(_projet, _projetNeuf);
+          _habitudes = habitudes;
+          if (intact) {
+            _projet = _projetNeuf;
+            _recalculer();
+          }
+        });
+        return;
+      }
+      setState(() => _habitudes = habitudes);
       final j = jsonDecode(texte);
       final projet = ProjetCharpente.fromJson(j['projet']);
       final lignes = <LigneCommande>[
@@ -203,10 +241,63 @@ class _CharpenteScreenState extends State<CharpenteScreen>
     }
   }
 
-  /// Le calcul en cours n'est plus le projet vide : le remplacer fait perdre du travail.
-  bool get _aDuTravail =>
-      jsonEncode(_projet.toJson()) !=
-      jsonEncode(const ProjetCharpente().toJson());
+  /// Le calcul en cours n'est plus un calcul neuf : le remplacer fait perdre du travail.
+  bool get _aDuTravail => !_memes(_projet, _projetNeuf);
+
+  /// Garde les réglages de l'onglet (plancher ou murs) pour les prochains calculs.
+  Future<void> _garderHabitudes({required bool plancher}) async {
+    final r = plancher
+        ? _habitudes.avecPlancherDe(_projet)
+        : _habitudes.avecMursDe(_projet);
+    final messager = ScaffoldMessenger.of(context);
+    var garde = true;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      garde = await prefs.setString(_cleHabitudes, jsonEncode(r.toJson()));
+    } catch (_) {
+      garde = false;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (garde) {
+      setState(() => _habitudes = r);
+    }
+    messager
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            !garde
+                ? 'Impossible de garder les réglages sur cet appareil.'
+                : plancher
+                ? 'Réglages du plancher gardés : vos prochains calculs partiront de ceux-ci.'
+                : 'Réglages des murs gardés : vos prochains calculs partiront de ceux-ci.',
+          ),
+        ),
+      );
+  }
+
+  /// Remet les réglages habituels de l'onglet ; les mesures du calcul restent.
+  void _remettreHabitudes({required bool plancher}) {
+    final avant = _projet;
+    _changer(
+      _habitudes.appliquer(_projet, auPlancher: plancher, auxMurs: !plancher),
+    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Réglages habituels remis.'),
+          action: SnackBarAction(
+            label: 'Annuler',
+            onPressed: () {
+              if (mounted) _changer(avant);
+            },
+          ),
+        ),
+      );
+  }
 
   /// Calcul à partir d'un plan : l'écran de lecture rend le projet confirmé, qui remplace le
   /// calcul en cours ; on va directement à la commande.
@@ -217,6 +308,7 @@ class _CharpenteScreenState extends State<CharpenteScreen>
           appeler: widget.appelLecturePlan,
           selecteur: widget.selecteurPlans,
           calculExistant: _aDuTravail,
+          reglages: _habitudes.pourLecturePlan(),
         ),
       ),
     );
@@ -234,9 +326,10 @@ class _CharpenteScreenState extends State<CharpenteScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Nouveau calcul ?'),
-        content: const Text(
+        content: Text(
           'Le calcul en cours (plancher, murs et lignes ajoutées) est effacé. '
-          'Les commandes déjà enregistrées ne changent pas.',
+          'Les commandes déjà enregistrées ne changent pas.'
+          '${_habitudes.estVide ? '' : ' Le nouveau calcul part de vos réglages habituels.'}',
         ),
         actions: [
           TextButton(
@@ -254,7 +347,7 @@ class _CharpenteScreenState extends State<CharpenteScreen>
       _nom.clear();
       setState(() {
         _manuelles = [];
-        _projet = const ProjetCharpente();
+        _projet = _projetNeuf;
         _recalculer();
       });
       _planifierSauvegarde();
@@ -313,11 +406,12 @@ class _CharpenteScreenState extends State<CharpenteScreen>
           labelPadding: const EdgeInsets.symmetric(horizontal: 4),
           labelStyle: const TextStyle(fontSize: 12),
           unselectedLabelStyle: const TextStyle(fontSize: 12),
+          // Icône à côté du mot : une barre basse, plus de place pour le calcul.
           tabs: const [
-            Tab(icon: Icon(Icons.grid_on), text: 'Plancher'),
-            Tab(icon: Icon(Icons.view_week), text: 'Murs'),
-            Tab(icon: Icon(Icons.view_in_ar), text: '3D'),
-            Tab(icon: Icon(Icons.list_alt), text: 'Commande'),
+            Tab(height: 40, child: _Etiquette(Icons.grid_on, 'Plancher')),
+            Tab(height: 40, child: _Etiquette(Icons.view_week, 'Murs')),
+            Tab(height: 40, child: _Etiquette(Icons.view_in_ar, '3D')),
+            Tab(height: 40, child: _Etiquette(Icons.list_alt, 'Commande')),
           ],
         ),
         SizedBox(
@@ -335,12 +429,26 @@ class _CharpenteScreenState extends State<CharpenteScreen>
                 resultats: _res,
                 onChange: _changer,
                 ouvrir3D: () => _onglets.animateTo(2),
+                reglagesHabituels: BarreReglagesHabituels(
+                  cle: 'plancher',
+                  existe: _habitudes.plancher != null,
+                  suivis: _habitudes.plancherSuivi(_projet),
+                  onGarder: () => _garderHabitudes(plancher: true),
+                  onRemettre: () => _remettreHabitudes(plancher: true),
+                ),
               ),
               OngletMurs(
                 projet: _projet,
                 resultats: _res,
                 onChange: _changer,
                 ouvrir3D: () => _onglets.animateTo(2),
+                reglagesHabituels: BarreReglagesHabituels(
+                  cle: 'murs',
+                  existe: _habitudes.murs != null,
+                  suivis: _habitudes.mursSuivis(_projet),
+                  onGarder: () => _garderHabitudes(plancher: false),
+                  onRemettre: () => _remettreHabitudes(plancher: false),
+                ),
               ),
               _Onglet3D(resultats: _res),
               OngletCommande(
@@ -360,6 +468,26 @@ class _CharpenteScreenState extends State<CharpenteScreen>
               ),
             ],
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Etiquette extends StatelessWidget {
+  final IconData icone;
+  final String texte;
+  const _Etiquette(this.icone, this.texte);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icone, size: 18),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Text(texte, softWrap: false, overflow: TextOverflow.fade),
         ),
       ],
     );

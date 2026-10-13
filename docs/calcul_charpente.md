@@ -28,6 +28,23 @@ description en paramètres.
   feuilles (OSB, 4×9, **OSB isolant R-4 Isobrace**), membrane, fourrures,
   revêtement ; portes et fenêtres avec les jeux de la fiche GCR FT-9.7.6.1
   (baie = dormant + 1/2 à 1 1/2 po en largeur et 1 à 1 3/4 po en hauteur).
+  **Pose du linteau**, par ouverture (vitrage qui monte près de la sablière ; CNB
+  partie 9, art. 9.23.11.3 et 9.23.12) :
+  - *sous les lisses* (courant) ;
+  - *sous une lisse simple* : la lisse du dessous est coupée sur la longueur du
+    linteau, celle du dessus passe sans joint et le relie au mur (+1 1/2 po) ;
+  - *à la place des lisses* : les lisses hautes sont coupées, le linteau monte
+    jusqu'au dessus du mur et se relie aux murs voisins par une plaque d'acier
+    galvanisé 3 × 6 po (0,91 mm) ou une éclisse 1 × 4 de 12 po, 3 clous de 2 1/2 po
+    de chaque côté (+3 po avec 2 lisses) ; 2 plaques par linteau dans la commande ;
+  - *sans linteau* : la charge est reprise par une poutre ou des poteaux conçus
+    par un ingénieur (Loi sur les ingénieurs ; non calculés), une traverse à plat
+    ferme le haut de la baie.
+  Quand une ouverture ne passe pas, le message donne le calcul et la pose qui la
+  ferait passer. Une pose remontée inutile ne coupe rien (lisses entières).
+  Source : CNB 2015 (texte reproduit), intentions du CNRC ; le libellé du CNB 2020
+  modifié Québec (en vigueur depuis le 17 avril 2025, CNB 2015 permis pendant la
+  transition) n'a pas été relu mot à mot : à confirmer.
 - **Vue 3D** : couches du plancher (solives → + sous-plancher) et des murs
   (ossature → + feuilles → + membrane → + fourrures → + revêtement) ; toucher une
   pièce affiche sa mesure en bref dans une petite pastille à côté d'elle, et sa fiche
@@ -39,6 +56,20 @@ description en paramètres.
   (`chantier_commandes` : brouillon → commandée → reçue, calcul rouvrable).
 - **Assistant IA** : une description en français devient un projet validé.
 - **Calcul à partir d'un plan** (PDF ou photos) : voir `lecture_plans.md`.
+- **Écran allégé** : la forme et les solives (section, entraxe en menu : 12, 16,
+  19,2, 24 po ou « Autre… ») restent visibles ; les réglages sont repliés en groupes
+  (Direction et rives, Étriers et clous, Entremises, Poutres et pieux, Sous-plancher,
+  Bois ; pour les murs : Lisses et montants, Linteaux, Feuilles, Fourrures) avec le
+  résumé de leurs valeurs ; un groupe ouvert le reste quand on change d'onglet.
+  L'exemple de saisie d'une mesure (10'6", 10-6…) n'apparaît que dans le champ en
+  cours. Escalier : détails des marches et limons repliés de même.
+- **Réglages habituels** (`reglages_habituels.dart`) : « Garder » fait des réglages
+  de l'onglet (plancher ou murs : rives, étriers, entremises, poutres, sous-plancher,
+  bois, ossature…) le point de départ des prochains calculs ; jamais les mesures
+  (forme, côté de la maison, hauteur des murs, portes et fenêtres). Un nouveau calcul
+  et un chantier sans calcul en partent ; « Remettre » les rétablit (avec
+  « Annuler »). Gardés sur l'appareil. La lecture d'un plan les envoie au serveur,
+  qui les applique seulement là où le plan ne dit rien.
 
 ## Conventions de calcul
 

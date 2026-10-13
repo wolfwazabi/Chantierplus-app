@@ -15,19 +15,24 @@ import 'champs.dart';
 import 'vue_3d.dart';
 
 /// Appel du serveur : plans joints et précisions → réponse brute de `lirePlanCharpente`.
+/// `reglages` : les réglages habituels (voir [ReglagesHabituels.pourLecturePlan]), appliqués par
+/// le serveur là où le plan ne dit rien.
 typedef AppelLecturePlan = Future<Map<String, dynamic>> Function(
   List<PlanFichier> fichiers,
   String precisions,
+  Map<String, dynamic>? reglages,
 );
 
 Future<Map<String, dynamic>> appelLecturePlanParDefaut(
   List<PlanFichier> fichiers,
   String precisions,
+  Map<String, dynamic>? reglages,
 ) => Fonctions.appelerAvecDelai('lirePlanCharpente', {
   'fichiers': [
     for (final f in fichiers) {'nom': f.nom, 'donnees': base64Encode(f.octets)},
   ],
   if (precisions.isNotEmpty) 'precisions': precisions,
+  'reglages': ?reglages,
 }, const Duration(seconds: 320));
 
 enum _Etape { choix, analyse, revue }
@@ -43,11 +48,15 @@ class LirePlanScreen extends StatefulWidget {
   /// Un calcul est déjà en cours : l'appliquer le remplace (on demande confirmation).
   final bool calculExistant;
 
+  /// Réglages habituels envoyés avec le plan (null : aucun).
+  final Map<String, dynamic>? reglages;
+
   const LirePlanScreen({
     super.key,
     this.appeler = appelLecturePlanParDefaut,
     this.selecteur = const SelecteurPlansReel(),
     this.calculExistant = false,
+    this.reglages,
   });
 
   @override
@@ -127,6 +136,7 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
       final r = await widget.appeler(
         List.of(_fichiers),
         _precisions.text.trim(),
+        widget.reglages,
       );
       if (!mounted || numero != _numeroAnalyse) return;
       final lecture = LecturePlan.depuis(r);
@@ -844,7 +854,10 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
     'aucun' => 'Aucun',
     'unBout' => 'Un bout',
     'deuxBouts' => 'Deux bouts',
-    _ => c,
+    _ => switch (PoseLinteau.values.where((p) => p.name == c).firstOrNull) {
+      final p? => libellePose(p),
+      null => c,
+    },
   };
 
   // --- Aperçu 3D et matériaux -----------------------------------------------------

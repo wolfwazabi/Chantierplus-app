@@ -1694,6 +1694,8 @@ exports.lirePlanCharpente = onCall(
       }
       const fichiers = lecturePlans.validerFichiers(request.data?.fichiers);
       const precisions = texte(request.data?.precisions, "precisions", {min: 0, max: lecturePlans.MAX_PRECISIONS});
+      // Réglages habituels de l'entrepreneur (là où le plan ne dit rien) : filtrés comme un projet.
+      const reglages = lecturePlans.validerReglages(request.data?.reglages);
 
       // Limites (une lecture coûte plus cher qu'une description) : par employé (6 par heure) et par
       // compagnie (30 par jour).
@@ -1713,6 +1715,7 @@ exports.lirePlanCharpente = onCall(
           url: assistantCharpente.URL_API_ANTHROPIC.value(),
           modele: lecturePlans.MODELE_PLANS.value(),
           journal: (message) => logger.warn("Lecture de plan : rendu", {message}),
+          reglages,
         });
         logger.info("Lecture de plan", {
           companyId: ctx.companyId,

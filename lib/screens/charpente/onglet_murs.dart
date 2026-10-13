@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../charpente/mur.dart';
 import '../../charpente/panneaux.dart';
-import '../../charpente/plancher.dart' show SpecInvalide, espacementsStandards;
+import '../../charpente/plancher.dart' show SpecInvalide;
 import '../../charpente/projet.dart';
 import '../../charpente/unites.dart';
 import '../../services/preferences.dart';
@@ -18,12 +18,16 @@ class OngletMurs extends StatelessWidget {
   /// Un toucher sur l'aperçu ouvre la vue 3D.
   final VoidCallback? ouvrir3D;
 
+  /// Barre « Mes réglages habituels », au-dessus des réglages.
+  final Widget? reglagesHabituels;
+
   const OngletMurs({
     super.key,
     required this.projet,
     required this.resultats,
     required this.onChange,
     this.ouvrir3D,
+    this.reglagesHabituels,
   });
 
   ParametresMursProjet get _m => projet.murs;
@@ -44,8 +48,7 @@ class OngletMurs extends StatelessWidget {
           contentPadding: EdgeInsets.zero,
           title: const Text('Inclure des murs'),
           subtitle: const Text(
-            'Montants, lisses, ouvertures, linteaux, feuilles, membrane, '
-            'fourrures et revêtement',
+            'Ossature, portes et fenêtres, feuilles, finition',
           ),
           value: projet.mursActifs,
           onChanged: (v) => onChange(projet.copieAvec(mursActifs: v)),
@@ -60,7 +63,7 @@ class OngletMurs extends StatelessWidget {
               controles: false,
               interactif: false,
               onTap: ouvrir3D,
-              hauteur: 240,
+              hauteur: 170,
             ),
           const SizedBox(height: 12),
           SegmentedButton<ModeMurs>(
@@ -83,33 +86,33 @@ class OngletMurs extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             _m.mode == ModeMurs.contour
-                ? 'Un mur par côté de la forme du plancher ; aux coins d\'équerre, '
-                      'un mur passe et l\'autre s\'y appuie.'
-                : 'Murs indépendants (mur isolé, cloison) : ils s\'affichent côte à côte.',
-            style: const TextStyle(fontSize: 12),
+                ? 'Un mur par côté du plancher.'
+                : 'Murs indépendants (mur isolé, cloison).',
+            style: Theme.of(context).textTheme.bodySmall,
           ),
           const TitreSection('Ossature'),
-          if (_m.mode == ModeMurs.contour)
+          if (_m.mode == ModeMurs.contour) ...[
             ChampLongueur(
               key: const ValueKey('murs_hauteur'),
               label: 'Hauteur des murs',
-              aide:
-                  'Du dessus du sous-plancher au dessus de la dernière lisse '
-                  '(ex. 97 1/8" : 2 lisses hautes + montant de 92 5/8")',
+              aide: 'Du sous-plancher au dessus de la dernière lisse',
               valeur: _m.hauteur,
               min: 24,
               max: 240,
               onChange: (v) => _set(_m.copieAvec(hauteur: v)),
             ),
-          const SizedBox(height: 12),
+            const SizedBox(height: 12),
+          ],
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
                 child: DropdownButtonFormField<SectionBois>(
                   key: ValueKey('murs_section_${_p.section.nom}'),
                   initialValue: _p.section,
+                  isExpanded: true,
                   decoration: const InputDecoration(
-                    labelText: 'Section des montants',
+                    labelText: 'Montants',
                     border: OutlineInputBorder(),
                     isDense: true,
                   ),
@@ -123,150 +126,165 @@ class OngletMurs extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: DropdownButtonFormField<int>(
-                  key: ValueKey('lisses_${_p.lissesHautes}'),
-                  initialValue: _p.lissesHautes,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Lisses hautes',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: const [
-                    DropdownMenuItem(value: 1, child: Text('1 (simple)')),
-                    DropdownMenuItem(value: 2, child: Text('2 (double)')),
-                  ],
-                  onChanged: (v) => v == null
-                      ? null
-                      : _setParams(_p.copieAvec(lissesHautes: v)),
+                child: ChoixEntraxe(
+                  key: const ValueKey('murs_entraxe'),
+                  valeur: _p.espacement,
+                  onChange: (v) => _setParams(_p.copieAvec(espacement: v)),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 12),
-          const Text('Entraxe des montants'),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final e in espacementsStandards)
-                ChoiceChip(
-                  key: ValueKey('murs_entraxe_$e'),
-                  label: Text(
-                    '${formatNombre(e, decimales: 1)} po (${(e * 25.4).round()} mm)',
-                  ),
-                  selected: (_p.espacement - e).abs() < 1e-9,
-                  onSelected: (_) => _setParams(_p.copieAvec(espacement: e)),
-                ),
-            ],
-          ),
-          SwitchListTile(
-            key: const ValueKey('murs_precoupes'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Montants précoupés'),
-            subtitle: const Text(
-              '92 5/8, 104 5/8 ou 116 5/8 po : achetés tout coupés',
-            ),
-            value: _p.precoupes,
-            onChanged: (v) => _setParams(_p.copieAvec(precoupes: v)),
-          ),
-          const TitreSection(
-            'Feuilles des murs',
-            aide: 'Posées à la verticale, joints sur le centre des montants.',
-          ),
-          DropdownButtonFormField<FormatPanneau>(
-            key: ValueKey('murs_format_${_p.panneau.id}'),
-            initialValue: _p.panneau,
-            decoration: const InputDecoration(
-              labelText: 'Format des feuilles',
-              border: OutlineInputBorder(),
-              isDense: true,
-            ),
-            isExpanded: true,
-            items: [
-              for (final f in formatsPanneaux)
-                DropdownMenuItem(
-                  value: f,
-                  child: Text(f.nom, overflow: TextOverflow.ellipsis),
-                ),
-            ],
-            onChanged: (f) =>
-                f == null ? null : _setParams(_p.copieAvec(panneau: f)),
-          ),
-          if (_p.panneau.note != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                _p.panneau.note!,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-          const TitreSection('Ouvertures et linteaux'),
-          Row(
-            children: [
-              Expanded(
-                child: DropdownButtonFormField<SectionBois>(
-                  key: ValueKey('linteau_${_p.linteau.nom}'),
-                  initialValue: _p.linteau,
-                  decoration: const InputDecoration(
-                    labelText: 'Section du linteau',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    for (final s in sectionsLinteaux)
-                      DropdownMenuItem(value: s, child: Text(s.nom)),
-                  ],
-                  onChanged: (s) =>
-                      s == null ? null : _setParams(_p.copieAvec(linteau: s)),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: DropdownButtonFormField<int>(
-                  key: ValueKey('plis_${_p.plisLinteau}'),
-                  initialValue: _p.plisLinteau,
-                  decoration: const InputDecoration(
-                    labelText: 'Épaisseurs',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                  ),
-                  items: [
-                    for (var i = 1; i <= 3; i++)
-                      DropdownMenuItem(value: i, child: Text('$i')),
-                  ],
-                  onChanged: (v) => v == null
-                      ? null
-                      : _setParams(_p.copieAvec(plisLinteau: v)),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Le dimensionnement du linteau n\'est pas vérifié par l\'application : '
-            'choisissez-le selon les tables du Code ou un ingénieur.',
-            style: TextStyle(fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          const Text('Montants de linteau (jacks) de chaque côté'),
-          const SizedBox(height: 4),
-          SegmentedButton<int>(
-            key: const ValueKey('jacks'),
-            segments: const [
-              ButtonSegment(value: 1, label: Text('1')),
-              ButtonSegment(value: 2, label: Text('2')),
-              ButtonSegment(value: 3, label: Text('3')),
-            ],
-            selected: {_p.jacksParCote},
-            onSelectionChanged: (s) =>
-                _setParams(_p.copieAvec(jacksParCote: s.first)),
           ),
           const TitreSection('Murs'),
           if (_m.mode == ModeMurs.contour)
             ..._mursDuContour(context)
           else
             ..._mursLibres(context),
+          const TitreSection('Réglages'),
+          ?reglagesHabituels,
+          SectionRepliable(
+            cle: 'ossature_murs',
+            titre: 'Lisses et montants',
+            resume:
+                '${_p.lissesHautes == 2 ? '2 lisses hautes' : '1 lisse haute'} · '
+                'montants ${_p.precoupes ? 'précoupés' : 'coupés sur place'}',
+            enfants: [
+              DropdownButtonFormField<int>(
+                key: ValueKey('lisses_${_p.lissesHautes}'),
+                initialValue: _p.lissesHautes,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Lisses hautes',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: const [
+                  DropdownMenuItem(value: 1, child: Text('1 (simple)')),
+                  DropdownMenuItem(value: 2, child: Text('2 (double)')),
+                ],
+                onChanged: (v) => v == null
+                    ? null
+                    : _setParams(_p.copieAvec(lissesHautes: v)),
+              ),
+              SwitchListTile(
+                key: const ValueKey('murs_precoupes'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Montants précoupés'),
+                subtitle: const Text('92 5/8, 104 5/8 ou 116 5/8 po'),
+                value: _p.precoupes,
+                onChanged: (v) => _setParams(_p.copieAvec(precoupes: v)),
+              ),
+            ],
+          ),
+          SectionRepliable(
+            cle: 'linteaux',
+            titre: 'Linteaux',
+            resume:
+                '${_p.plisLinteau} × ${_p.linteau.nom} · '
+                '${_p.jacksParCote} montant${_p.jacksParCote > 1 ? 's' : ''} '
+                'de linteau de chaque côté',
+            enfants: [
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<SectionBois>(
+                      key: ValueKey('linteau_${_p.linteau.nom}'),
+                      initialValue: _p.linteau,
+                      decoration: const InputDecoration(
+                        labelText: 'Section du linteau',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: [
+                        for (final s in sectionsLinteaux)
+                          DropdownMenuItem(value: s, child: Text(s.nom)),
+                      ],
+                      onChanged: (s) => s == null
+                          ? null
+                          : _setParams(_p.copieAvec(linteau: s)),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      key: ValueKey('plis_${_p.plisLinteau}'),
+                      initialValue: _p.plisLinteau,
+                      decoration: const InputDecoration(
+                        labelText: 'Épaisseurs',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      items: [
+                        for (var i = 1; i <= 3; i++)
+                          DropdownMenuItem(value: i, child: Text('$i')),
+                      ],
+                      onChanged: (v) => v == null
+                          ? null
+                          : _setParams(_p.copieAvec(plisLinteau: v)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Le linteau n\'est pas dimensionné par l\'application : '
+                'choisissez-le selon les tables du Code ou un ingénieur.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              const Text('Montants de linteau (jacks) de chaque côté'),
+              const SizedBox(height: 4),
+              SegmentedButton<int>(
+                key: const ValueKey('jacks'),
+                segments: const [
+                  ButtonSegment(value: 1, label: Text('1')),
+                  ButtonSegment(value: 2, label: Text('2')),
+                  ButtonSegment(value: 3, label: Text('3')),
+                ],
+                selected: {_p.jacksParCote},
+                onSelectionChanged: (s) =>
+                    _setParams(_p.copieAvec(jacksParCote: s.first)),
+              ),
+            ],
+          ),
+          SectionRepliable(
+            cle: 'feuilles_murs',
+            titre: 'Feuilles des murs',
+            resume: _p.panneau.nom,
+            enfants: [
+              Text(
+                'Posées à la verticale, joints sur le centre des montants.',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<FormatPanneau>(
+                key: ValueKey('murs_format_${_p.panneau.id}'),
+                initialValue: _p.panneau,
+                decoration: const InputDecoration(
+                  labelText: 'Format des feuilles',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                isExpanded: true,
+                items: [
+                  for (final f in formatsPanneaux)
+                    DropdownMenuItem(
+                      value: f,
+                      child: Text(f.nom, overflow: TextOverflow.ellipsis),
+                    ),
+                ],
+                onChanged: (f) =>
+                    f == null ? null : _setParams(_p.copieAvec(panneau: f)),
+              ),
+              if (_p.panneau.note != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    _p.panneau.note!,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+            ],
+          ),
           _avancees(context),
           if (res.murs != null) ...[
             const TitreSection('Résultats'),
@@ -308,6 +326,7 @@ class OngletMurs extends StatelessWidget {
             ),
           ),
           editeurMur: null,
+          params: _p,
         ),
     ];
   }
@@ -340,6 +359,7 @@ class OngletMurs extends StatelessWidget {
             onSupprimer: () =>
                 _set(_m.copieAvec(libres: [...libres]..removeAt(i))),
           ),
+          params: _p,
         ),
       OutlinedButton.icon(
         key: const ValueKey('ajouter_mur'),
@@ -376,12 +396,17 @@ class OngletMurs extends StatelessWidget {
   // --- Options avancées -------------------------------------------------------
 
   Widget _avancees(BuildContext context) {
-    return ExpansionTile(
-      key: const ValueKey('murs_avancees'),
-      tilePadding: EdgeInsets.zero,
-      title: const Text('Options avancées'),
-      subtitle: const Text('Fourrures, revêtement, membrane, marges d\'achat'),
-      children: [
+    String l(double po) => formatLongueur(po, metrique: _metrique);
+    String pct(double v) => formatNombre(v, decimales: 0);
+    return SectionRepliable(
+      cle: 'avancees',
+      titre: 'Fourrures, revêtement et marges',
+      resume:
+          'Fourrures aux ${formatNombre(_p.fourrureEntraxe, decimales: 1)} po · '
+          'revêtement ${l(_p.revetementEpaisseur)} · marges : feuilles '
+          '${pct(_p.margeFeuillesPct)} %, membrane ${pct(_p.margeMembranePct)} %, '
+          'revêtement ${pct(_p.margeRevetementPct)} %',
+      enfants: [
         const SizedBox(height: 8),
         Row(
           children: [
@@ -507,6 +532,9 @@ class _CarteMur extends StatelessWidget {
   /// Réglages propres à un mur libre (nom, longueur, hauteur, coins).
   final Widget? editeurMur;
 
+  /// Lisses hautes et linteau : pour la pose du linteau dans l'éditeur.
+  final ParametresMurs params;
+
   const _CarteMur({
     required this.cle,
     required this.titre,
@@ -515,6 +543,7 @@ class _CarteMur extends StatelessWidget {
     required this.ouvertures,
     required this.onOuvertures,
     required this.editeurMur,
+    required this.params,
   });
 
   Future<void> _editer(
@@ -533,6 +562,7 @@ class _CarteMur extends StatelessWidget {
           type: type ?? ouvertures[indice!].type,
           longueurMur: mur.longueur,
           hauteurMur: mur.hauteur,
+          params: params,
         ),
       ),
     );
@@ -578,7 +608,8 @@ class _CarteMur extends StatelessWidget {
                 'Centre à ${formatLongueur(ouvertures[i].position, metrique: metrique)} du début'
                 '${ouvertures[i].type == TypeOuverture.fenetre ? ', allège ${formatLongueur(ouvertures[i].allege, metrique: metrique)}' : ''}'
                 '\nBaie : ${formatLongueur(ouvertures[i].largeurBaie, metrique: metrique)} × '
-                '${formatLongueur(ouvertures[i].hauteurBaie, metrique: metrique)}',
+                '${formatLongueur(ouvertures[i].hauteurBaie, metrique: metrique)}'
+                '${ouvertures[i].pose == PoseLinteau.sousLesLisses ? '' : ' · ${libellePose(ouvertures[i].pose).toLowerCase()}'}',
               ),
               isThreeLine: true,
               onTap: () => _editer(context, indice: i),
@@ -859,11 +890,13 @@ class _EditeurOuverture extends StatefulWidget {
   final TypeOuverture type;
   final double longueurMur;
   final double hauteurMur;
+  final ParametresMurs params;
   const _EditeurOuverture({
     required this.initiale,
     required this.type,
     required this.longueurMur,
     required this.hauteurMur,
+    required this.params,
   });
 
   @override
@@ -878,6 +911,7 @@ class _EditeurOuvertureState extends State<_EditeurOuverture> {
   late double _position;
   late double _jeuL;
   late double _jeuH;
+  late PoseLinteau _pose;
   int _version = 0;
 
   bool get _porte => widget.type == TypeOuverture.porte;
@@ -893,6 +927,7 @@ class _EditeurOuvertureState extends State<_EditeurOuverture> {
     _position = o?.position ?? widget.longueurMur / 2;
     _jeuL = o?.jeuLargeur ?? JeuxBaie.largeurDefaut;
     _jeuH = o?.jeuHauteur ?? JeuxBaie.hauteurDefaut;
+    _pose = o?.pose ?? PoseLinteau.sousLesLisses;
   }
 
   Ouverture get _ouverture => Ouverture(
@@ -904,12 +939,52 @@ class _EditeurOuvertureState extends State<_EditeurOuverture> {
     position: _position,
     jeuLargeur: _jeuL,
     jeuHauteur: _jeuH,
+    pose: _pose,
   );
+
+  /// Ce que la pose demande (Code de construction, partie 9).
+  String _explication(PoseLinteau p) => switch (p) {
+    PoseLinteau.sousLesLisses =>
+      'Le linteau passe sous les lisses hautes (pose courante).',
+    PoseLinteau.sousLisseSimple when widget.params.lissesHautes < 2 => 'Sans effet : le mur n\'a qu\'une lisse haute (choisissez « À la place des lisses »).',
+    PoseLinteau.sousLisseSimple =>
+      'La lisse du dessous est coupée ; celle du dessus passe sans joint au-dessus du linteau '
+          'et le relie au mur (CNB 9.23.11.3). Gagne 1 1/2 po.',
+    PoseLinteau.aLaPlaceDesLisses =>
+      'Le linteau remplace les lisses hautes. Le relier aux murs voisins par une plaque d\'acier '
+          'galvanisé de 3 × 6 po (0,91 mm) ou une éclisse 1 × 4 de 12 po, 3 clous de 2 1/2 po de '
+          'chaque côté (CNB 9.23.11.3). Les plaques sont ajoutées à la commande.',
+    PoseLinteau.porteeParPoutre =>
+      'Pas de linteau : la charge du toit au-dessus doit être reprise par une poutre ou des '
+          'poteaux conçus par un ingénieur (non comptés ici). Une traverse ferme le haut de la baie.',
+  };
+
+  /// La pose passe-t-elle dans la hauteur du mur ?
+  bool _passe(Ouverture o) {
+    final (dessus, permis) = hauteursLinteau(
+      o,
+      widget.params,
+      widget.hauteurMur,
+    );
+    return dessus <= permis + 1e-6;
+  }
 
   @override
   Widget build(BuildContext context) {
     final metrique = Preferences.estMetrique;
     final o = _ouverture;
+    final (dessus, permis) = hauteursLinteau(
+      o,
+      widget.params,
+      widget.hauteurMur,
+    );
+    final passe = _passe(o);
+    // La première pose qui gagne assez de hauteur, proposée quand l'ouverture ne passe pas.
+    final mieux = passe || _pose == PoseLinteau.porteeParPoutre
+        ? null
+        : [PoseLinteau.sousLisseSimple, PoseLinteau.aLaPlaceDesLisses]
+              .where((q) => q.index > _pose.index && _passe(o.avecPose(q)))
+              .firstOrNull;
     final avertissements = <String>[
       if (_jeuL < JeuxBaie.largeurMin - 1e-6 ||
           _jeuL > JeuxBaie.largeurMax + 1e-6)
@@ -1055,6 +1130,43 @@ class _EditeurOuvertureState extends State<_EditeurOuverture> {
               ),
             ),
             BlocMessages(avertissements),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<PoseLinteau>(
+              key: ValueKey('ouverture_pose_${_pose.name}'),
+              initialValue: _pose,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Linteau',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                for (final p in PoseLinteau.values)
+                  DropdownMenuItem(value: p, child: Text(libellePose(p))),
+              ],
+              onChanged: (p) => p == null ? null : setState(() => _pose = p),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              _explication(_pose),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              key: const ValueKey('ouverture_hauteur_linteau'),
+              _pose == PoseLinteau.porteeParPoutre
+                  ? 'Haut de la baie à ${formatLongueur(dessus, metrique: metrique)} ; '
+                        'dessous des lisses à ${formatLongueur(permis, metrique: metrique)}.'
+                  : 'Dessus du linteau ${widget.params.linteau.nom} à '
+                        '${formatLongueur(dessus, metrique: metrique)} ; limite '
+                        '${formatLongueur(permis, metrique: metrique)}.',
+              style: const TextStyle(fontSize: 12),
+            ),
+            if (!passe)
+              BlocMessages([
+                'Ne passe pas : il manque ${formatLongueur(dessus - permis, metrique: metrique)}.'
+                    '${mieux == null ? '' : ' Avec « ${libellePose(mieux)} », elle passe.'}',
+              ], erreur: true),
             const SizedBox(height: 8),
             Text(
               'Source des jeux : fiche technique GCR FT-9.7.6.1 (norme '

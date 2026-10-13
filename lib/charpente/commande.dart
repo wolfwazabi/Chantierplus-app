@@ -298,6 +298,17 @@ Commande construireCommande({
       'Murs (linteaux)',
       metrique,
     );
+    // Linteaux posés à la place des lisses : reliés aux murs voisins (CNB 9.23.11.3).
+    if (murs.plaquesLiaison > 0) {
+      brutes.add(
+        LigneCommande(
+          categorie: CategorieCommande.quincaillerie,
+          article: 'Plaque de liaison en acier galvanisé 3 × 6 po (0,91 mm)',
+          quantite: murs.plaquesLiaison.toDouble(),
+          usage: 'Murs (linteaux)',
+        ),
+      );
+    }
     if (murs.feuillesACommander > 0) {
       brutes.add(
         LigneCommande(

@@ -17,6 +17,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../doubles/faux_plans.dart';
+import 'aide_reglages.dart';
 
 Widget _app(Widget enfant) => MaterialApp(home: Scaffold(body: enfant));
 
@@ -139,6 +140,7 @@ void main() {
       t,
     ) async {
       await _ouvrir(t, _charpente());
+      await deplierReglages(t, ['direction_rives']);
       await _voir(t, find.byKey(const ValueKey('direction')));
       await t.tap(find.text('Choisir l\'angle'));
       await t.pumpAndSettle();
@@ -149,6 +151,7 @@ void main() {
       t,
     ) async {
       await _ouvrir(t, _charpente());
+      await deplierReglages(t, ['direction_rives', 'entremises']);
       await _voir(t, find.byKey(const ValueKey('rive_double')));
       await t.tap(find.byKey(const ValueKey('rive_double')));
       await t.pumpAndSettle();
@@ -227,6 +230,7 @@ void main() {
       await _onglet(t, 'Murs');
       await t.tap(find.byKey(const ValueKey('murs_actifs')));
       await t.pumpAndSettle();
+      await deplierReglages(t, ['feuilles_murs']);
       final liste = find.byKey(const ValueKey('murs_format_4x9'));
       await _voir(t, liste);
       await t.tap(liste);
@@ -493,7 +497,7 @@ void main() {
         chantierId: 'chA',
         connecte: connecte,
         listeEnregistrees: const Text('(aucune commande)'),
-        appelLecturePlan: (fichiers, precisions) async => reponse,
+        appelLecturePlan: (fichiers, precisions, reglages) async => reponse,
         selecteurPlans:
             selecteur ??
             SelecteurPlansFaux(
