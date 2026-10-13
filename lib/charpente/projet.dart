@@ -649,6 +649,25 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
   );
 }
 
+/// Tous les problèmes des portes et fenêtres du projet, mur par mur (le calcul, lui, s'arrête au
+/// premier). Vide si tout entre, si les murs ne sont pas calculés ou si la forme est impossible.
+List<String> problemesDesOuvertures(ProjetCharpente p) {
+  if (!p.mursActifs) return const [];
+  try {
+    final contour = p.murs.mode == ModeMurs.contour
+        ? p.plancher.forme.construire()
+        : null;
+    return [
+      for (final s in specsMurs(p, contour))
+        ...problemesOuvertures(s, p.murs.params),
+    ];
+  } on FormeInvalide {
+    return const [];
+  } on SpecInvalide {
+    return const [];
+  }
+}
+
 /// Murs du projet : un par côté du contour (avec leurs ouvertures), ou les
 /// murs libres. Lance [SpecInvalide] si le contour manque.
 List<SpecMur> specsMurs(ProjetCharpente p, Polygone? contour) {

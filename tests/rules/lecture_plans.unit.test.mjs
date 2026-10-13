@@ -948,6 +948,75 @@ describe('structure du plancher : poutres, pieux, étriers', () => {
   });
 });
 
+describe('portes et fenêtres qui ne passent pas sous la lisse haute', () => {
+  const complet = (e) => lp.normaliserLecture(e);
+  // Mur de 8 pi, 2 lisses hautes, linteau 2×8 : la lisse haute est à 93 po.
+  const lire = (ouvertures, valeurs = [], params = {}) => complet(sortie({ valeurs }, {
+    plancher: { forme: { type: 'rectangle', longueur: 156, largeur: 144 }, espacement: 16, section: '2×8' },
+    murs: { mode: 'contour', hauteur: 96, params, ouverturesContour: { 1: ouvertures } },
+  }));
+
+  test('fenêtre de 82 po à 14 po du plancher : hauteur à confirmer, avec le calcul', () => {
+    const r = lire([{ type: 'fenetre', nom: 'Poste 4', largeur: 66, hauteur: 82, allege: 14, position: 36 }]);
+    const v = valeur(r, 'murs.ouverturesContour.1.0.hauteur');
+    assert.equal(v.niveau, 'incertain');
+    assert.ok(v.raison.startsWith('Ne passe pas sous la lisse haute : allège 14 po + cadre 82 po + jeu du haut 3/4 po'), v.raison);
+    assert.ok(v.raison.includes('linteau 2×8 7 1/4 po = 104 po, lisse à 93 po (il manque 11 po)'), v.raison);
+    assert.ok(v.raison.includes('poutre qui sert de linteau'));
+  });
+
+  test('porte-patio avec imposte (99 1/8 po) : il manque 14 7/8 po', () => {
+    const r = lire([{ type: 'porte', nom: 'Poste 8 + 9', largeur: 70.75, hauteur: 99.125, position: 60 }]);
+    const v = valeur(r, 'murs.ouverturesContour.1.0.hauteur');
+    assert.equal(v.niveau, 'incertain');
+    assert.ok(v.raison.includes('cadre 99 1/8 po + jeu 1 1/2 po + linteau 2×8 7 1/4 po = 107 7/8 po'), v.raison);
+    assert.ok(v.raison.includes('il manque 14 7/8 po'), v.raison);
+  });
+
+  test('la fiche du modèle est gardée : sa cote et sa raison suivent le calcul', () => {
+    const r = lire(
+      [{ type: 'fenetre', largeur: 66, hauteur: 82, allege: 14, position: 36 }],
+      [{ chemin: 'murs.ouverturesContour.1.0.hauteur', niveau: 'lu', lecture: '82"', raison: 'Tableau des fenêtres.' }],
+    );
+    const v = valeur(r, 'murs.ouverturesContour.1.0.hauteur');
+    assert.equal(v.niveau, 'incertain');
+    assert.equal(v.lecture, '82"');
+    assert.ok(v.raison.endsWith('Tableau des fenêtres.'));
+  });
+
+  test('un linteau 2×12 ou une seule lisse change le calcul', () => {
+    const fenetre = [{ type: 'fenetre', largeur: 36, hauteur: 48, allege: 36, position: 36 }];
+    // 36 + 48 + 3/4 + 7 1/4 = 92 ≤ 93 : passe avec un 2×8.
+    assert.equal(valeur(lire(fenetre, [{ chemin: 'murs.ouverturesContour.1.0.hauteur', niveau: 'lu', lecture: '48"' }]),
+        'murs.ouverturesContour.1.0.hauteur').niveau, 'lu');
+    // Avec un 2×12 : 36 + 48 + 3/4 + 11 1/4 = 96 > 93.
+    assert.equal(valeur(lire(fenetre, [], { linteau: '2×12' }), 'murs.ouverturesContour.1.0.hauteur').niveau, 'incertain');
+    // Une seule lisse haute : lisse à 94 ½ po ; la fenêtre de 82 po manque encore 9 ½ po.
+    const r = lire([{ type: 'fenetre', largeur: 66, hauteur: 82, allege: 14, position: 36 }], [], { lissesHautes: 1 });
+    assert.ok(valeur(r, 'murs.ouverturesContour.1.0.hauteur').raison.includes('il manque 9 1/2 po'));
+  });
+
+  test('murs libres : vérifiés avec la hauteur de chaque mur', () => {
+    const r = complet(sortie({ valeurs: [] }, {
+      plancherActif: false,
+      murs: { mode: 'libres', libres: [
+        { nom: 'Haut', longueur: 120, hauteur: 120, ouvertures: [{ type: 'porte', largeur: 36, hauteur: 99, position: 60 }] },
+        { nom: 'Bas', longueur: 120, hauteur: 96, ouvertures: [{ type: 'porte', largeur: 36, hauteur: 99, position: 60 }] },
+      ] },
+    }));
+    assert.ok(!valeur(r, 'murs.libres.0.ouvertures.0.hauteur').raison.includes('lisse haute'));
+    assert.ok(valeur(r, 'murs.libres.1.ouvertures.0.hauteur').raison.includes('Ne passe pas sous la lisse haute'));
+  });
+
+  test('murs non calculés : aucune vérification', () => {
+    const r = complet(sortie({ valeurs: [] }, {
+      mursActifs: false,
+      murs: { mode: 'contour', hauteur: 96, ouverturesContour: { 1: [{ type: 'porte', largeur: 36, hauteur: 99, position: 60 }] } },
+    }));
+    assert.equal(valeur(r, 'murs.ouverturesContour.1.0.hauteur'), undefined);
+  });
+});
+
 describe('fichiers : images de 5 Mo au plus', () => {
   const entete = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
   test('une photo de plus de 5 Mo est refusée avec son nom ; un PDF de 6 Mo passe', () => {

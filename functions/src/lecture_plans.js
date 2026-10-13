@@ -415,6 +415,58 @@ function cheminsCritiques(projet) {
 
 const RAISON_SANS_COTE = "Aucune cote relevée sur le plan pour cette valeur : à confirmer.";
 
+/** Profondeur des linteaux (po), comme l'application. */
+const PROFONDEUR_LINTEAU = {"2×6": 5.5, "2×8": 7.25, "2×10": 9.25, "2×12": 11.25};
+
+/** « 96 3/4 » : pouces au 1/8 près, pour les messages. */
+function enPouces(n) {
+  const huitiemes = Math.round(n * 8);
+  const entier = Math.trunc(huitiemes / 8);
+  let reste = Math.abs(huitiemes % 8);
+  if (!reste) return `${entier} po`;
+  let den = 8;
+  while (reste % 2 === 0) { reste /= 2; den /= 2; }
+  return `${entier ? `${entier} ` : ""}${reste}/${den} po`;
+}
+
+/**
+ * Une porte ou une fenêtre doit passer sous la lisse haute avec son linteau (mêmes règles que
+ * l'application). Sinon le plan le règle autrement (vitrage jusqu'à la sablière porté par une
+ * poutre, imposte dans le pignon, mur plus haut) ou la valeur est mal lue : sa hauteur devient
+ * « à confirmer », avec le calcul.
+ */
+function verifierHauteursOuvertures(parChemin, projet) {
+  if (!projet.mursActifs) return;
+  const p = projet.murs.params;
+  const linteau = PROFONDEUR_LINTEAU[p.linteau] ?? 7.25;
+  const lisses = p.lissesHautes * 1.5;
+  const verifier = (prefixe, o, hauteurMur) => {
+    const haut = (o.type === "porte" ? 0 : o.allege - o.jeuHauteur / 2) + o.hauteur + o.jeuHauteur;
+    const dessus = haut + linteau;
+    const lisse = hauteurMur - lisses;
+    if (dessus <= lisse + 1e-6) return;
+    const detail = o.type === "porte" ?
+      `cadre ${enPouces(o.hauteur)} + jeu ${enPouces(o.jeuHauteur)}` :
+      `allège ${enPouces(o.allege)} + cadre ${enPouces(o.hauteur)} + jeu du haut ${enPouces(o.jeuHauteur / 2)}`;
+    const raison = `Ne passe pas sous la lisse haute : ${detail} + linteau ${p.linteau} ${enPouces(linteau)} = ` +
+      `${enPouces(dessus)}, lisse à ${enPouces(lisse)} (il manque ${enPouces(dessus - lisse)}). ` +
+      "Vérifiez au plan comment c'est réglé (poutre qui sert de linteau, imposte dans le pignon, mur plus haut).";
+    const chemin = `${prefixe}.hauteur`;
+    const fiche = parChemin.get(chemin);
+    parChemin.set(chemin, {
+      chemin, niveau: "incertain", lecture: fiche?.lecture ?? "", valeurPlan: fiche?.valeurPlan ?? null,
+      verifiee: false, raison: fiche?.raison ? `${raison} ${fiche.raison}` : raison,
+    });
+  };
+  if (projet.murs.mode === "contour") {
+    for (const [k, liste] of Object.entries(projet.murs.ouverturesContour)) {
+      liste.forEach((o, j) => verifier(`murs.ouverturesContour.${k}.${j}`, o, projet.murs.hauteur));
+    }
+  } else {
+    projet.murs.libres.forEach((m, i) => m.ouvertures.forEach((o, j) => verifier(`murs.libres.${i}.ouvertures.${j}`, o, m.hauteur)));
+  }
+}
+
 /**
  * Le garde-fou ne repose pas sur l'honnêteté du modèle : chaque longueur critique du projet doit
  * avoir une fiche. Sans fiche : « incertain » (à confirmer). Marquée « lu » mais sans cote
@@ -550,6 +602,7 @@ function normaliserLecture(entree, {completer = true} = {}) {
   ajouterAbsentes(parChemin, projet, base.estObjet(e.projet) ? e.projet : {});
   const automatiques = completer ? ajouterDefauts(parChemin, projet, base.estObjet(e.projet) ? e.projet : {}) : [];
   if (completer) ajouterCouverture(parChemin, projet);
+  if (completer) verifierHauteursOuvertures(parChemin, projet);
 
   const hypotheses = (Array.isArray(e.hypotheses) ? e.hypotheses : [])
       .map((h) => base.chaine(h, 300)).filter(Boolean).slice(0, 15);
@@ -660,6 +713,7 @@ MURS, PORTES ET FENÊTRES
 - Si les dimensions du plan sont celles de l'ouverture brute (O.B., R.O., rough opening), mets jeuLargeur = 0 et jeuHauteur = 0 ; sinon ne les mets pas.
 - Hauteur des murs : celle du plan (coupe, élévation). 8 pi de plancher fini à plafond fini ne donne pas toujours 97.125 : si tu hésites, garde la valeur du plan et marque-la « deduit ».
 - Murs : section des montants, entraxe : seulement si une coupe de mur ou une note les indique (« 2x6 @ 16" c/c ») ; sinon défauts + « hypotheses ». Panneau isolant structural (Isobrace, Sonoclimat…) : panneau « isobrace_r4 », niveau « deduit ».
+- Hauteur : une porte ou une fenêtre doit passer sous la lisse haute avec son linteau (allège + cadre + jeu + profondeur du linteau ≤ hauteur du mur − lisses hautes). Si ce n'est pas le cas au plan (vitrage jusqu'à la sablière, imposte ou trapèze dans le pignon, porte-patio avec imposte), cherche comment le plan le règle (poutre ou sablière qui sert de linteau, mur plus haut à cet endroit) et dis-le dans « hypotheses » ; l'application marquera la hauteur « à confirmer ».
 - Murs en panneaux préfabriqués (« panneau préfab., voir fabricant ») ou murs vitrés d'aluminium du fabricant : il n'y a pas d'ossature de bois à calculer. Mets mursActifs à faux et dis-le dans « explication » (les portes et fenêtres sont alors fournies avec les panneaux). Calcule les murs seulement s'ils sont en ossature de bois (montants).
 - Côté de la maison : il n'y a pas de nouveau mur de ce côté (c'est la maison) ; l'application compte un mur par côté du contour, dis-le dans « hypotheses » quand les murs sont calculés.
 

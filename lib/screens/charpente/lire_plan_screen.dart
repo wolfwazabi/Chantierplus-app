@@ -378,6 +378,20 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                 ),
+              if (problemesDesOuvertures(l.projet) case final problemes
+                  when problemes.isNotEmpty) ...[
+                TitreSection(
+                  'Ce qui ne passe pas dans les murs (${problemes.length})',
+                  aide:
+                      'Comparez avec le plan : ces portes ou fenêtres n\'entrent pas telles quelles '
+                      'dans la charpente calculée. Corrigez la valeur lue, ou réglez-le dans l\'onglet Murs.',
+                ),
+                BlocMessages(
+                  key: const ValueKey('plan_problemes_murs'),
+                  problemes,
+                  erreur: true,
+                ),
+              ],
               if (l.avertissements.isNotEmpty)
                 BlocMessages(
                   key: const ValueKey('plan_avertissements'),
@@ -465,7 +479,15 @@ class _LirePlanScreenState extends State<LirePlanScreen> {
                 BlocMessages([
                   if (res.erreurPlancher != null)
                     'Plancher : ${res.erreurPlancher}',
-                  if (res.erreurMurs != null) 'Murs : ${res.erreurMurs}',
+                  if (res.erreurMurs != null)
+                    // La liste complète est plus haut : on ne la répète pas ici.
+                    switch (problemesDesOuvertures(_lecture!.projet).length) {
+                      0 => 'Murs : ${res.erreurMurs}',
+                      1 =>
+                        'Murs : 1 porte ou fenêtre à régler (voir la liste).',
+                      final n =>
+                        'Murs : $n problèmes à régler (voir la liste).',
+                    },
                 ], erreur: true),
               FilledButton.icon(
                 key: const ValueKey('plan_appliquer'),

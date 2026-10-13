@@ -93,6 +93,13 @@ class Ouverture {
   String get libelle => nom.isNotEmpty
       ? nom
       : (type == TypeOuverture.porte ? 'Porte' : 'Fenêtre');
+
+  /// « Fenêtre F1 », « Porte P2 », ou « Porte » sans repère : le type et le repère.
+  String get designation {
+    final t = type == TypeOuverture.porte ? 'Porte' : 'Fenêtre';
+    final n = nom.trim();
+    return n.isEmpty ? t : '$t $n';
+  }
 }
 
 // =============================================================================
@@ -487,6 +494,84 @@ class _Zone {
   bool chevauche(double x0, double x1) => x0 < b - 1e-9 && x1 > a + 1e-9;
 }
 
+/// Tous les problèmes des portes et fenêtres d'un mur, dans l'ordre où le calcul les rencontre
+/// (pas seulement le premier) : dimensions, trop près d'un bout, chevauchement, allège trop basse,
+/// linteau qui ne passe pas sous la lisse haute (avec le détail des hauteurs). Vide : tout entre.
+List<String> problemesOuvertures(SpecMur spec, ParametresMurs p) {
+  final t = p.section.epaisseur;
+  final d = p.section.profondeur;
+  final h = spec.hauteur;
+  final longueur = spec.longueur;
+  final lissesHaut = p.lissesHautes * _epLisse;
+  final largeurDebut =
+      _reculOnglet(spec.angleDebut, d) + t * (1 + spec.montantsCoinDebut);
+  final largeurFin =
+      _reculOnglet(spec.angleFin, d) + t * (1 + spec.montantsCoinFin);
+  final jacksW = p.jacksParCote * t;
+  final problemes = <String>[];
+  final zones = <_Zone>[];
+  final ouvertures = [...spec.ouvertures]
+    ..sort((a, b) => a.position.compareTo(b.position));
+  for (final o in ouvertures) {
+    final qui = '${spec.nom} : ${o.designation}';
+    if (!(o.largeurCadre > 0 && o.hauteurCadre > 0)) {
+      problemes.add('$qui : dimensions invalides.');
+      continue;
+    }
+    if (!(o.jeuLargeur >= 0 && o.jeuLargeur <= 6) ||
+        !(o.jeuHauteur >= 0 && o.jeuHauteur <= 6)) {
+      problemes.add('$qui : jeux invalides.');
+      continue;
+    }
+    if (!(o.allege >= 0 && o.allege < 240)) {
+      problemes.add('$qui : hauteur d\'allège invalide.');
+      continue;
+    }
+    final zoneG = o.baieG - jacksW - t;
+    final zoneD = o.baieD + jacksW + t;
+    if (zoneG < largeurDebut - 1e-6) {
+      problemes.add(
+        '$qui trop près du début du mur (il faut au moins '
+        '${formatImperial(largeurDebut + t + jacksW)} entre le bout du mur et la baie).',
+      );
+    }
+    if (zoneD > longueur - largeurFin + 1e-6) {
+      problemes.add(
+        '$qui trop près de la fin du mur (il faut au moins '
+        '${formatImperial(largeurFin + t + jacksW)} entre la baie et le bout du mur).',
+      );
+    }
+    final zoneNeuve = _Zone(zoneG, zoneD);
+    if (zones.any((z) => zoneNeuve.chevauche(z.a, z.b))) {
+      problemes.add(
+        '$qui chevauche une autre ouverture (laissez au moins '
+        '${formatImperial(2 * (jacksW + t))} entre deux baies).',
+      );
+    }
+    zones.add(zoneNeuve);
+    if (o.baieBas < -1e-9) {
+      problemes.add('$qui : l\'allège est plus basse que le jeu du bas.');
+    }
+    final dessusLinteau = o.baieHaut + p.linteau.profondeur;
+    final lisse = h - lissesHaut;
+    if (dessusLinteau > lisse + 1e-6) {
+      final hauteurs = o.type == TypeOuverture.porte
+          ? 'cadre ${formatImperial(o.hauteurCadre)} + jeu ${formatImperial(o.jeuHauteur)}'
+          : 'allège ${formatImperial(o.allege)} + cadre ${formatImperial(o.hauteurCadre)} '
+                '+ jeu du haut ${formatImperial(o.jeuHauteur / 2)}';
+      problemes.add(
+        '$qui : le linteau ${p.linteau.nom} ne passe pas sous la lisse haute. '
+        '$hauteurs + linteau ${formatImperial(p.linteau.profondeur)} = ${formatImperial(dessusLinteau)}, '
+        'mais la lisse haute est à ${formatImperial(lisse)} (mur de ${formatImperial(h)} moins '
+        '${p.lissesHautes} lisse${p.lissesHautes > 1 ? 's' : ''}) : il manque '
+        '${formatImperial(dessusLinteau - lisse)}. Mur plus haut, ouverture plus basse, linteau moins '
+        'profond, ou une poutre qui sert de linteau (à vérifier au plan).',
+      );
+    }
+  }
+  return problemes;
+}
+
 ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
   final avert = <String>[];
   final sec = p.section;
@@ -582,56 +667,12 @@ ResultatMur _calculerMur(SpecMur spec, ParametresMurs p, int indice) {
     ..sort((a, b) => a.position.compareTo(b.position));
   final zones = <_Zone>[];
   final jacksW = p.jacksParCote * t;
+  final problemes = problemesOuvertures(spec, p);
+  if (problemes.isNotEmpty) {
+    throw SpecInvalide(problemes.first);
+  }
   for (final o in ouvertures) {
-    if (!(o.largeurCadre > 0 && o.hauteurCadre > 0)) {
-      throw SpecInvalide('${spec.nom} : ${o.libelle} : dimensions invalides.');
-    }
-    if (!(o.jeuLargeur >= 0 && o.jeuLargeur <= 6) ||
-        !(o.jeuHauteur >= 0 && o.jeuHauteur <= 6)) {
-      throw SpecInvalide('${spec.nom} : ${o.libelle} : jeux invalides.');
-    }
-    if (!(o.allege >= 0 && o.allege < 240)) {
-      throw SpecInvalide(
-        '${spec.nom} : ${o.libelle} : hauteur d\'allège invalide.',
-      );
-    }
-    final zoneG = o.baieG - jacksW - t;
-    final zoneD = o.baieD + jacksW + t;
-    if (zoneG < largeurDebut - 1e-6) {
-      throw SpecInvalide(
-        '${spec.nom} : ${o.libelle} trop près du début du mur (il faut au moins '
-        '${formatImperial(largeurDebut + t + jacksW)} entre le bout du mur et la baie).',
-      );
-    }
-    if (zoneD > longueur - largeurFin + 1e-6) {
-      throw SpecInvalide(
-        '${spec.nom} : ${o.libelle} trop près de la fin du mur (il faut au moins '
-        '${formatImperial(largeurFin + t + jacksW)} entre la baie et le bout du mur).',
-      );
-    }
-    final zoneNeuve = _Zone(zoneG, zoneD);
-    for (final z in zones) {
-      if (zoneNeuve.chevauche(z.a, z.b)) {
-        throw SpecInvalide(
-          '${spec.nom} : ${o.libelle} chevauche une autre ouverture (laissez au moins '
-          '${formatImperial(2 * (jacksW + t))} entre deux baies).',
-        );
-      }
-    }
-    zones.add(zoneNeuve);
-    if (o.baieBas < -1e-9) {
-      throw SpecInvalide(
-        '${spec.nom} : ${o.libelle} : l\'allège est plus basse que le jeu du bas.',
-      );
-    }
-    final hautLinteau = o.baieHaut + p.linteau.profondeur;
-    if (hautLinteau > h - lissesHaut + 1e-6) {
-      throw SpecInvalide(
-        '${spec.nom} : ${o.libelle} : le linteau ${p.linteau.nom} dépasse sous la lisse haute '
-        '(dessus du linteau à ${formatImperial(hautLinteau)}, lisse à ${formatImperial(h - lissesHaut)}). '
-        'Choisissez un linteau moins profond ou un mur plus haut.',
-      );
-    }
+    zones.add(_Zone(o.baieG - jacksW - t, o.baieD + jacksW + t));
     // Jeux de la fiche GCR.
     final jl = o.jeuLargeur, jh = o.jeuHauteur;
     if (jl < JeuxBaie.largeurMin - 1e-6 || jl > JeuxBaie.largeurMax + 1e-6) {

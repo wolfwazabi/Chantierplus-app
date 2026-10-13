@@ -980,6 +980,53 @@ void main() {
     });
   });
 
+  group('ce qui ne passe pas dans les murs', () {
+    /// La fenêtre F2 du garage, trop haute pour son linteau (allège 40 + 90 po dans un mur de 8 pi).
+    Map<String, dynamic> f2TropHaute() {
+      final r = lectureGarage();
+      final o =
+          ((r['projet'] as Map)['murs'] as Map)['ouverturesContour'] as Map;
+      (o['1'] as List)[0]['hauteur'] = 90;
+      for (final v in r['valeurs'] as List) {
+        if (v['chemin'] == 'murs.ouverturesContour.1.0.hauteur') {
+          v['niveau'] = 'incertain';
+          v['raison'] = 'Ne passe pas sous la lisse haute.';
+          v['verifiee'] = false;
+        }
+      }
+      return r;
+    }
+
+    testWidgets('la liste complète, en rouge, avec le calcul', (t) async {
+      await _jusqueALaRevue(t, _Hote(), reponse: f2TropHaute());
+      expect(
+        find.text('Ce qui ne passe pas dans les murs (1)'),
+        findsOneWidget,
+      );
+      expect(_cle('plan_problemes_murs'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Mur 2 : Fenêtre F2 : le linteau 2×8 ne passe pas sous la lisse haute',
+        ),
+        findsOneWidget,
+      );
+      expect(find.textContaining('il manque'), findsOneWidget);
+    });
+
+    testWidgets('corriger la hauteur fait disparaître le problème', (t) async {
+      await _jusqueALaRevue(t, _Hote(), reponse: f2TropHaute());
+      await t.enterText(_champ('murs.ouverturesContour.1.0.hauteur'), '3\'');
+      await t.pumpAndSettle();
+      expect(_cle('plan_problemes_murs'), findsNothing);
+      expect(find.textContaining('Ce qui ne passe pas'), findsNothing);
+    });
+
+    testWidgets('le garage : rien qui ne passe pas', (t) async {
+      await _jusqueALaRevue(t, _Hote());
+      expect(_cle('plan_problemes_murs'), findsNothing);
+    });
+  });
+
   group('avertissements', () {
     testWidgets(
       'une fenêtre sur un mur qui n\'existe pas : message rouge, jamais en silence',

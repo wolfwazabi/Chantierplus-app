@@ -36,6 +36,15 @@ Plancher et murs (portes et fenêtres comprises), comme le reste du module (voir
 `calcul_charpente.md`). **Pas de toiture, de fondations ni d'escalier** à partir du plan :
 l'assistant l'indique s'il en voit. Le dimensionnement structural n'est pas vérifié.
 
+## Pages agrandies (plans grand format)
+
+Les plans de permis (feuilles 24 × 36 po à 1/4 po = 1 pi) n'ont souvent aucune couche de texte : les cotes
+sont dessinées en traits, et à la taille d'une image ordinaire elles font quelques pixels. Le serveur
+(`functions/src/rendu_plans.js`) rend donc chaque page en grand (environ 4200 px), puis l'envoie au modèle en
+vue d'ensemble et en morceaux agrandis qui se chevauchent (les morceaux blancs sont omis ; 6 pages et 60 images
+au plus). Un PDF avec une vraie couche de texte est joint aussi tel quel. Un PDF que le serveur ne sait pas lire
+part tel quel, comme avant. Les grandes photos (plus de 2200 px) sont découpées de la même façon.
+
 ## Garde-fous (pourquoi on peut s'y fier… à condition de confirmer)
 
 - **Le modèle ne calcule pas le bois.** Il remplit les mêmes paramètres que l'assistant
@@ -55,6 +64,13 @@ l'assistant l'indique s'il en voit. Le dimensionnement structural n'est pas vér
 - **Les défauts sont dits.** Section et entraxe des solives et des montants non donnés par le plan :
   fiches « à vérifier » corrigeables ; les jeux autour des portes et fenêtres (1 po et 1 1/2 po)
   sont annoncés dans les hypothèses ; des coins donnés dans le sens horaire aussi.
+- **Structure du plancher.** Poutres (nombre, plis, section), pieux par poutre, premier pieu et étriers ont
+  leur fiche, comme les cotes : à confirmer si le modèle ne les a pas relevés, à vérifier sinon.
+- **Ce qui ne passe pas dans les murs.** Chaque porte et fenêtre est vérifiée : trop près d'un coin,
+  chevauchement, et surtout le linteau sous la lisse haute (allège + cadre + jeu + linteau ≤ hauteur du mur −
+  lisses). La revue liste TOUS les problèmes avec le calcul (« … = 8' 8", lisse à 7' 9" : il manque 11" ») ;
+  le serveur marque ces hauteurs « à confirmer » et le modèle doit dire comment le plan le règle (poutre qui
+  sert de linteau, imposte dans le pignon, mur plus haut).
 - **Rien ne disparaît sans bruit.** Une porte ou fenêtre placée sur un mur qui n'existe pas dans la
   forme du plancher est signalée en rouge (elle ne serait pas comptée).
 - **Position des portes et fenêtres.** Sur un plan elle se mesure du coin extérieur ; dans
@@ -101,6 +117,19 @@ la suppression d'une compagnie nettoie aussi ses compteurs `plan_h_` et `plan_j_
 - Une porte changée en fenêtre dans la revue prend une allège de 36 po ; on la corrige alors dans la
   fiche de l'ouverture au prochain calcul (Murs).
 - Le corps d'une requête peut atteindre environ 16 Mo : à confirmer en déploiement.
+
+## Essai avec de vrais plans (13 oct. 2026)
+
+Quatre plans de permis (solariums et véranda sur pieux vissés) et un contrat de fenêtres ont été lus à la main
+puis passés dans le vrai filtre du serveur et le vrai calcul (sans l'API). Constats :
+- Les plans contiennent tout le plancher : dimensions, solives, poutres, pieux, côté de la maison. Une lecture
+  correcte, avec les réglages habituels de l'entrepreneur (bordures et rive avant doublées, entremises
+  alternées, hauteur de patte), redonne ses commandes réelles (voir `exemples_reels_plancher.md`).
+- Ces réglages habituels ne sont pas sur les plans : sans eux, la lecture commande moins de solives.
+- Trois des quatre projets ont des murs en panneaux préfabriqués : pas d'ossature à calculer. Le quatrième
+  (murs 2x6) a des vitrages jusqu'à la sablière et dans le pignon : le calcul des murs le signale.
+- Un solarium de 12 × 10 pi commandait cinq 2x8 de 20 pi pour ses solives de 10 pi : corrigé (des planches à
+  la mesure des pièces quand ça ne coûte pas plus de bois).
 
 ## Ce qui n'a PAS été testé
 

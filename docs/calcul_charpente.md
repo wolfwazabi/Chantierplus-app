@@ -47,7 +47,8 @@ description en paramètres.
   mètres (métrique).
 - Longueurs de bois : à la **pointe longue** des coupes d'angle ; planches de 8 à
   20 pi ; chaque coupe est placée dans la planche la plus courte possible
-  (trait de scie de 1/8 po), les chutes servent aux petites pièces. Les montants
+  (trait de scie de 1/8 po), les chutes servent aux petites pièces. À longueur de bois égale, des planches
+  à la mesure des pièces remplacent une longue planche à recouper (dix solives de 10 pi : dix 10 pi). Les montants
   et les jacks ont chacun leur planche (on achète des 8 pi).
 - Solives : leurs bouts sont sur la face intérieure des rives (contour décalé de
   l'épaisseur de la rive) ; près d'un sommet aigu la solive se termine en pointe.
