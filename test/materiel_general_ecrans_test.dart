@@ -367,6 +367,7 @@ void main() {
             home: ChantiersGestionScreen(
               fluxChantiers: Stream.value(chantiers),
               sourceMateriel: source,
+              sourceActivite: SourceActiviteFausse(),
               pageChantier: (c) => Scaffold(body: Text('PAGE ${c.id}')),
             ),
           ),

@@ -131,7 +131,10 @@ class AdminHomeScreen extends StatelessWidget {
               Navigator.of(context).push(
                 MaterialPageRoute(
                   builder: (_) =>
-                      ChantiersGestionScreen(sourceMateriel: sourceMateriel),
+                      ChantiersGestionScreen(
+                        sourceMateriel: sourceMateriel,
+                        sourceActivite: sourceActivite,
+                      ),
                 ),
               );
             },

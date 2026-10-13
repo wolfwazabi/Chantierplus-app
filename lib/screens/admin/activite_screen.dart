@@ -21,7 +21,7 @@ IconData iconeActivite(TypeActivite type) => switch (type) {
 
 /// Suit en direct le nombre de changements que l'admin connecté n'a pas vus (rien suivi pour
 /// les autres rôles).
-class NonVusActivite extends StatefulWidget {
+class NonVusActivite extends StatelessWidget {
   /// Tests : remplace Firestore.
   @visibleForTesting
   final SourceActivite? source;
@@ -30,10 +30,54 @@ class NonVusActivite extends StatefulWidget {
   const NonVusActivite({super.key, this.source, required this.builder});
 
   @override
-  State<NonVusActivite> createState() => _NonVusActiviteState();
+  Widget build(BuildContext context) => _SuiviNouveautes<int>(
+    source: source,
+    vide: 0,
+    calcul: nombreNouvelles,
+    builder: builder,
+  );
 }
 
-class _NonVusActiviteState extends State<NonVusActivite> {
+/// Les nouveautés de chaque chantier (identifiant → nombre), pour les pastilles de la liste
+/// des chantiers. Même « dernière visite » que le fil Activité.
+class NonVusParChantier extends StatelessWidget {
+  /// Tests : remplace Firestore.
+  @visibleForTesting
+  final SourceActivite? source;
+  final Widget Function(BuildContext context, Map<String, int> parChantier)
+  builder;
+
+  const NonVusParChantier({super.key, this.source, required this.builder});
+
+  @override
+  Widget build(BuildContext context) => _SuiviNouveautes<Map<String, int>>(
+    source: source,
+    vide: const {},
+    calcul: nouvellesParChantier,
+    builder: builder,
+  );
+}
+
+/// Lit le fil et la dernière visite de l'admin connecté et en tire [calcul] ; [vide] pour les
+/// autres rôles et tant que la lecture n'est pas arrivée.
+class _SuiviNouveautes<T> extends StatefulWidget {
+  final SourceActivite? source;
+  final T vide;
+  final T Function(Iterable<Activite>, DateTime?, String moiId) calcul;
+  final Widget Function(BuildContext context, T valeur) builder;
+
+  const _SuiviNouveautes({
+    required this.source,
+    required this.vide,
+    required this.calcul,
+    required this.builder,
+  });
+
+  @override
+  State<_SuiviNouveautes<T>> createState() => _SuiviNouveautesState<T>();
+}
+
+class _SuiviNouveautesState<T> extends State<_SuiviNouveautes<T>> {
   Stream<List<Activite>>? _evenements;
   Stream<DateTime?>? _vus;
   String _moiId = '';
@@ -53,7 +97,7 @@ class _NonVusActiviteState extends State<NonVusActivite> {
   @override
   Widget build(BuildContext context) {
     final evenements = _evenements;
-    if (evenements == null) return widget.builder(context, 0);
+    if (evenements == null) return widget.builder(context, widget.vide);
     return StreamBuilder<List<Activite>>(
       stream: evenements,
       builder: (context, liste) => StreamBuilder<DateTime?>(
@@ -61,8 +105,8 @@ class _NonVusActiviteState extends State<NonVusActivite> {
         builder: (context, vus) => widget.builder(
           context,
           liste.hasData && vus.hasData
-              ? nombreNouvelles(liste.data!, vus.data, _moiId)
-              : 0,
+              ? widget.calcul(liste.data!, vus.data, _moiId)
+              : widget.vide,
         ),
       ),
     );

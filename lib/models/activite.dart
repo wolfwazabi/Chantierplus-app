@@ -244,6 +244,22 @@ int nombreNouvelles(
   String moiId,
 ) => activites.where((a) => estNouvelle(a, vuJusqua, moiId)).length;
 
+/// Les nouveautés de chaque chantier (identifiant du chantier → nombre). Les changements
+/// sans chantier (heures, achats) n'y figurent pas.
+Map<String, int> nouvellesParChantier(
+  Iterable<Activite> activites,
+  DateTime? vuJusqua,
+  String moiId,
+) {
+  final parChantier = <String, int>{};
+  for (final a in activites) {
+    if (a.chantierId.isNotEmpty && estNouvelle(a, vuJusqua, moiId)) {
+      parChantier.update(a.chantierId, (n) => n + 1, ifAbsent: () => 1);
+    }
+  }
+  return parChantier;
+}
+
 /// Du plus récent au plus ancien, sans doublon, au plus [max] éléments.
 List<Activite> ordonnerActivites(
   Iterable<Activite> activites, {

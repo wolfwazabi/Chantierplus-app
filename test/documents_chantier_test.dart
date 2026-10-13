@@ -14,6 +14,7 @@ import 'package:construction_app/services/theme_compagnie.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'doubles/faux_activite.dart';
 import 'doubles/faux_materiel.dart';
 
 const _chalet = Chantier(
@@ -118,6 +119,7 @@ void main() {
           home: ChantiersGestionScreen(
             fluxChantiers: Stream.value(const [_chalet]),
             sourceMateriel: SourceMaterielGeneralVide(),
+            sourceActivite: SourceActiviteFausse(),
             // Vraie page du chantier ; seuls les accès Firestore sont remplacés.
             pageChantier: (c) => DossierChantierScreen(
               chantier: c,

@@ -2,10 +2,13 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/chantier.dart';
+import '../../services/activite_source.dart';
 import '../../services/app_session.dart';
 import '../../services/materiel_general_source.dart';
 import '../../services/theme_compagnie.dart';
+import '../../widgets/pastille.dart';
 import '../../widgets/recherche_chantier.dart';
+import 'activite_screen.dart';
 import 'chantier_admin_actions.dart';
 import 'dossier_chantier_screen.dart';
 import 'materiel_general_screen.dart';
@@ -48,11 +51,16 @@ class ChantiersGestionScreen extends StatefulWidget {
   @visibleForTesting
   final SourceMaterielGeneral? sourceMateriel;
 
+  /// Remplace Firestore pour les pastilles de nouveautés (tests).
+  @visibleForTesting
+  final SourceActivite? sourceActivite;
+
   const ChantiersGestionScreen({
     super.key,
     this.fluxChantiers,
     this.pageChantier,
     this.sourceMateriel,
+    this.sourceActivite,
   });
 
   @override
@@ -158,13 +166,21 @@ class _ChantiersGestionScreenState extends State<ChantiersGestionScreen> {
                                 ),
                               ),
                             )
-                          : ListView.builder(
-                              padding: const EdgeInsets.only(bottom: 88),
-                              itemCount: visibles.length,
-                              itemBuilder: (context, i) => _TuileChantier(
-                                chantier: visibles[i],
-                                pageChantier: widget.pageChantier,
-                              ),
+                          // Pastille : les nouveautés de chaque chantier depuis la
+                          // dernière visite du fil Activité.
+                          : NonVusParChantier(
+                              source: widget.sourceActivite,
+                              builder: (context, parChantier) =>
+                                  ListView.builder(
+                                    padding: const EdgeInsets.only(bottom: 88),
+                                    itemCount: visibles.length,
+                                    itemBuilder: (context, i) => _TuileChantier(
+                                      chantier: visibles[i],
+                                      pageChantier: widget.pageChantier,
+                                      nouveautes:
+                                          parChantier[visibles[i].id] ?? 0,
+                                    ),
+                                  ),
                             ),
                     ),
                   ],
@@ -238,7 +254,14 @@ class _TuileGeneral extends StatelessWidget {
 class _TuileChantier extends StatelessWidget {
   final Chantier chantier;
   final Widget Function(Chantier chantier)? pageChantier;
-  const _TuileChantier({required this.chantier, this.pageChantier});
+
+  /// Changements que l'admin n'a pas vus sur ce chantier.
+  final int nouveautes;
+  const _TuileChantier({
+    required this.chantier,
+    this.pageChantier,
+    this.nouveautes = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -262,29 +285,35 @@ class _TuileChantier extends StatelessWidget {
               pageChantier?.call(c) ?? DossierChantierScreen(chantier: c),
         ),
       ),
-      trailing: PopupMenuButton<String>(
-        key: ValueKey('menu_${c.id}'),
-        onSelected: (v) {
-          if (v == 'modifier') {
-            ouvrirFormulaireChantier(
-              context,
-              docId: c.id,
-              donnees: {'nom': c.nom, 'adresse': c.adresse},
-            );
-          } else {
-            archiverOuRestaurerChantier(
-              context,
-              docId: c.id,
-              nom: c.nom,
-              archiver: v == 'archiver',
-            );
-          }
-        },
-        itemBuilder: (ctx) => [
-          const PopupMenuItem(value: 'modifier', child: Text('Modifier')),
-          PopupMenuItem(
-            value: c.archive ? 'restaurer' : 'archiver',
-            child: Text(c.archive ? 'Restaurer' : 'Archiver'),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PastilleNombre(nouveautes, key: ValueKey('pastille_${c.id}')),
+          PopupMenuButton<String>(
+            key: ValueKey('menu_${c.id}'),
+            onSelected: (v) {
+              if (v == 'modifier') {
+                ouvrirFormulaireChantier(
+                  context,
+                  docId: c.id,
+                  donnees: {'nom': c.nom, 'adresse': c.adresse},
+                );
+              } else {
+                archiverOuRestaurerChantier(
+                  context,
+                  docId: c.id,
+                  nom: c.nom,
+                  archiver: v == 'archiver',
+                );
+              }
+            },
+            itemBuilder: (ctx) => [
+              const PopupMenuItem(value: 'modifier', child: Text('Modifier')),
+              PopupMenuItem(
+                value: c.archive ? 'restaurer' : 'archiver',
+                child: Text(c.archive ? 'Restaurer' : 'Archiver'),
+              ),
+            ],
           ),
         ],
       ),
