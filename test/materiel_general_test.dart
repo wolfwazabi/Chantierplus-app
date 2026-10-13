@@ -386,13 +386,33 @@ void main() {
       },
     );
 
-    test('nouvelle entrée d\'un vrai chantier : exactement comme avant, sans auteur', () {
+    test('nouvelle entrée d\'un vrai chantier : porte aussi l\'auteur (fil Activité)', () {
       final d = donneesNouvelleEntree(
         companyId: 'A',
         chantierId: 'chA',
         texte: 'Clous',
         quantite: '',
-        auteur: contremaitre, // ignoré : ce n'est pas Général
+        auteur: contremaitre,
+      );
+      expect(d.keys.toSet(), {
+        'companyId',
+        'chantierId',
+        'texte',
+        'complete',
+        'dateAjout',
+        'ajoutePar',
+        'ajouteParNom',
+      });
+      expect(d['ajoutePar'], 'plusA');
+      expect(d['ajouteParNom'], 'Plus A');
+    });
+
+    test('nouvelle entrée d\'un vrai chantier sans auteur : comme avant (anciens appels)', () {
+      final d = donneesNouvelleEntree(
+        companyId: 'A',
+        chantierId: 'chA',
+        texte: 'Clous',
+        quantite: '',
       );
       expect(d.keys.toSet(), {
         'companyId',

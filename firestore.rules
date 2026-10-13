@@ -309,7 +309,9 @@ service cloud.firestore {
 
       allow create: if gestionnaireDe(request.resource.data.companyId)
         && champsPermis(request.resource.data,
-             ['companyId', 'chantierId', 'url', 'cheminStorage', 'dateAjout'])
+             ['companyId', 'chantierId', 'url', 'cheminStorage', 'dateAjout',
+              'ajoutePar', 'ajouteParNom'])
+        && acteurOptionnelValide(request.resource.data)
         && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
         && urlStorage(request.resource.data.url)
         && request.resource.data.cheminStorage is string
@@ -350,9 +352,20 @@ service cloud.firestore {
         && texteOptionnel(d, 'quantite', 100);
     }
 
+    // Qui a fait le geste (fil « Activité » de l'admin) : facultatif, pour les anciennes
+    // versions de l'application ; s'il est là, c'est bien l'employé connecté.
+    function acteurOptionnelValide(d) {
+      return !d.keys().hasAny(['ajoutePar', 'ajouteParNom'])
+        || (d.keys().hasAll(['ajoutePar', 'ajouteParNom'])
+            && d.ajoutePar == session().employeeId
+            && d.ajouteParNom == moi().nom);
+    }
+
     function entreeValideCreation(d) {
       return champsPermis(d, ['companyId', 'chantierId', 'texte', 'complete',
-                              'dateAjout', 'photoUrl', 'photoUrls', 'quantite'])
+                              'dateAjout', 'photoUrl', 'photoUrls', 'quantite',
+                              'ajoutePar', 'ajouteParNom'])
+        && acteurOptionnelValide(d)
         && chantierDe(d.chantierId, d.companyId)
         && entreeCommuneValide(d);
     }
@@ -439,6 +452,23 @@ service cloud.firestore {
         && entreeValideModification(request.resource.data);
       allow delete: if gestionnaireDe(resource.data.companyId)
         && entreeModifiable(resource.data);
+    }
+
+    // Fil « Activité » (Admin) : jusqu'à quelle date cet admin a tout vu. Un document par
+    // admin, lisible et modifiable par lui seul. La date vient des événements eux-mêmes :
+    // jamais dans le futur (on ne peut pas masquer ce qui n'est pas encore arrivé).
+    match /activite_vus/{employeId} {
+      allow read: if estEmployeActif() && moi().role == 'admin'
+        && employeId == session().employeeId;
+
+      allow create, update: if estEmployeActif() && moi().role == 'admin'
+        && employeId == session().employeeId
+        && champsPermis(request.resource.data, ['companyId', 'vuJusqua'])
+        && request.resource.data.companyId == maCompagnie()
+        && request.resource.data.vuJusqua is timestamp
+        && request.resource.data.vuJusqua <= request.time;
+
+      allow delete: if false;
     }
 
     // Matériel Général : ce que chaque admin a déjà vu, pour la pastille « changement
@@ -640,7 +670,9 @@ service cloud.firestore {
       allow create: if adminDe(request.resource.data.companyId)
         && champsPermis(request.resource.data,
              ['companyId', 'chantierId', 'nom', 'cheminStorage', 'url',
-              'taille', 'typeMime', 'ajoutePar', 'dateAjout'])
+              'taille', 'typeMime', 'ajoutePar', 'ajouteParNom', 'dateAjout'])
+        && (!request.resource.data.keys().hasAny(['ajouteParNom'])
+            || request.resource.data.ajouteParNom == moi().nom)
         && chantierDe(request.resource.data.chantierId, request.resource.data.companyId)
         && texte(request.resource.data.nom, 1, 200)
         && request.resource.data.cheminStorage is string

@@ -201,6 +201,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
           'taille': octets.length,
           'typeMime': typeMime,
           'ajoutePar': employe.id,
+          'ajouteParNom': employe.nom,
           'dateAjout': FieldValue.serverTimestamp(),
         });
       } catch (_) {

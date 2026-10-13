@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../services/activite_source.dart';
 import '../../services/liste_achats_source.dart';
 import '../../services/materiel_general_source.dart';
 import '../../services/theme_compagnie.dart';
+import '../../widgets/pastille.dart';
+import 'activite_screen.dart';
 import 'couleur_compagnie_screen.dart';
 import 'liste_achats_screen.dart';
 import 'materiel_general_screen.dart';
@@ -20,7 +23,16 @@ class AdminHomeScreen extends StatelessWidget {
   @visibleForTesting
   final SourceListeAchats? sourceAchats;
 
-  const AdminHomeScreen({super.key, this.sourceMateriel, this.sourceAchats});
+  /// Remplace Firestore pour le fil Activité (tests).
+  @visibleForTesting
+  final SourceActivite? sourceActivite;
+
+  const AdminHomeScreen({
+    super.key,
+    this.sourceMateriel,
+    this.sourceAchats,
+    this.sourceActivite,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -33,6 +45,38 @@ class AdminHomeScreen extends StatelessWidget {
           style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 16),
+        Card(
+          child: ListTile(
+            leading: Icon(Icons.notifications_none, color: accent),
+            title: const Text('Activité'),
+            subtitle: const Text(
+              'Heures, photos, matériel et autres changements récents',
+            ),
+            // Pastille : du nouveau depuis votre dernière visite.
+            trailing: NonVusActivite(
+              source: sourceActivite,
+              builder: (context, nonVus) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  PastilleNombre(
+                    nonVus,
+                    key: const ValueKey('pastille_activite'),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.chevron_right),
+                ],
+              ),
+            ),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => ActiviteScreen(source: sourceActivite),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
         Card(
           child: ListTile(
             leading: Icon(Icons.access_time, color: accent),

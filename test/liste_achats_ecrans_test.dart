@@ -11,6 +11,7 @@ import 'package:construction_app/services/app_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'doubles/faux_activite.dart';
 import 'doubles/faux_materiel.dart';
 
 Finder _cle(String k) => find.byKey(ValueKey(k));
@@ -551,6 +552,7 @@ void main() {
             body: AdminHomeScreen(
               sourceMateriel: SourceMaterielGeneralVide(),
               sourceAchats: achats,
+              sourceActivite: SourceActiviteFausse(),
             ),
           ),
         ),

@@ -166,14 +166,15 @@ class _ListeEntreesTabState extends State<ListeEntreesTab> {
         televerser: widget.televerser,
       );
 
-      // Général : l'entrée porte son auteur (id et nom de l'employé connecté).
+      // L'entrée porte son auteur (id et nom de l'employé connecté) : Général en a
+      //      besoin pour séparer les listes, le fil « Activité » pour dire qui.
       final data = donneesNouvelleEntree(
         companyId: widget.companyId,
         chantierId: widget.chantierId,
         texte: texte,
         quantite: widget.avecQuantite ? _controleurQuantite.text.trim() : null,
         photos: liens,
-        auteur: widget.general ? AppSession.current : null,
+        auteur: AppSession.current,
       );
       final ajouter = widget.ajouter;
       if (ajouter != null) {

@@ -321,7 +321,9 @@ Map<String, dynamic> donneesNouvelleEntree({
     'dateAjout': FieldValue.serverTimestamp(),
     ...champsPhotos(photos),
     if (quantite != null && quantite.isNotEmpty) 'quantite': quantite,
-    if (general) ...{'ajoutePar': auteur!.id, 'ajouteParNom': auteur.nom},
+    // Qui a fait la demande (fil « Activité » de l'admin) : toujours, pas seulement pour
+    // Général. Les anciennes entrées n'en ont pas.
+    if (auteur != null) ...{'ajoutePar': auteur.id, 'ajouteParNom': auteur.nom},
   };
 }
 

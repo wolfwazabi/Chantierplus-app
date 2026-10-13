@@ -15,6 +15,7 @@ import 'package:construction_app/widgets/recherche_chantier.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'doubles/faux_activite.dart';
 import 'doubles/faux_materiel.dart';
 
 DateTime _t(int jour, [int heure = 8]) => tTest(jour, heure);
@@ -495,7 +496,12 @@ void main() {
       final source = FauxSource(_jeu(), vus);
       await tester.pumpWidget(
         MaterialApp(
-          home: Scaffold(body: AdminHomeScreen(sourceMateriel: source)),
+          home: Scaffold(
+            body: AdminHomeScreen(
+              sourceMateriel: source,
+              sourceActivite: SourceActiviteFausse(),
+            ),
+          ),
         ),
       );
       await tester.pumpAndSettle();
@@ -1085,7 +1091,7 @@ void main() {
     });
 
     testWidgets(
-      'matériel d\'un VRAI chantier : aucun changement (pas d\'auteur, pas de filtre, pas de signature)',
+      'matériel d\'un VRAI chantier : pas de filtre ni de signature ; l\'auteur sert au fil Activité',
       (tester) async {
         await ouvrir(tester);
         await tester.tap(find.widgetWithText(Tab, 'Matériel'));
@@ -1102,8 +1108,9 @@ void main() {
         await tester.pumpAndSettle();
         final data = ajouts.single.$2;
         expect(data['chantierId'], 'c1');
-        expect(data.containsKey('ajoutePar'), isFalse);
-        expect(data.containsKey('ajouteParNom'), isFalse);
+        // L'auteur est maintenant noté (fil « Activité » de l'admin), sans changer la liste.
+        expect(data.containsKey('ajoutePar'), isTrue);
+        expect(data.containsKey('ajouteParNom'), isTrue);
 
         await tester.tap(find.byIcon(Icons.more_vert).first);
         await tester.pumpAndSettle();

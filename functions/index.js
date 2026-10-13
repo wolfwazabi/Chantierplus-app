@@ -950,6 +950,7 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
 
   return calculerEtEnregistrerFeuille({
     ctx, cible: {id: ctx.employeeId, nom: ctx.employe.nom}, lundiDate, jours, maintenant,
+    acteur: {id: ctx.employeeId, nom: ctx.employe.nom},
   });
 });
 
@@ -971,8 +972,14 @@ function exigerSemaineOuverte(lundiDate, maintenant) {
  * `reglesDeLaSemaine` : pour une semaine passée déjà enregistrée, les règles
  * copiées dans la feuille (et non celles d'aujourd'hui) servent aux journées
  * modifiées, et elles restent la copie conservée.
+ *
+ * `acteur` : qui enregistre (l'employé lui-même, ou l'admin qui corrige). La feuille
+ * garde la date de sa création et le dernier acteur : le fil « Activité » de l'admin
+ * s'en sert (« Heures entrées par … », « Changements apportés aux heures par … »).
  */
-async function calculerEtEnregistrerFeuille({ctx, cible, lundiDate, jours, maintenant, reglesDeLaSemaine = false}) {
+async function calculerEtEnregistrerFeuille({
+  ctx, cible, lundiDate, jours, maintenant, reglesDeLaSemaine = false, acteur,
+}) {
   // Chantiers : doivent appartenir à la compagnie ; le nom vient du serveur.
   const ids = [...new Set(jours.filter((j) => j.chantierId).map((j) => j.chantierId))];
   const nomsChantiers = new Map();
@@ -1019,6 +1026,10 @@ async function calculerEtEnregistrerFeuille({ctx, cible, lundiDate, jours, maint
         (semaineFigee && calcul.joursRecalcules === 0 && existante?.reglesPaie ?
           existante.reglesPaie : regles),
       dateModification: FieldValue.serverTimestamp(),
+      // Première écriture : la date de création ne change plus ensuite.
+      creeLe: existante?.creeLe ?? FieldValue.serverTimestamp(),
+      modifieParId: acteur.id,
+      modifieParNom: acteur.nom || "",
     });
     return calcul;
   });
@@ -1067,6 +1078,7 @@ exports.corrigerFeuilleTemps = onCall(async (request) => {
   return calculerEtEnregistrerFeuille({
     ctx, cible: {id: snap.id, nom: snap.data().nom || ""}, lundiDate, jours, maintenant,
     reglesDeLaSemaine: true,
+    acteur: {id: ctx.employeeId, nom: ctx.employe.nom},
   });
 });
 

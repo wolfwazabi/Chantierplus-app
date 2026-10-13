@@ -1081,6 +1081,46 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
       await regles(R1);
     });
 
+    test("la feuille garde sa date de création et le dernier acteur (fil Activité de l'admin)", async () => {
+      await supprimerFeuille('ft-emp', SEMAINE);
+      await envoyer(emp, [jour()], SEMAINE, { modifieParId: 'ft-adm', modifieParNom: 'Faux', creeLe: '2000-01-01' });
+      let f = await feuilleDe('ft-emp');
+      assert.equal(f.modifieParId, 'ft-emp', 'l\'acteur vient du serveur, jamais du client');
+      assert.equal(f.modifieParNom, 'Marie Employée');
+      assert.ok(f.creeLe);
+      assert.equal(f.creeLe.toMillis(), f.dateModification.toMillis(), 'première écriture : créée = modifiée');
+      const creation = f.creeLe.toMillis();
+
+      // L'employé met sa feuille à jour : la création ne bouge pas, la modification oui.
+      await new Promise((r) => setTimeout(r, 30));
+      await envoyer(emp, [jour({ heureFinMinutes: 16 * 60 })]);
+      f = await feuilleDe('ft-emp');
+      assert.equal(f.creeLe.toMillis(), creation);
+      assert.ok(f.dateModification.toMillis() > creation);
+      assert.equal(f.modifieParId, 'ft-emp');
+
+      // L'admin corrige : l'acteur est l'admin, la feuille reste celle de l'employé.
+      await new Promise((r) => setTimeout(r, 30));
+      await corriger(adm, 'ft-emp', [jour()]);
+      f = await feuilleDe('ft-emp');
+      assert.equal(f.employeeId, 'ft-emp');
+      assert.equal(f.employeeNom, 'Marie Employée');
+      assert.equal(f.modifieParId, 'ft-adm');
+      assert.equal(f.modifieParNom, 'Alex Admin');
+      assert.equal(f.creeLe.toMillis(), creation, 'la date de création est conservée');
+    });
+
+    test("une feuille plus ancienne (sans date de création) en reçoit une à sa prochaine écriture", async () => {
+      await adminDb.collection('feuilles_temps').doc(`ft-emp_${PROCHAINE}`).set({
+        companyId: cid, estIndividuel: false, employeeId: 'ft-emp', employeeNom: 'Marie Employée',
+        lundiDate: PROCHAINE, jours: [], totalHeures: 0,
+      });
+      await envoyer(emp, [jour()], PROCHAINE);
+      const f = await feuilleDe('ft-emp', PROCHAINE);
+      assert.ok(f.creeLe);
+      assert.equal(f.modifieParId, 'ft-emp');
+    });
+
     test('limite par admin : 200 corrections par heure ; la saisie de l\'admin n\'est pas touchée', async () => {
       await adminDb.collection('limites_connexion').doc('corrfeuille_ft-adm').set(
         { compte: 200, debut: new Date(), expireLe: new Date(Date.now() + 3600 * 1000) });

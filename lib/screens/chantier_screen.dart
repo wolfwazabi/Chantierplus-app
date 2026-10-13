@@ -444,12 +444,15 @@ class _PhotosTabState extends State<_PhotosTab> {
     await ref.putData(bytes, SettableMetadata(contentType: 'image/jpeg'));
     final url = await ref.getDownloadURL();
 
+    final moi = AppSession.current;
     await FirebaseFirestore.instance.collection('chantier_photos').add({
       'companyId': widget.companyId,
       'chantierId': widget.chantierId,
       'url': url,
       'cheminStorage': chemin,
       'dateAjout': FieldValue.serverTimestamp(),
+      // Qui a pris la photo (fil « Activité » de l'admin).
+      if (moi != null) ...{'ajoutePar': moi.id, 'ajouteParNom': moi.nom},
     });
   }
 
