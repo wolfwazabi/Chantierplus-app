@@ -250,7 +250,10 @@ class OngletPlancher extends StatelessWidget {
       key: const ValueKey('etriers_bordures'),
       contentPadding: EdgeInsets.zero,
       title: const Text('Étriers sur les solives de bordure'),
-      subtitle: const Text('Décoché : seulement les solives intérieures'),
+      subtitle: const Text(
+        'Décoché : seulement les solives intérieures (celles de bordure, '
+        'à l\'extérieur du plancher, n\'en ont pas)',
+      ),
       value: _p.etriersBordures,
       onChanged: (v) => _set(_p.copieAvec(etriersBordures: v)),
     ),

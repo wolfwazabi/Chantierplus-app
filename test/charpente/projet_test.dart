@@ -464,17 +464,22 @@ void mainPlancherReel() {
     });
 
     test('même calcul avec ou sans les nouveaux champs (ancien projet)', () {
+      // Un ancien projet a les réglages d'avant (étriers partout, coupes groupées) ;
+      // les nouveaux projets partent avec ceux de l'entrepreneur.
       final ancien = const ProjetCharpente(
         plancher: ParametresPlancher(
           forme: FormeRectangle(180, 168),
           riveDouble: true,
           rangeesEntremises: 1,
+          etriersBordures: true,
+          coupesSeparees: false,
         ),
       );
       final j = jsonDecode(jsonEncode(ancien.toJson())) as Map;
       (j['plancher'] as Map)
         ..remove('coteMaison')
         ..remove('poutres')
+        ..remove('etriersBordures')
         ..remove('coupesSeparees');
       final a = calculerProjet(ancien).commande.enTexte();
       final b = calculerProjet(ProjetCharpente.fromJson(j)).commande.enTexte();

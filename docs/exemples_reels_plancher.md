@@ -36,6 +36,16 @@ Solives de bordure doublées · rives doubles · côté de la maison choisi · �
 sans les solives de bordure · entremises automatiques en pose alternée · coupes séparées ·
 poutres (2 × 3 plis 2×8, 3 pieux, premier à 12 po) · hauteur de patte.
 
+**Par défaut (nouveaux projets, 13 oct. 2026)** : pas d'étrier sur les solives de bordure (elles sont à
+l'extérieur du plancher : seules les solives intérieures en ont) et coupes séparées (les entremises ont leur
+propre planche : on ne les coupe jamais dans les bouts de planches des rives). Les deux sont modifiables.
+Avant ce changement, les étriers étaient comptés sur toutes les solives (14 solives de 14 × 12 pi : 28 étriers
+à 2 bouts au lieu de 20) et les blocs d'entremises prenaient le reste des rives (2 planches de 20 pi au lieu
+d'une planche de 14 pi). Les projets déjà enregistrés gardent leurs réglages d'avant.
+
+**Exemple 14 × 12 pi, 2×8, une rangée d'entremises, 2 bouts** : 14 × 2×8 × 12' (solives, dont 4 de bordure) ·
+3 × 2×8 × 14' (2 rives + 1 planche pour les 11 blocs d'entremises) · 20 étriers (10 solives intérieures × 2).
+
 ## Exemple A : 15 pi × 14 pi (solives de 14 pi)
 
 | | Liste de l'entrepreneur | Calcul de l'app |

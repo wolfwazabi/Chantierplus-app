@@ -219,11 +219,11 @@ function normaliserProjet(entree) {
     longueursPlanches: longueursPermises(p.longueursPlanches, LONGUEURS_PLANCHES),
     coteMaison: p.coteMaison === null || p.coteMaison === undefined ? null :
       entier(p.coteMaison, {min: 0, max: 23, defaut: 0, nom: "côté de la maison", corr}),
-    etriersBordures: booleen(p.etriersBordures, true),
+    etriersBordures: booleen(p.etriersBordures, false),
     entremisesAuto: booleen(p.entremisesAuto, false),
     entremisesEspacement: nombre(p.entremisesEspacement, {min: 24, max: 240, defaut: 120, nom: "portée sans entremises", corr}),
     entremisesAlternees: booleen(p.entremisesAlternees, false),
-    coupesSeparees: booleen(p.coupesSeparees, false),
+    coupesSeparees: booleen(p.coupesSeparees, true),
     poutres: normaliserPoutres(p.poutres, corr),
     clousParEtrier: entier(p.clousParEtrier, {min: 1, max: 40, defaut: 10, nom: "clous par étrier", corr}),
     clousParBoite: entier(p.clousParBoite, {min: 10, max: 5000, defaut: 120, nom: "clous par boîte", corr}),

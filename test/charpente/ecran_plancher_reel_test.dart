@@ -77,12 +77,22 @@ void main() {
       t,
       find.descendant(of: _cle('etriers'), matching: find.text('Un bout')),
     );
-    await _tap(t, _cle('etriers_bordures'));
+    // Par défaut : pas d'étrier sur les solives de bordure (à l'extérieur du plancher).
+    expect(
+      t.widget<SwitchListTile>(_cle('etriers_bordures')).value,
+      isFalse,
+      reason: 'étriers sur les solives de bordure : décoché par défaut',
+    );
 
     // Entremises automatiques en pose alternée ; coupes séparées.
     await _tap(t, _cle('entremises_auto'));
     await _tap(t, _cle('entremises_alternees'));
-    await _tap(t, _cle('coupes_separees'));
+    // Par défaut : chaque catégorie dans ses propres planches.
+    expect(
+      t.widget<SwitchListTile>(_cle('coupes_separees')).value,
+      isTrue,
+      reason: 'coupes séparées : coché par défaut',
+    );
 
     // Poutres sur pieux vissés, pattes de 16 po.
     await _tap(t, _cle('poutres_actives'));

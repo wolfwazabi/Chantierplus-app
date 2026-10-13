@@ -243,11 +243,13 @@ class ParametresPlancher {
     this.margePanneauxPourcent = 0,
     this.longueursPlanches = longueursPlanchesParDefaut,
     this.coteMaison,
-    this.etriersBordures = true,
+    // Réglages de l'entrepreneur : pas d'étrier sur les solives de bordure (à l'extérieur
+    // du plancher) et des entremises dans leurs propres planches.
+    this.etriersBordures = false,
     this.entremisesAuto = false,
     this.entremisesEspacement = 120,
     this.entremisesAlternees = false,
-    this.coupesSeparees = false,
+    this.coupesSeparees = true,
     this.poutres,
     this.clousParEtrier = 10,
     this.clousParBoite = 120,
@@ -494,6 +496,8 @@ class ProjetCharpente {
       coteMaison: p['coteMaison'] == null
           ? null
           : _entier(p['coteMaison'], 0, 23),
+      // Projet enregistré avant ces réglages : les valeurs d'avant (les nouveaux projets
+      // prennent celles du constructeur).
       etriersBordures: _boolOu(p['etriersBordures'], true),
       entremisesAuto: _boolOu(p['entremisesAuto'], false),
       entremisesEspacement: _numOu(p['entremisesEspacement'], 24, 240, 120),

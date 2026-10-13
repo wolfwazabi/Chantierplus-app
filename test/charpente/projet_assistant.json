@@ -28,11 +28,11 @@
       240
     ],
     "coteMaison": null,
-    "etriersBordures": true,
+    "etriersBordures": false,
     "entremisesAuto": false,
     "entremisesEspacement": 120.0,
     "entremisesAlternees": false,
-    "coupesSeparees": false,
+    "coupesSeparees": true,
     "poutres": null,
     "clousParEtrier": 10,
     "clousParBoite": 120,

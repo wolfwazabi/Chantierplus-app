@@ -215,6 +215,10 @@ describe('normaliserProjet : sortie du modèle', () => {
     });
     const p = projet.plancher;
     assert.equal(p.coteMaison, 0);
+    // Réglages par défaut de l'entrepreneur : pas d'étrier sur les solives de bordure,
+    // entremises dans leurs propres planches.
+    assert.equal(a.normaliserProjet({ plancher: {} }).projet.plancher.etriersBordures, false);
+    assert.equal(a.normaliserProjet({ plancher: {} }).projet.plancher.coupesSeparees, true);
     assert.equal(p.entremisesEspacement, 120);
     assert.equal(p.clousParEtrier, 10);
     assert.equal(p.clousParBoite, 120);
