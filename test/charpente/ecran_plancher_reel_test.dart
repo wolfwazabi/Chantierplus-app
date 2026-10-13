@@ -178,26 +178,105 @@ void main() {
     },
   );
 
-  testWidgets('clous d\'étriers : réglables, sans étrier ils disparaissent', (
-    t,
-  ) async {
-    await _ouvrir(t);
-    // Étriers aux deux bouts par défaut.
-    expect(_cle('clous_etriers'), findsOneWidget);
-    await _tap(
+  group('clous d\'étriers', () {
+    bool coche(WidgetTester t) =>
+        t.widget<CheckboxListTile>(_cle('clous_etriers_inclus')).value!;
+    bool choisi(WidgetTester t, int n) =>
+        t.widget<ChoiceChip>(_cle('clous_choix_$n')).selected;
+
+    testWidgets('case cochée par défaut, 10 par étrier, nombres proposés', (
       t,
-      find.descendant(of: _cle('etriers'), matching: find.text('Aucun')),
+    ) async {
+      await _ouvrir(t);
+      expect(coche(t), isTrue);
+      expect(_present('10 par étrier'), isTrue, reason: '10 par étrier');
+      for (final n in [6, 8, 10, 12, 14, 16]) {
+        expect(_cle('clous_choix_$n'), findsOneWidget, reason: '$n');
+        expect(choisi(t, n), n == 10, reason: '$n');
+      }
+      expect(_cle('clous_par_etrier'), findsOneWidget);
+      expect(_cle('clous_par_boite'), findsOneWidget);
+      expect(_cle('clous_marge'), findsOneWidget);
+      expect(_present('clous, boîtes de'), isTrue, reason: 'résultats');
+    });
+
+    testWidgets('choisir le nombre de clous par étrier', (t) async {
+      await _ouvrir(t);
+      await _tap(t, _cle('clous_choix_12'));
+      expect(choisi(t, 12), isTrue);
+      expect(choisi(t, 10), isFalse);
+      expect(_present('12 par étrier · boîte de 120'), isTrue);
+      // Le champ libre suit : une autre valeur désélectionne les choix proposés.
+      await _saisir(t, 'clous_par_etrier', '18');
+      for (final n in [6, 8, 10, 12, 14, 16]) {
+        expect(choisi(t, n), isFalse, reason: '$n');
+      }
+      expect(_present('18 par étrier'), isTrue, reason: '18 par étrier');
+      // Revenir à un choix proposé.
+      await _tap(t, _cle('clous_choix_6'));
+      expect(choisi(t, 6), isTrue);
+      expect(_present('6 par étrier'), isTrue, reason: '6 par étrier');
+    });
+
+    testWidgets(
+      'décocher : les clous sortent des résultats, les réglages se cachent',
+      (t) async {
+        await _ouvrir(t);
+        expect(_present('clous, boîtes de'), isTrue);
+        await _tap(t, _cle('clous_etriers_inclus'));
+        expect(coche(t), isFalse);
+        expect(_present('Non comptés dans la commande'), isTrue);
+        expect(_present('clous, boîtes de'), isFalse, reason: 'résultats');
+        for (final cle in [
+          'clous_choix_10',
+          'clous_par_etrier',
+          'clous_par_boite',
+          'clous_marge',
+        ]) {
+          expect(_cle(cle), findsNothing, reason: cle);
+        }
+      },
     );
-    expect(_cle('clous_etriers'), findsNothing);
-    expect(_cle('etriers_bordures'), findsNothing);
-    await _tap(
-      t,
-      find.descendant(of: _cle('etriers'), matching: find.text('Un bout')),
+
+    testWidgets('recocher : les réglages choisis sont retrouvés', (t) async {
+      await _ouvrir(t);
+      await _tap(t, _cle('clous_choix_14'));
+      await _tap(t, _cle('clous_etriers_inclus'));
+      await _tap(t, _cle('clous_etriers_inclus'));
+      expect(coche(t), isTrue);
+      expect(choisi(t, 14), isTrue);
+      expect(_present('clous, boîtes de'), isTrue);
+    });
+
+    testWidgets(
+      'sans étrier : plus de case ni de réglages ; avec : ils reviennent',
+      (t) async {
+        await _ouvrir(t);
+        await _tap(
+          t,
+          find.descendant(of: _cle('etriers'), matching: find.text('Aucun')),
+        );
+        expect(_cle('clous_etriers_inclus'), findsNothing);
+        expect(_cle('etriers_bordures'), findsNothing);
+        await _tap(
+          t,
+          find.descendant(of: _cle('etriers'), matching: find.text('Un bout')),
+        );
+        expect(_cle('clous_etriers_inclus'), findsOneWidget);
+        expect(coche(t), isTrue);
+      },
     );
-    await _tap(t, _cle('clous_etriers'));
-    expect(_cle('clous_par_etrier'), findsOneWidget);
-    await _saisir(t, 'clous_par_etrier', '12');
-    expect(_present('12 par étrier'), isTrue, reason: '12 par étrier');
+
+    testWidgets('la commande suit la case', (t) async {
+      await _ouvrir(t);
+      await _tap(t, find.widgetWithText(Tab, 'Commande'));
+      expect(_present('Clous d\'étriers 10d'), isTrue, reason: 'cochée');
+      await _tap(t, find.widgetWithText(Tab, 'Plancher'));
+      await _tap(t, _cle('clous_etriers_inclus'));
+      await _tap(t, find.widgetWithText(Tab, 'Commande'));
+      expect(_present('Clous d\'étriers 10d'), isFalse, reason: 'décochée');
+      expect(_present('Étrier de solive'), isTrue);
+    });
   });
 
   test('le plancher de l\'écran = le moteur (mêmes nombres)', () {

@@ -68,6 +68,18 @@ class Ouverture {
     this.jeuHauteur = JeuxBaie.hauteurDefaut,
   }) : allege = allege ?? (type == TypeOuverture.porte ? 0 : 36);
 
+  /// La même ouverture, avec une autre position (distance du début du mur au centre).
+  Ouverture avecPosition(double nouvellePosition) => Ouverture(
+    type: type,
+    nom: nom,
+    largeurCadre: largeurCadre,
+    hauteurCadre: hauteurCadre,
+    allege: allege,
+    position: nouvellePosition,
+    jeuLargeur: jeuLargeur,
+    jeuHauteur: jeuHauteur,
+  );
+
   double get largeurBaie => largeurCadre + jeuLargeur;
   double get hauteurBaie => hauteurCadre + jeuHauteur;
   double get baieG => position - largeurBaie / 2;

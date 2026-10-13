@@ -10,6 +10,9 @@ import '../../services/preferences.dart';
 import 'champs.dart';
 import 'vue_3d.dart';
 
+/// Nombres de clous par étrier proposés en un toucher (le champ accepte les autres).
+const _clousParEtrierCourants = [6, 8, 10, 12, 14, 16];
+
 /// Onglet « Plancher » : forme, solives, sous-plancher et résultats.
 class OngletPlancher extends StatelessWidget {
   final ProjetCharpente projet;
@@ -257,65 +260,84 @@ class OngletPlancher extends StatelessWidget {
       value: _p.etriersBordures,
       onChanged: (v) => _set(_p.copieAvec(etriersBordures: v)),
     ),
-    ExpansionTile(
-      key: const ValueKey('clous_etriers'),
-      tilePadding: EdgeInsets.zero,
+    CheckboxListTile(
+      key: const ValueKey('clous_etriers_inclus'),
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
       title: const Text('Clous d\'étriers'),
       subtitle: Text(
-        '${_p.clousParEtrier} par étrier · boîte de ${_p.clousParBoite} · '
-        'marge ${formatNombre(_p.margeClous, decimales: 0)} %',
+        _p.clousEtriers
+            ? '${_p.clousParEtrier} par étrier · boîte de ${_p.clousParBoite} · '
+                  'marge ${formatNombre(_p.margeClous, decimales: 0)} %'
+            : 'Non comptés dans la commande',
         style: const TextStyle(fontSize: 12),
       ),
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(top: 4, bottom: 8),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: ChampNombre(
-                  key: const ValueKey('clous_par_etrier'),
-                  label: 'Par étrier',
-                  valeur: _p.clousParEtrier.toDouble(),
-                  min: 1,
-                  max: 40,
-                  decimales: 0,
-                  aide: 'LUS28 : 6 + 4',
-                  onChange: (v) =>
-                      _set(_p.copieAvec(clousParEtrier: v.round())),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ChampNombre(
-                  key: const ValueKey('clous_par_boite'),
-                  label: 'Par boîte',
-                  valeur: _p.clousParBoite.toDouble(),
-                  min: 10,
-                  max: 5000,
-                  decimales: 0,
-                  aide: '1 lb de 10d × 1 1/2 po : environ 120',
-                  onChange: (v) => _set(_p.copieAvec(clousParBoite: v.round())),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ChampNombre(
-                  key: const ValueKey('clous_marge'),
-                  label: 'Marge',
-                  valeur: _p.margeClous,
-                  min: 0,
-                  max: 100,
-                  decimales: 0,
-                  suffixe: '%',
-                  onChange: (v) => _set(_p.copieAvec(margeClous: v)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
+      value: _p.clousEtriers,
+      onChanged: (v) => _set(_p.copieAvec(clousEtriers: v ?? true)),
     ),
+    if (_p.clousEtriers) ...[
+      const Text('Clous par étrier'),
+      const SizedBox(height: 4),
+      Wrap(
+        spacing: 6,
+        runSpacing: 4,
+        children: [
+          for (final n in _clousParEtrierCourants)
+            ChoiceChip(
+              key: ValueKey('clous_choix_$n'),
+              label: Text('$n'),
+              selected: _p.clousParEtrier == n,
+              onSelected: (_) => _set(_p.copieAvec(clousParEtrier: n)),
+            ),
+        ],
+      ),
+      Padding(
+        padding: const EdgeInsets.only(top: 8, bottom: 8),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ChampNombre(
+                key: const ValueKey('clous_par_etrier'),
+                label: 'Par étrier',
+                valeur: _p.clousParEtrier.toDouble(),
+                min: 1,
+                max: 40,
+                decimales: 0,
+                aide: 'LUS28 : 6 + 4',
+                onChange: (v) => _set(_p.copieAvec(clousParEtrier: v.round())),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ChampNombre(
+                key: const ValueKey('clous_par_boite'),
+                label: 'Par boîte',
+                valeur: _p.clousParBoite.toDouble(),
+                min: 10,
+                max: 5000,
+                decimales: 0,
+                aide: '1 lb de 10d × 1 1/2 po : environ 120',
+                onChange: (v) => _set(_p.copieAvec(clousParBoite: v.round())),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: ChampNombre(
+                key: const ValueKey('clous_marge'),
+                label: 'Marge',
+                valeur: _p.margeClous,
+                min: 0,
+                max: 100,
+                decimales: 0,
+                suffixe: '%',
+                onChange: (v) => _set(_p.copieAvec(margeClous: v)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ],
   ];
 
   List<Widget> _entremises() => [

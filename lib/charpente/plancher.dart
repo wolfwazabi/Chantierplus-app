@@ -185,6 +185,10 @@ class SpecPlancher {
   /// Poutres, pieux vissés et pattes ; null : sans poutres.
   final SpecPoutres? poutres;
 
+  /// Compter les clous d'étriers dans la commande (faux : on les a déjà ou on les
+  /// achète à part).
+  final bool clousEtriers;
+
   /// Clous par étrier (10 pour un LUS28), clous par boîte (environ 120 pour
   /// 1 lb de 10d × 1 1/2 po) et marge d'achat.
   final int clousParEtrier;
@@ -212,6 +216,7 @@ class SpecPlancher {
     this.entremisesAlternees = false,
     this.coupesSeparees = false,
     this.poutres,
+    this.clousEtriers = true,
     this.clousParEtrier = 10,
     this.clousParBoite = 120,
     this.margeClousPourcent = 5,
@@ -442,9 +447,9 @@ class ResultatPlancher {
   int get nombreRives => rives.length;
 
   /// Boîtes de clous d'étriers à acheter : les clous nécessaires, plus la marge,
-  /// arrondis à la boîte au-dessus (0 sans étrier).
+  /// arrondis à la boîte au-dessus (0 sans étrier, ou si les clous sont exclus).
   int get boitesClousEtriers {
-    if (etriers <= 0) {
+    if (etriers <= 0 || !spec.clousEtriers) {
       return 0;
     }
     final clous =

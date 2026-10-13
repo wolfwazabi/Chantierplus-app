@@ -126,6 +126,24 @@ function normaliserOuverture(o, corr) {
   };
 }
 
+/** Une ouverture que normaliserOuverture garde (les autres sont écartées). */
+const ouvertureReconnue = (o) => estObjet(o) && ["porte", "fenetre"].includes(o.type);
+
+/**
+ * Les ouvertures qui survivent à la normalisation, avec leur position d'origine dans la liste
+ * du modèle : { o, i }. Sert à retrouver une ouverture après le filtrage.
+ */
+function ouverturesRetenues(l) {
+  if (!Array.isArray(l)) return [];
+  return l.slice(0, 30).map((o, i) => ({o, i})).filter(({o}) => ouvertureReconnue(o));
+}
+
+/** Les murs libres qui survivent à la normalisation : { m, i } (position d'origine). */
+function mursLibresRetenus(l) {
+  if (!Array.isArray(l)) return [];
+  return l.slice(0, 40).map((m, i) => ({m, i})).filter(({m}) => estObjet(m));
+}
+
 function normaliserOuvertures(l, corr) {
   if (!Array.isArray(l)) return [];
   return l.slice(0, 30).map((o) => normaliserOuverture(o, corr)).filter(Boolean);
@@ -225,6 +243,7 @@ function normaliserProjet(entree) {
     entremisesAlternees: booleen(p.entremisesAlternees, false),
     coupesSeparees: booleen(p.coupesSeparees, true),
     poutres: normaliserPoutres(p.poutres, corr),
+    clousEtriers: booleen(p.clousEtriers, true),
     clousParEtrier: entier(p.clousParEtrier, {min: 1, max: 40, defaut: 10, nom: "clous par étrier", corr}),
     clousParBoite: entier(p.clousParBoite, {min: 10, max: 5000, defaut: 120, nom: "clous par boîte", corr}),
     margeClous: nombre(p.margeClous, {min: 0, max: 100, defaut: 5, nom: "marge des clous", corr}),
@@ -334,7 +353,8 @@ const SCHEMA_OUTIL = {
                 hauteurPatte: {type: "number", description: "Hauteur de la patte en 6×6 sur chaque pieu, en pouces ; 0 : sans patte."},
               },
             },
-            clousParEtrier: {type: "integer"},
+            clousEtriers: {type: "boolean", description: "Compter les clous d'étriers dans la commande (vrai par défaut)."},
+            clousParEtrier: {type: "integer", description: "Clous par étrier (10 pour un LUS28)."},
             clousParBoite: {type: "integer"},
             margeClous: {type: "number"},
           },
@@ -427,10 +447,14 @@ function construireRequete({texte, projetActuel, modele}) {
 }
 
 /**
- * Interroge l'API et retourne { explication, hypotheses, projet, corrections }.
- * `cle` : clé d'API ; `url` : adresse de l'API ; `fetchImpl` : pour les tests.
+ * Envoie une requête à l'API et retourne le corps JSON de la réponse. Les erreurs deviennent des
+ * messages clairs ; le détail (clé refusée, crédit épuisé…) reste dans `detailInterne`, pour les
+ * journaux du serveur seulement.
+ * `cle` : clé d'API ; `url` : adresse de l'API ; `fetchImpl` : pour les tests ;
+ * `messageRequeteRefusee` : si fourni, une réponse 400 (fichier illisible, trop de pages…) donne ce
+ * message (failed-precondition) plutôt que « indisponible ».
  */
-async function interroger({texte, projetActuel, cle, url, modele, fetchImpl = fetch, delaiMs = 45000}) {
+async function appelerApi({corps, cle, url, fetchImpl = fetch, delaiMs = 45000, messageRequeteRefusee = null}) {
   if (!cle) {
     throw new HttpsError("failed-precondition", "L'assistant IA n'est pas encore activé.");
   }
@@ -441,7 +465,7 @@ async function interroger({texte, projetActuel, cle, url, modele, fetchImpl = fe
     reponse = await fetchImpl(url, {
       method: "POST",
       headers: {"content-type": "application/json", "x-api-key": cle, "anthropic-version": "2023-06-01"},
-      body: JSON.stringify(construireRequete({texte, projetActuel, modele})),
+      body: JSON.stringify(corps),
       signal: controleur.signal,
     });
   } catch (e) {
@@ -453,18 +477,26 @@ async function interroger({texte, projetActuel, cle, url, modele, fetchImpl = fe
     throw new HttpsError("resource-exhausted", "L'assistant est très sollicité. Réessayez dans une minute.");
   }
   if (!reponse.ok) {
-    // Le détail (clé refusée, crédit épuisé…) reste dans les journaux serveur.
     const detail = await reponse.text().catch(() => "");
-    const err = new HttpsError("unavailable", "L'assistant est momentanément indisponible.");
+    const message = reponse.status === 400 && messageRequeteRefusee ?
+      messageRequeteRefusee : "L'assistant est momentanément indisponible.";
+    const err = new HttpsError(reponse.status === 400 && messageRequeteRefusee ? "failed-precondition" : "unavailable", message);
     err.detailInterne = `HTTP ${reponse.status} ${detail.slice(0, 300)}`;
     throw err;
   }
-  let corps;
   try {
-    corps = await reponse.json();
+    return await reponse.json();
   } catch (e) {
     throw new HttpsError("unavailable", "Réponse illisible de l'assistant. Réessayez.");
   }
+}
+
+/**
+ * Interroge l'API et retourne { explication, hypotheses, projet, corrections }.
+ * `cle` : clé d'API ; `url` : adresse de l'API ; `fetchImpl` : pour les tests.
+ */
+async function interroger({texte, projetActuel, cle, url, modele, fetchImpl = fetch, delaiMs = 45000}) {
+  const corps = await appelerApi({corps: construireRequete({texte, projetActuel, modele}), cle, url, fetchImpl, delaiMs});
   const bloc = Array.isArray(corps?.content) ? corps.content.find((b) => b?.type === "tool_use" && b?.name === "definir_projet") : null;
   if (!bloc || !estObjet(bloc.input)) {
     throw new HttpsError("failed-precondition",
@@ -484,4 +516,6 @@ module.exports = {
   ANTHROPIC_API_KEY, URL_API_ANTHROPIC, MODELE_ASSISTANT,
   MAX_TEXTE, MAX_PROJET_ACTUEL,
   normaliserProjet, construireRequete, interroger, PROMPT_SYSTEME, SCHEMA_OUTIL,
+  // Partagés avec la lecture de plans (lecture_plans.js).
+  appelerApi, estObjet, chaine, ouverturesRetenues, mursLibresRetenus, SCHEMA_OUVERTURE,
 };

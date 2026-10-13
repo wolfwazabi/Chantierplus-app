@@ -34,6 +34,7 @@
     "entremisesAlternees": false,
     "coupesSeparees": true,
     "poutres": null,
+    "clousEtriers": true,
     "clousParEtrier": 10,
     "clousParBoite": 120,
     "margeClous": 5.0

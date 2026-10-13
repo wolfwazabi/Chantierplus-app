@@ -1593,6 +1593,216 @@ describe('Assistant de charpente (admin et contremaître ; clé d\'API côté se
 });
 
 // =============================================================================
+describe('Lecture de plans (admin et contremaître ; PDF et photos ; valeurs à confirmer)', () => {
+  const NUM = '880044'; const cid = 'lp-compagnie'; const PIN = '482915';
+  const CLE_ATTENDUE = 'cle-assistant-test-emulateur'; // functions/.secret.local
+  let adm; let plus; let emp; let serveur;
+  const recues = [];
+  let prochaine = null; // { status, corps }
+
+  const PDF = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(300, 0x20)]);
+  const JPEG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(300, 1)]);
+  const fichier = (octets, nom = 'plan.pdf') => ({ nom, donnees: octets.toString('base64') });
+  const donnees = (over = {}) => ({ fichiers: [fichier(PDF, 'rdc.pdf')], ...over });
+
+  const lecture = (over = {}, projetOver = {}) => ({
+    lisible: true,
+    explication: 'Garage de 24 pi × 20 pi.',
+    niveau: 'Rez-de-chaussée',
+    confiance: 'elevee',
+    hypotheses: ['Entraxe de 16 po supposé.'],
+    projet: {
+      plancherActif: true,
+      plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, espacement: 16 },
+      mursActifs: true,
+      murs: {
+        mode: 'contour', hauteur: 97.125,
+        ouverturesContour: { 0: [
+          { type: 'fenetre', nom: 'F1', largeur: 36, hauteur: 48, allege: 36, position: 60 },
+          { type: 'porte', nom: 'P1', largeur: 36, hauteur: 80, position: 120 },
+        ] },
+      },
+      ...projetOver,
+    },
+    valeurs: [
+      { chemin: 'plancher.forme.longueur', lecture: '24\'-0"', niveau: 'lu' },
+      { chemin: 'murs.ouverturesContour.0.0.largeur', lecture: '3\'-0"', niveau: 'lu' },
+    ],
+    ...over,
+  });
+  const sortieModele = (input = lecture()) => ({ content: [{ type: 'tool_use', name: 'lire_plan', input }], stop_reason: 'tool_use' });
+
+  before(async () => {
+    serveur = http.createServer((req, res) => {
+      const morceaux = [];
+      req.on('data', (c) => morceaux.push(c));
+      req.on('end', () => {
+        recues.push({ url: req.url, entetes: req.headers, corps: JSON.parse(Buffer.concat(morceaux).toString('utf8')) });
+        const r = prochaine ?? { status: 200, corps: sortieModele() };
+        res.writeHead(r.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(r.corps));
+      });
+    });
+    await new Promise((ok) => serveur.listen(9777, '127.0.0.1', ok));
+    const fiche = (nom, role, courriel) => ({
+      companyId: cid, nom, role, estProprietaire: false, courriel, pinHash: hacher(cid, PIN),
+    });
+    await adminDb.collection('companies').doc(cid).set({ numero: NUM, nomEntreprise: 'Plans inc.', statut: 'approuvee' });
+    await adminDb.collection('employees').doc('lp-adm').set(fiche('Alex Admin', 'admin', 'lp-adm@exemple.ca'));
+    await adminDb.collection('employees').doc('lp-plus').set(fiche('Paul Contremaître', 'plus', 'lp-plus@exemple.ca'));
+    await adminDb.collection('employees').doc('lp-emp').set(fiche('Marie Employée', 'employe', 'lp-emp@exemple.ca'));
+    adm = await connecter(NUM, 'lp-adm@exemple.ca', PIN);
+    plus = await connecter(NUM, 'lp-plus@exemple.ca', PIN);
+    emp = await connecter(NUM, 'lp-emp@exemple.ca', PIN);
+  });
+  after(async () => { await new Promise((ok) => serveur.close(ok)); });
+  beforeEach(() => { recues.length = 0; prochaine = null; });
+
+  test('contremaître et admin : plan → projet filtré et valeurs vérifiées, avec la clé et le modèle du serveur', async () => {
+    const r = await plus.appeler('lirePlanCharpente', donnees({ precisions: 'Seulement le garage' }));
+    assert.equal(r.explication, 'Garage de 24 pi × 20 pi.');
+    assert.equal(r.niveau, 'Rez-de-chaussée');
+    assert.equal(r.confiance, 'elevee');
+    assert.deepEqual(r.hypotheses, ['Entraxe de 16 po supposé.']);
+    assert.equal(r.projet.v, 1);
+    assert.deepEqual(r.projet.plancher.forme, { type: 'rectangle', longueur: 288, largeur: 240 });
+    assert.equal(r.projet.murs.ouverturesContour['0'].length, 2);
+    assert.deepEqual(r.valeurs.map((v) => [v.chemin, v.niveau, v.verifiee]), [
+      ['plancher.forme.longueur', 'lu', true], ['murs.ouverturesContour.0.0.largeur', 'lu', true],
+    ]);
+    assert.equal(recues.length, 1);
+    assert.equal(recues[0].url, '/v1/messages');
+    assert.equal(recues[0].entetes['x-api-key'], CLE_ATTENDUE);
+    assert.equal(recues[0].corps.model, 'modele-plans-test');
+    assert.deepEqual(recues[0].corps.tool_choice, { type: 'tool', name: 'lire_plan' });
+    const contenu = recues[0].corps.messages[0].content;
+    assert.deepEqual(contenu[1], { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: PDF.toString('base64') } });
+    assert.ok(contenu.at(-1).text.includes('Seulement le garage'));
+    assert.ok(!JSON.stringify(recues[0].corps).includes(CLE_ATTENDUE), 'la clé ne va jamais dans le corps');
+    await adm.appeler('lirePlanCharpente', donnees({ fichiers: [fichier(JPEG, 'photo.jpg')] }));
+    assert.equal(recues.length, 2);
+    assert.equal(recues[1].corps.messages[0].content[1].type, 'image');
+    assert.equal(recues[1].corps.messages[0].content[1].source.media_type, 'image/jpeg');
+  });
+
+  test('une cote mal convertie par le modèle est repérée par le serveur et marquée « à confirmer »', async () => {
+    prochaine = { status: 200, corps: sortieModele(lecture({}, { plancher: { forme: { type: 'rectangle', longueur: 280, largeur: 240 } } })) };
+    const r = await plus.appeler('lirePlanCharpente', donnees());
+    const v = r.valeurs.find((x) => x.chemin === 'plancher.forme.longueur');
+    assert.equal(v.niveau, 'incertain');
+    assert.equal(v.valeurPlan, 288);
+    assert.ok(v.raison.includes('288'));
+  });
+
+  test('valeurs incertaines du modèle et valeurs manquantes : toutes transmises comme « incertain »', async () => {
+    prochaine = {
+      status: 200,
+      corps: sortieModele(lecture({
+        valeurs: [{ chemin: 'murs.ouverturesContour.0.0.hauteur', lecture: null, niveau: 'incertain', raison: 'Chiffre flou sur la photo.' }],
+      }, { murs: { mode: 'contour', hauteur: 97.125, ouverturesContour: { 0: [{ type: 'porte', largeur: 36, hauteur: 80 }] } } })),
+    };
+    const r = await plus.appeler('lirePlanCharpente', donnees());
+    const incertains = r.valeurs.filter((v) => v.niveau === 'incertain').map((v) => v.chemin).sort();
+    assert.deepEqual(incertains, ['murs.ouverturesContour.0.0.hauteur', 'murs.ouverturesContour.0.0.position']);
+  });
+
+  test('employé, session absente : refusé, aucun appel à l\'API', async () => {
+    await rejette(emp.appeler('lirePlanCharpente', donnees()), 'permission-denied');
+    const sansSession = await appareil();
+    await rejette(sansSession.appeler('lirePlanCharpente', donnees()), 'permission-denied');
+    assert.equal(recues.length, 0);
+  });
+
+  test('fichiers ou précisions invalides : refusés avant l\'API, sans compter dans la limite', async () => {
+    const gif = Buffer.concat([Buffer.from('GIF89a'), Buffer.alloc(300, 1)]);
+    const gros = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(8 * 1024 * 1024, 0x20)]); // juste au-dessus de 8 Mo
+    const sept = Buffer.concat([Buffer.from('%PDF-1.7\n'), Buffer.alloc(7 * 1024 * 1024, 0x20)]);
+    const mauvais = [
+      {}, { fichiers: null }, { fichiers: [] }, { fichiers: 'x' },
+      { fichiers: Array(6).fill(fichier(PDF)) },
+      { fichiers: [fichier(gif, 'a.gif')] },
+      { fichiers: [fichier(Buffer.from('bonjour'), 'a.pdf')] },
+      { fichiers: [{ nom: 'x.pdf', donnees: 'pas du base64 !' }] },
+      { fichiers: [{ nom: 'x.pdf' }] },
+      { fichiers: [fichier(gros, 'gros.pdf')] },
+      { fichiers: [fichier(sept, 'a.pdf'), fichier(sept, 'b.pdf')] },
+      donnees({ precisions: 42 }),
+      donnees({ precisions: 'x'.repeat(501) }),
+    ];
+    for (const d of mauvais) await rejette(plus.appeler('lirePlanCharpente', d), 'invalid-argument');
+    assert.equal(recues.length, 0);
+    // Aucune de ces tentatives n'a compté : 6 vraies lectures passent encore.
+    for (let i = 0; i < 6; i++) await plus.appeler('lirePlanCharpente', donnees());
+    assert.equal(recues.length, 6);
+  });
+
+  test('sortie du modèle filtrée : champs dangereux et chemins interdits jamais transmis', async () => {
+    prochaine = {
+      status: 200,
+      corps: sortieModele(lecture({
+        valeurs: [
+          { chemin: 'plancher.forme.longueur', niveau: 'lu', lecture: '24\'-0"', raison: 'ok' },
+          { chemin: '__proto__.x', niveau: 'incertain' },
+          { chemin: 'secret.cle', niveau: 'incertain' },
+        ],
+      }, { evil: 'curl x', plancher: { forme: { type: 'rectangle', longueur: 288, largeur: 240 }, section: 'pirate' } })),
+    };
+    const r = await plus.appeler('lirePlanCharpente', donnees());
+    assert.equal(r.projet.evil, undefined);
+    assert.equal(r.projet.plancher.section, '2×10');
+    assert.deepEqual(r.valeurs.map((v) => v.chemin), ['plancher.forme.longueur']);
+  });
+
+  test('erreurs de l\'API : messages clairs, aucune fuite de la clé ni du détail', async () => {
+    prochaine = { status: 429, corps: { error: { message: 'rate limited' } } };
+    await rejette(plus.appeler('lirePlanCharpente', donnees()), 'resource-exhausted');
+    prochaine = { status: 400, corps: { error: { message: 'PDF is password protected' } } };
+    await assert.rejects(plus.appeler('lirePlanCharpente', donnees()), (e) => {
+      assert.equal(e.code, 'functions/failed-precondition');
+      assert.ok(e.message.includes('PDF protégé') && !e.message.includes('password protected'));
+      return true;
+    });
+    prochaine = { status: 401, corps: { error: { message: `invalid x-api-key ${CLE_ATTENDUE}` } } };
+    await assert.rejects(plus.appeler('lirePlanCharpente', donnees()), (e) => {
+      assert.equal(e.code, 'functions/unavailable');
+      assert.ok(!e.message.includes(CLE_ATTENDUE) && !e.message.includes('x-api-key'));
+      return true;
+    });
+    prochaine = { status: 200, corps: { content: [{ type: 'text', text: 'Je ne peux pas.' }] } };
+    await rejette(plus.appeler('lirePlanCharpente', donnees()), 'failed-precondition');
+    prochaine = { status: 200, corps: { ...sortieModele(), stop_reason: 'max_tokens' } };
+    await rejette(plus.appeler('lirePlanCharpente', donnees()), 'failed-precondition');
+  });
+
+  test('document sans plan, ou sans plancher ni mur : refusé avec une raison', async () => {
+    prochaine = { status: 200, corps: sortieModele({ lisible: false, probleme: 'C\'est une facture.' }) };
+    await assert.rejects(plus.appeler('lirePlanCharpente', donnees()), (e) => {
+      assert.equal(e.code, 'functions/failed-precondition');
+      assert.ok(e.message.includes('facture'));
+      return true;
+    });
+    prochaine = { status: 200, corps: sortieModele(lecture({}, { plancherActif: false, mursActifs: false })) };
+    await rejette(plus.appeler('lirePlanCharpente', donnees()), 'failed-precondition');
+  });
+
+  test('limite : 6 lectures par heure et par employé', async () => {
+    for (let i = 0; i < 6; i++) await plus.appeler('lirePlanCharpente', donnees());
+    await rejette(plus.appeler('lirePlanCharpente', donnees()), 'resource-exhausted');
+    assert.equal(recues.length, 6, 'la 7e demande n\'atteint jamais l\'API');
+    // Un autre employé n'est pas touché.
+    await adm.appeler('lirePlanCharpente', donnees());
+  });
+
+  test('limite : 30 lectures par jour pour toute la compagnie', async () => {
+    await adminDb.collection('limites_connexion').doc(`plan_j_${cid}`).set(
+      { compte: 30, debut: new Date(), expireLe: new Date(Date.now() + 24 * 3600 * 1000) });
+    await rejette(adm.appeler('lirePlanCharpente', donnees()), 'resource-exhausted');
+    await rejette(plus.appeler('lirePlanCharpente', donnees()), 'resource-exhausted');
+    assert.equal(recues.length, 0);
+  });
+});
+
+// =============================================================================
 describe('Connexion web : NIP, puis code reçu par courriel (admins et contremaîtres seulement)', () => {
   const NUM = '660001'; const cid = 'cw-compagnie'; const PIN = '482915';
   const ADM = 'cw-admin@exemple.ca'; const PLUS = 'cw-plus@exemple.ca'; const EMP = 'cw-emp@exemple.ca';
@@ -2925,13 +3135,14 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
   // Compteurs anti-abus : semés juste avant l'appel (le beforeEach global les vide).
   async function semerLimites(cid) {
     for (const suffixe of ['admin', 'plus', 'emp']) {
-      for (const p of ['feuille', 'corrfeuille', 'recalcul', 'export', 'nip', 'assistant_h', 'connweb', 'renvoi', 'reactiver']) {
+      for (const p of ['feuille', 'corrfeuille', 'recalcul', 'export', 'nip', 'assistant_h', 'plan_h', 'connweb', 'renvoi', 'reactiver']) {
         await adminDb.collection('limites_connexion').doc(`${p}_${cid}-${suffixe}`).set({ compte: 1 });
       }
     }
     await adminDb.collection('limites_connexion').doc(`co_${cid}`).set({ compte: 1 });
     await adminDb.collection('limites_connexion').doc(`assistant_j_${cid}`).set({ compte: 1 });
-    assert.equal(await limitesDe(cid), 3 * 9 + 2);
+    await adminDb.collection('limites_connexion').doc(`plan_j_${cid}`).set({ compte: 1 });
+    assert.equal(await limitesDe(cid), 3 * 10 + 3);
   }
 
   const etatIntact = async (cid) => {
@@ -3025,7 +3236,7 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
     // La compagnie témoin et celle du Proprio n'ont pas bougé.
     await etatIntact(TEMOIN);
     assert.equal(await compter('sessions', TEMOIN), sessionsTemoin);
-    assert.equal(await limitesDe(TEMOIN), 3 * 9 + 2);
+    assert.equal(await limitesDe(TEMOIN), 3 * 10 + 3);
     assert.equal(await existe('config/proprio_app'), true);
     assert.equal((await adminDb.collection('companies').where('numero', '==', numeroS).get()).size, 1);
 

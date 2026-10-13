@@ -18,7 +18,7 @@ description en paramètres.
   `exemples_reels_plancher.md`) : côté de la maison (sa rive reste simple, les
   autres sont doublées ; si elle est faite de plusieurs morceaux, elle est doublée
   et les joints sont alternés), étriers seulement sur les solives intérieures,
-  clous d'étriers (par étrier et par boîte, avec marge), entremises automatiques
+  clous d'étriers (case à cocher pour les compter ou non ; nombre par étrier au choix : 6, 8, 10, 12, 14, 16 ou autre ; par boîte, avec marge), entremises automatiques
   (une rangée chaque fois que la portée dépasse 7 à 10 pi) en pose alternée, coupes
   séparées (solives, rives et entremises chacune dans leurs planches), poutres de
   plusieurs plis en bois traité sur toute la largeur, pieux (nombre, premier à
@@ -30,12 +30,15 @@ description en paramètres.
   (baie = dormant + 1/2 à 1 1/2 po en largeur et 1 à 1 3/4 po en hauteur).
 - **Vue 3D** : couches du plancher (solives → + sous-plancher) et des murs
   (ossature → + feuilles → + membrane → + fourrures → + revêtement) ; toucher une
-  pièce affiche sa mesure et sa coupe (feuille de départ, longueur à la pointe
-  longue des coupes d'angle, découpes d'ouverture…) ; cotes ; dessus / face.
+  pièce affiche sa mesure en bref dans une petite pastille à côté d'elle, et sa fiche
+  complète (feuille de départ, longueur à la pointe longue des coupes d'angle,
+  découpes d'ouverture…) sous la vue : on descend pour la lire, le dessin ne
+  rapetisse jamais ; cotes ; dessus / face.
 - **Commande** : liste d'achat regroupée (même section = une ligne), lignes
   ajoutées à la main, copie, courriel, et enregistrement par chantier
   (`chantier_commandes` : brouillon → commandée → reçue, calcul rouvrable).
 - **Assistant IA** : une description en français devient un projet validé.
+- **Calcul à partir d'un plan** (PDF ou photos) : voir `lecture_plans.md`.
 
 ## Conventions de calcul
 

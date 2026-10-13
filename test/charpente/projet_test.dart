@@ -427,6 +427,29 @@ void mainPlancherReel() {
       );
     });
 
+    test('la case des clous d\'étriers : décochée, elle est conservée', () {
+      final j = jsonDecode(
+        jsonEncode(
+          const ProjetCharpente(
+            plancher: ParametresPlancher(clousEtriers: false),
+          ).toJson(),
+        ),
+      );
+      expect((j['plancher'] as Map)['clousEtriers'], isFalse);
+      expect(ProjetCharpente.fromJson(j).plancher.clousEtriers, isFalse);
+      // Cochée par défaut.
+      expect(
+        (const ProjetCharpente().toJson()['plancher'] as Map)['clousEtriers'],
+        isTrue,
+      );
+    });
+
+    test('une valeur invalide pour la case est refusée', () {
+      final j = jsonDecode(jsonEncode(const ProjetCharpente().toJson())) as Map;
+      (j['plancher'] as Map)['clousEtriers'] = 'oui';
+      expect(() => ProjetCharpente.fromJson(j), throwsFormatException);
+    });
+
     test('sans poutres : null dans le JSON et à la relecture', () {
       final j = const ProjetCharpente().toJson();
       expect((j['plancher'] as Map)['poutres'], isNull);
@@ -447,6 +470,7 @@ void mainPlancherReel() {
         'entremisesAlternees',
         'coupesSeparees',
         'poutres',
+        'clousEtriers',
         'clousParEtrier',
         'clousParBoite',
         'margeClous',
@@ -459,6 +483,11 @@ void mainPlancherReel() {
       expect(p.entremisesAuto, isFalse);
       expect(p.coupesSeparees, isFalse);
       expect(p.poutres, isNull);
+      expect(
+        p.clousEtriers,
+        isTrue,
+        reason: 'avant la case, les clous étaient comptés',
+      );
       expect(p.clousParEtrier, 10);
       expect(p.clousParBoite, 120);
     });

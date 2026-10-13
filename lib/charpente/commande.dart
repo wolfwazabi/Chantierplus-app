@@ -229,16 +229,18 @@ Commande construireCommande({
           usage: 'Plancher',
         ),
       );
-      // Clous d'étriers : les clous nécessaires plus la marge, en boîtes.
-      brutes.add(
-        LigneCommande(
-          categorie: CategorieCommande.quincaillerie,
-          article:
-              'Clous d\'étriers 10d × 1 1/2 po (boîte d\'environ ${plancher.spec.clousParBoite})',
-          quantite: plancher.boitesClousEtriers.toDouble(),
-          usage: 'Plancher',
-        ),
-      );
+      // Clous d'étriers : les clous nécessaires plus la marge, en boîtes (si la case est cochée).
+      if (plancher.boitesClousEtriers > 0) {
+        brutes.add(
+          LigneCommande(
+            categorie: CategorieCommande.quincaillerie,
+            article:
+                'Clous d\'étriers 10d × 1 1/2 po (boîte d\'environ ${plancher.spec.clousParBoite})',
+            quantite: plancher.boitesClousEtriers.toDouble(),
+            usage: 'Plancher',
+          ),
+        );
+      }
     }
     final poutres = plancher.poutres;
     if (poutres != null) {

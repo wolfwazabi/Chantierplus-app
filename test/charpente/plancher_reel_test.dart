@@ -11,6 +11,7 @@ import 'package:construction_app/charpente/commande.dart';
 import 'package:construction_app/charpente/geometrie.dart';
 import 'package:construction_app/charpente/mur.dart' show section2x8;
 import 'package:construction_app/charpente/plancher.dart';
+import 'package:construction_app/charpente/projet.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 SpecPlancher _spec(
@@ -388,6 +389,82 @@ void main() {
         );
       },
     );
+  });
+
+  group('clous d\'étriers : case à cocher', () {
+    ResultatPlancher calcul({required bool clous, int parEtrier = 10}) =>
+        calculerPlancher(
+          SpecPlancher(
+            forme: Polygone.rectangle(180, 90),
+            etriers: ModeEtriers.deuxBouts,
+            clousEtriers: clous,
+            clousParEtrier: parEtrier,
+          ),
+        );
+
+    test('par défaut, les clous sont comptés', () {
+      final r = calcul(clous: true);
+      expect(r.etriers, greaterThan(0));
+      expect(r.boitesClousEtriers, greaterThan(0));
+    });
+
+    test('décochée : aucune boîte, mais les étriers restent comptés', () {
+      final r = calcul(clous: false);
+      expect(r.etriers, calcul(clous: true).etriers);
+      expect(r.boitesClousEtriers, 0);
+    });
+
+    test(
+      'le nombre de clous par étrier change les boîtes, pas les étriers',
+      () {
+        final peu = calcul(clous: true, parEtrier: 6);
+        final beaucoup = calcul(clous: true, parEtrier: 16);
+        expect(peu.etriers, beaucoup.etriers);
+        expect(
+          beaucoup.boitesClousEtriers,
+          greaterThan(peu.boitesClousEtriers),
+        );
+        // Clous = étriers × par étrier × 1,05 ; une boîte de 120.
+        expect(
+          beaucoup.boitesClousEtriers,
+          (beaucoup.etriers * 16 * 1.05 / 120 - 1e-9).ceil(),
+        );
+      },
+    );
+
+    test('la commande : ligne de clous seulement si la case est cochée', () {
+      Map<String, double> lignes(bool clous) => {
+        for (final l in calculerProjet(
+          ProjetCharpente(
+            plancher: ParametresPlancher(
+              forme: const FormeRectangle(180, 90),
+              clousEtriers: clous,
+            ),
+          ),
+        ).commande.lignes)
+          l.article: l.quantite,
+      };
+      final avec = lignes(true);
+      final sans = lignes(false);
+      expect(avec.keys.any((k) => k.startsWith('Clous d')), isTrue);
+      expect(sans.keys.any((k) => k.startsWith('Clous d')), isFalse);
+      // Les étriers eux-mêmes restent dans la commande.
+      expect(
+        sans['Étrier de solive pour 2×10'],
+        avec['Étrier de solive pour 2×10'],
+      );
+      expect(sans['Étrier de solive pour 2×10'], greaterThan(0));
+    });
+
+    test('sans étrier : pas de clous, case cochée ou non', () {
+      for (final clous in [true, false]) {
+        final r = calculerPlancher(
+          SpecPlancher(forme: Polygone.rectangle(180, 90), clousEtriers: clous),
+        );
+        expect(r.etriers, 0);
+        expect(r.boitesClousEtriers, 0);
+      }
+    });
   });
 
   group('rives et poutres faites de plusieurs morceaux', () {

@@ -25,6 +25,7 @@ const dossier = require("./src/dossier_chantier");
 const xlsx = require("./src/xlsx");
 const PAGE_CREER_NIP = require("./src/page_creer_nip");
 const assistantCharpente = require("./src/assistant_charpente");
+const lecturePlans = require("./src/lecture_plans");
 const suppression = require("./src/suppression_compagnie");
 const archivage = require("./src/anciens_employes");
 const nipPrive = require("./src/nip_prive");
@@ -1663,6 +1664,57 @@ exports.assistantCharpente = onCall(
         return resultat;
       } catch (e) {
         if (e.detailInterne) logger.error("Assistant charpente : échec de l'API", {detail: e.detailInterne});
+        throw e;
+      }
+    },
+);
+
+// =============================================================================
+// Lecture de plans : un PDF ou des photos de plans deviennent un projet à confirmer
+// =============================================================================
+
+// Comme l'assistant, le modèle lit et convertit : l'application calcule le bois. Il signale aussi
+// les valeurs qu'il juge incertaines ; le serveur y ajoute celles dont la cote imprimée ne
+// correspond pas à la valeur lue ou qui manquent. L'utilisateur confirme à la main avant
+// d'appliquer. Les plans ne sont pas conservés : ils servent à cet appel seulement.
+// Accès : admin et contremaître. Même clé d'API (ANTHROPIC_API_KEY) que l'assistant.
+exports.lirePlanCharpente = onCall(
+    {secrets: [assistantCharpente.ANTHROPIC_API_KEY], timeoutSeconds: 240, memory: "1GiB"},
+    async (request) => {
+      verifierAppCheck(request, "lirePlanCharpente");
+      const ctx = await contexteEmploye(request);
+      if (!["admin", "plus"].includes(ctx.employe.role)) {
+        throw new HttpsError("permission-denied", "Accès réservé aux admins et aux contremaîtres.");
+      }
+      const fichiers = lecturePlans.validerFichiers(request.data?.fichiers);
+      const precisions = texte(request.data?.precisions, "precisions", {min: 0, max: lecturePlans.MAX_PRECISIONS});
+
+      // Limites (une lecture coûte plus cher qu'une description) : par employé (6 par heure) et par
+      // compagnie (30 par jour).
+      const parHeure = limiteur(`plan_h_${ctx.employeeId}`, 6, HEURE);
+      const parJour = limiteur(`plan_j_${ctx.companyId}`, 30, JOUR);
+      await parHeure.verifier();
+      await parJour.verifier();
+      await parHeure.compter();
+      await parJour.compter();
+
+      try {
+        const resultat = await lecturePlans.lirePlan({
+          fichiers,
+          precisions,
+          cle: assistantCharpente.ANTHROPIC_API_KEY.value(),
+          url: assistantCharpente.URL_API_ANTHROPIC.value(),
+          modele: lecturePlans.MODELE_PLANS.value(),
+        });
+        logger.info("Lecture de plan", {
+          companyId: ctx.companyId,
+          fichiers: fichiers.length,
+          octets: fichiers.reduce((a, f) => a + f.octets, 0),
+          aConfirmer: resultat.valeurs.filter((v) => v.niveau === "incertain").length,
+        });
+        return resultat;
+      } catch (e) {
+        if (e.detailInterne) logger.error("Lecture de plan : échec de l'API", {detail: e.detailInterne});
         throw e;
       }
     },

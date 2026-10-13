@@ -3,15 +3,20 @@ import 'dart:io';
 
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:construction_app/charpente/geometrie.dart';
+import 'package:construction_app/charpente/lecture_plan.dart';
+import 'package:construction_app/charpente/projet.dart';
 import 'package:construction_app/charpente/plancher.dart';
 import 'package:construction_app/charpente/unites.dart';
 import 'package:construction_app/screens/charpente/assistant_charpente.dart';
 import 'package:construction_app/screens/charpente/charpente_screen.dart';
 import 'package:construction_app/screens/materiaux/calcul_chantier.dart';
 import 'package:construction_app/services/preferences.dart';
+import 'package:construction_app/services/selecteur_plans.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../doubles/faux_plans.dart';
 
 Widget _app(Widget enfant) => MaterialApp(home: Scaffold(body: enfant));
 
@@ -474,6 +479,173 @@ void main() {
       await t.pumpAndSettle();
       expect(find.textContaining('4 × 9 pi'), findsWidgets);
       expect(find.textContaining('Isobrace'), findsWidgets);
+    });
+  });
+
+  group('calcul à partir d\'un plan', () {
+    Widget ecran(
+      Map<String, dynamic> reponse, {
+      bool connecte = true,
+      SelecteurPlans? selecteur,
+    }) => _app(
+      CharpenteScreen(
+        companyId: 'A',
+        chantierId: 'chA',
+        connecte: connecte,
+        listeEnregistrees: const Text('(aucune commande)'),
+        appelLecturePlan: (fichiers, precisions) async => reponse,
+        selecteurPlans:
+            selecteur ??
+            SelecteurPlansFaux(
+              fichiers: [
+                ChoixPlans([planFaux('plan.pdf')]),
+              ],
+            ),
+      ),
+    );
+
+    String nom(WidgetTester t) => t
+        .widget<TextField>(find.byKey(const ValueKey('charpente_nom')))
+        .controller!
+        .text;
+
+    int ongletChoisi(WidgetTester t) =>
+        t.widget<TabBar>(find.byType(TabBar)).controller!.index;
+
+    /// Lit le plan jusqu'au bouton « Appliquer » (valeurs incertaines confirmées).
+    Future<void> lireEtConfirmer(WidgetTester t) async {
+      await t.tap(find.byKey(const ValueKey('charpente_lire_plan')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('plan_choisir_fichier')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('plan_analyser')));
+      await t.pumpAndSettle();
+      for (final c in [
+        'murs.ouverturesContour.1.0.largeur',
+        'murs.ouverturesContour.1.0.allege',
+      ]) {
+        await t.tap(find.byKey(ValueKey('confirmer_$c')));
+        await t.pumpAndSettle();
+      }
+    }
+
+    testWidgets('le bouton existe ; hors ligne il est désactivé', (t) async {
+      await _ouvrir(t, ecran(lectureGarage()));
+      expect(
+        t
+            .widget<IconButton>(
+              find.byKey(const ValueKey('charpente_lire_plan')),
+            )
+            .onPressed,
+        isNotNull,
+      );
+      await _ouvrir(t, ecran(lectureGarage(), connecte: false));
+      expect(
+        t
+            .widget<IconButton>(
+              find.byKey(const ValueKey('charpente_lire_plan')),
+            )
+            .onPressed,
+        isNull,
+      );
+    });
+
+    testWidgets(
+      'plan lu et confirmé : le calcul est remplacé et la commande s\'ouvre',
+      (t) async {
+        await _ouvrir(t, ecran(lectureGarage()));
+        await lireEtConfirmer(t);
+        await t.tap(find.byKey(const ValueKey('plan_appliquer')));
+        await t.pumpAndSettle();
+        expect(find.text('Plan lu'), findsNothing);
+        expect(nom(t), 'Garage Tremblay');
+        expect(ongletChoisi(t), 3);
+        // La commande affichée est celle du plan : chaque ligne calculée y figure.
+        final attendue = calculerProjet(
+          LecturePlan.depuis(lectureGarage())
+              .modifier(
+                'murs.ouverturesContour.1.0.largeur',
+                24,
+              ) // valeur confirmée telle quelle
+              .projet,
+        ).commande;
+        expect(attendue.estVide, isFalse);
+        for (final l in attendue.lignes) {
+          expect(
+            find.textContaining(l.article),
+            findsWidgets,
+            reason: l.article,
+          );
+        }
+        await _onglet(t, 'Murs');
+        expect(find.text('Contour du plancher'), findsOneWidget);
+        await _onglet(t, 'Plancher');
+        await _voir(t, find.text('Résultats'));
+        // 24 pi × 20 pi à 16 po c/c : le plancher a été recalculé avec la forme du plan.
+        expect(
+          find.textContaining(formatLongueur(288, metrique: false)),
+          findsWidgets,
+        );
+      },
+    );
+
+    testWidgets(
+      'rien n\'est appliqué tant qu\'on ne confirme pas ; retour sans appliquer',
+      (t) async {
+        await _ouvrir(t, ecran(lectureGarage()));
+        await t.tap(find.byKey(const ValueKey('charpente_lire_plan')));
+        await t.pumpAndSettle();
+        await t.tap(find.byKey(const ValueKey('plan_choisir_fichier')));
+        await t.pumpAndSettle();
+        await t.tap(find.byKey(const ValueKey('plan_analyser')));
+        await t.pumpAndSettle();
+        expect(find.text('Plan lu'), findsOneWidget);
+        await t.pageBack();
+        await t.pumpAndSettle();
+        expect(nom(t), isEmpty);
+        expect(ongletChoisi(t), 0);
+      },
+    );
+
+    testWidgets('calcul en cours : confirmation avant de le remplacer', (
+      t,
+    ) async {
+      await _ouvrir(t, ecran(lectureGarage()));
+      await t.enterText(
+        find.byKey(const ValueKey('charpente_nom')),
+        'Mon projet',
+      );
+      await t.pumpAndSettle();
+      await lireEtConfirmer(t);
+      await t.tap(find.byKey(const ValueKey('plan_appliquer')));
+      await t.pumpAndSettle();
+      expect(find.text('Remplacer le calcul en cours ?'), findsOneWidget);
+      await t.tap(find.text('Annuler'));
+      await t.pumpAndSettle();
+      expect(find.text('Plan lu'), findsOneWidget);
+      await t.tap(find.byKey(const ValueKey('plan_appliquer')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('plan_remplacer')));
+      await t.pumpAndSettle();
+      expect(nom(t), 'Garage Tremblay');
+    });
+
+    testWidgets('un plan sans nom garde le nom déjà saisi', (t) async {
+      final r = lectureGarage();
+      (r['projet'] as Map)['nom'] = '';
+      await _ouvrir(t, ecran(r));
+      await t.enterText(
+        find.byKey(const ValueKey('charpente_nom')),
+        'Mon projet',
+      );
+      await t.pumpAndSettle();
+      await lireEtConfirmer(t);
+      await t.tap(find.byKey(const ValueKey('plan_appliquer')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('plan_remplacer')));
+      await t.pumpAndSettle();
+      expect(nom(t), 'Mon projet');
+      expect(ongletChoisi(t), 3);
     });
   });
 

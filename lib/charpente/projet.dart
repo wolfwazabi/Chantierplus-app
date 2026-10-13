@@ -224,7 +224,9 @@ class ParametresPlancher {
   /// Poutres, pieux et pattes ; null : sans.
   final ParametresPoutres? poutres;
 
-  /// Clous d'étriers : par étrier, par boîte et marge d'achat (%).
+  /// Clous d'étriers : compter ou non dans la commande ; par étrier, par boîte et marge
+  /// d'achat (%).
+  final bool clousEtriers;
   final int clousParEtrier;
   final int clousParBoite;
   final double margeClous;
@@ -251,6 +253,7 @@ class ParametresPlancher {
     this.entremisesAlternees = false,
     this.coupesSeparees = true,
     this.poutres,
+    this.clousEtriers = true,
     this.clousParEtrier = 10,
     this.clousParBoite = 120,
     this.margeClous = 5,
@@ -276,6 +279,7 @@ class ParametresPlancher {
     bool? entremisesAlternees,
     bool? coupesSeparees,
     ParametresPoutres? Function()? poutres,
+    bool? clousEtriers,
     int? clousParEtrier,
     int? clousParBoite,
     double? margeClous,
@@ -302,6 +306,7 @@ class ParametresPlancher {
     entremisesAlternees: entremisesAlternees ?? this.entremisesAlternees,
     coupesSeparees: coupesSeparees ?? this.coupesSeparees,
     poutres: poutres != null ? poutres() : this.poutres,
+    clousEtriers: clousEtriers ?? this.clousEtriers,
     clousParEtrier: clousParEtrier ?? this.clousParEtrier,
     clousParBoite: clousParBoite ?? this.clousParBoite,
     margeClous: margeClous ?? this.margeClous,
@@ -328,6 +333,7 @@ class ParametresPlancher {
     entremisesAlternees: entremisesAlternees,
     coupesSeparees: coupesSeparees,
     poutres: poutres?.versSpec(),
+    clousEtriers: clousEtriers,
     clousParEtrier: clousParEtrier,
     clousParBoite: clousParBoite,
     margeClousPourcent: margeClous,
@@ -429,6 +435,7 @@ class ProjetCharpente {
       'entremisesAlternees': plancher.entremisesAlternees,
       'coupesSeparees': plancher.coupesSeparees,
       'poutres': plancher.poutres?.toJson(),
+      'clousEtriers': plancher.clousEtriers,
       'clousParEtrier': plancher.clousParEtrier,
       'clousParBoite': plancher.clousParBoite,
       'margeClous': plancher.margeClous,
@@ -506,6 +513,8 @@ class ProjetCharpente {
       poutres: p['poutres'] == null
           ? null
           : ParametresPoutres.fromJson(p['poutres']),
+      // Projet enregistré avant la case : les clous étaient toujours comptés.
+      clousEtriers: _boolOu(p['clousEtriers'], true),
       clousParEtrier: _entierOu(p['clousParEtrier'], 1, 40, 10),
       clousParBoite: _entierOu(p['clousParBoite'], 10, 5000, 120),
       margeClous: _numOu(p['margeClous'], 0, 100, 5),

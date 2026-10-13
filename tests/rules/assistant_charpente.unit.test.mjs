@@ -231,10 +231,27 @@ describe('normaliserProjet : sortie du modèle', () => {
     assert.equal(a.normaliserProjet({ plancher: { coteMaison: null } }).projet.plancher.coteMaison, null);
   });
 
+  test('clous d\'étriers : case cochée par défaut ; seul un vrai booléen la décoche', () => {
+    const lire = (v) => a.normaliserProjet({ plancher: { clousEtriers: v } }).projet.plancher.clousEtriers;
+    assert.equal(lire(undefined), true);
+    assert.equal(lire(true), true);
+    assert.equal(lire(false), false);
+    // Une valeur qui n'est pas un booléen ne décoche rien : on garde le défaut.
+    for (const v of [null, 0, 'false', 'non', [], {}]) assert.equal(lire(v), true, JSON.stringify(v));
+    assert.equal(a.normaliserProjet({}).projet.plancher.clousEtriers, true);
+    // Le nombre de clous par étrier reste borné de 1 à 40.
+    const nombre = (v) => a.normaliserProjet({ plancher: { clousParEtrier: v } }).projet.plancher.clousParEtrier;
+    assert.equal(nombre(6), 6);
+    assert.equal(nombre(16), 16);
+    assert.equal(nombre(0), 10);
+    assert.equal(nombre(41), 10);
+    assert.equal(nombre(7.5), 10);
+  });
+
   test('le schéma de l\'outil et la consigne connaissent les réglages du plancher sur pieux', () => {
     const props = a.SCHEMA_OUTIL.properties.projet.properties.plancher.properties;
     for (const cle of ['coteMaison', 'etriersBordures', 'entremisesAuto', 'entremisesEspacement',
-      'entremisesAlternees', 'coupesSeparees', 'poutres', 'clousParEtrier', 'clousParBoite', 'margeClous']) {
+      'entremisesAlternees', 'coupesSeparees', 'poutres', 'clousEtriers', 'clousParEtrier', 'clousParBoite', 'margeClous']) {
       assert.ok(props[cle], cle);
     }
     assert.match(a.PROMPT_SYSTEME, /Conserve tel quel tout champ du projet actuel/);

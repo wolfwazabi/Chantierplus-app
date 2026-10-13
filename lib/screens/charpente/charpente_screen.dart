@@ -7,9 +7,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../charpente/commande.dart';
 import '../../charpente/projet.dart';
 import '../../services/preferences.dart';
+import '../../services/selecteur_plans.dart';
 import '../../services/theme_compagnie.dart';
 import 'assistant_charpente.dart';
 import 'champs.dart';
+import 'lire_plan_screen.dart';
 import 'onglet_commande.dart';
 import 'onglet_murs.dart';
 import 'onglet_plancher.dart';
@@ -32,6 +34,14 @@ class CharpenteScreen extends StatefulWidget {
   @visibleForTesting
   final AppelAssistant appelAssistant;
 
+  /// Remplace l'appel au serveur de la lecture de plans (tests).
+  @visibleForTesting
+  final AppelLecturePlan appelLecturePlan;
+
+  /// Remplace le choix des fichiers du plan (tests).
+  @visibleForTesting
+  final SelecteurPlans selecteurPlans;
+
   const CharpenteScreen({
     super.key,
     required this.companyId,
@@ -39,6 +49,8 @@ class CharpenteScreen extends StatefulWidget {
     required this.connecte,
     this.listeEnregistrees,
     this.appelAssistant = appelAssistantParDefaut,
+    this.appelLecturePlan = appelLecturePlanParDefaut,
+    this.selecteurPlans = const SelecteurPlansReel(),
   });
 
   @override
@@ -191,6 +203,32 @@ class _CharpenteScreenState extends State<CharpenteScreen>
     }
   }
 
+  /// Le calcul en cours n'est plus le projet vide : le remplacer fait perdre du travail.
+  bool get _aDuTravail =>
+      jsonEncode(_projet.toJson()) !=
+      jsonEncode(const ProjetCharpente().toJson());
+
+  /// Calcul à partir d'un plan : l'écran de lecture rend le projet confirmé, qui remplace le
+  /// calcul en cours ; on va directement à la commande.
+  Future<void> _lirePlan() async {
+    final p = await Navigator.of(context).push<ProjetCharpente>(
+      MaterialPageRoute(
+        builder: (_) => LirePlanScreen(
+          appeler: widget.appelLecturePlan,
+          selecteur: widget.selecteurPlans,
+          calculExistant: _aDuTravail,
+        ),
+      ),
+    );
+    if (p != null && mounted) {
+      // Le nom du plan, sinon celui qu'on avait déjà.
+      final nom = p.nom.isEmpty ? _nom.text : p.nom;
+      _nom.text = nom;
+      _changer(p.copieAvec(nom: nom));
+      _onglets.animateTo(3);
+    }
+  }
+
   Future<void> _nouveau() async {
     final ok = await showDialog<bool>(
       context: context,
@@ -252,6 +290,12 @@ class _CharpenteScreenState extends State<CharpenteScreen>
                 tooltip: 'Assistant IA',
                 icon: const Icon(Icons.auto_awesome),
                 onPressed: widget.connecte ? _assistant : null,
+              ),
+              IconButton(
+                key: const ValueKey('charpente_lire_plan'),
+                tooltip: 'Calculer à partir d\'un plan',
+                icon: const Icon(Icons.upload_file),
+                onPressed: widget.connecte ? _lirePlan : null,
               ),
               IconButton(
                 key: const ValueKey('charpente_nouveau'),

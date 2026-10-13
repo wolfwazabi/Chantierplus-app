@@ -1,0 +1,203 @@
+{
+  "explication": "Garage de 24 pi × 20 pi. La toiture du plan est ignorée.",
+  "hypotheses": [
+    "Entraxe des solives de 16 po supposé.",
+    "Côté 0 = longueur du bas du plan."
+  ],
+  "projet": {
+    "v": 1,
+    "nom": "Garage Tremblay",
+    "plancherActif": true,
+    "plancher": {
+      "forme": {
+        "type": "rectangle",
+        "longueur": 288,
+        "largeur": 240
+      },
+      "espacement": 16,
+      "angle": null,
+      "section": "2×10",
+      "bordureDouble": false,
+      "riveDouble": false,
+      "etriers": "deuxBouts",
+      "entremises": 0,
+      "panneau": "4x8",
+      "decalageMin": 24,
+      "marge": 0,
+      "longueursPlanches": [
+        96,
+        120,
+        144,
+        168,
+        192,
+        216,
+        240
+      ],
+      "coteMaison": null,
+      "etriersBordures": false,
+      "entremisesAuto": false,
+      "entremisesEspacement": 120,
+      "entremisesAlternees": false,
+      "coupesSeparees": true,
+      "poutres": null,
+      "clousEtriers": true,
+      "clousParEtrier": 10,
+      "clousParBoite": 120,
+      "margeClous": 5
+    },
+    "mursActifs": true,
+    "murs": {
+      "mode": "contour",
+      "hauteur": 97.125,
+      "ouverturesContour": {
+        "0": [
+          {
+            "type": "fenetre",
+            "nom": "F1",
+            "largeur": 36,
+            "hauteur": 48,
+            "allege": 36,
+            "position": 60,
+            "jeuLargeur": 1,
+            "jeuHauteur": 1.5
+          },
+          {
+            "type": "porte",
+            "nom": "P1",
+            "largeur": 36,
+            "hauteur": 80,
+            "allege": 0,
+            "position": 120,
+            "jeuLargeur": 1,
+            "jeuHauteur": 1.5
+          }
+        ],
+        "1": [
+          {
+            "type": "fenetre",
+            "nom": "F2",
+            "largeur": 24,
+            "hauteur": 36,
+            "allege": 40,
+            "position": 100,
+            "jeuLargeur": 1,
+            "jeuHauteur": 1.5
+          }
+        ]
+      },
+      "libres": [],
+      "params": {
+        "espacement": 16,
+        "section": "2×4",
+        "lissesHautes": 2,
+        "jacksParCote": 1,
+        "linteau": "2×8",
+        "plisLinteau": 2,
+        "plisAppui": 1,
+        "longueursPlanches": [
+          96,
+          120,
+          144,
+          168,
+          192,
+          216,
+          240
+        ],
+        "precoupes": true,
+        "panneau": "4x9",
+        "debordPlancher": 0,
+        "fourrureEntraxe": 16,
+        "fourrureEpaisseur": 0.75,
+        "fourrureLargeur": 2.5,
+        "longueursFourrures": [
+          96,
+          120,
+          144,
+          192
+        ],
+        "revetementEpaisseur": 0.75,
+        "margeMembrane": 10,
+        "margeRevetement": 10,
+        "aireRouleau": 900,
+        "margeFeuilles": 0
+      }
+    }
+  },
+  "valeurs": [
+    {
+      "chemin": "plancher.forme.longueur",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "24'-0\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
+      "chemin": "plancher.forme.largeur",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "20'-0\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
+      "chemin": "murs.ouverturesContour.0.0.largeur",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "3'-0\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
+      "chemin": "murs.ouverturesContour.0.0.hauteur",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "4'-0\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
+      "chemin": "murs.ouverturesContour.0.1.hauteur",
+      "niveau": "lu",
+      "raison": "",
+      "lecture": "6'-8\"",
+      "valeurPlan": null,
+      "verifiee": true
+    },
+    {
+      "chemin": "murs.ouverturesContour.0.1.position",
+      "niveau": "deduit",
+      "raison": "Bord du cadre à 8 pi 6 po, plus la demi-largeur.",
+      "lecture": "",
+      "valeurPlan": null,
+      "verifiee": false
+    },
+    {
+      "chemin": "murs.ouverturesContour.1.0.largeur",
+      "niveau": "incertain",
+      "raison": "Le plan indique « 3'-0\" » (36 po) mais la valeur lue est 24 po.",
+      "lecture": "3'-0\"",
+      "valeurPlan": 36,
+      "verifiee": false
+    },
+    {
+      "chemin": "murs.ouverturesContour.1.0.allege",
+      "niveau": "incertain",
+      "raison": "Allège illisible sur la coupe.",
+      "lecture": "",
+      "valeurPlan": null,
+      "verifiee": false
+    },
+    {
+      "chemin": "murs.hauteur",
+      "niveau": "deduit",
+      "raison": "Coupe de mur : 2 lisses hautes et montants précoupés.",
+      "lecture": "8'-1 1/8\"",
+      "valeurPlan": null,
+      "verifiee": true
+    }
+  ],
+  "niveau": "Rez-de-chaussée, page 2",
+  "echelle": "1/4 po = 1 pi",
+  "confiance": "moyenne"
+}
