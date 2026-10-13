@@ -566,6 +566,35 @@ class InfoPiece {
   final String titre;
   final List<String> lignes;
   const InfoPiece(this.titre, this.lignes);
+
+  String? _valeur(String prefixe) {
+    for (final l in lignes) {
+      if (l.startsWith(prefixe)) return l.substring(prefixe.length);
+    }
+    return null;
+  }
+
+  /// La mesure en bref, pour la pastille à côté de la pièce : « 2×10 · 12' », « 4' × 8' »,
+  /// « 312,5 pi² ». Les précisions entre parenthèses sont laissées à la fiche.
+  String get court {
+    String net(String s) => s
+        .replaceAll(RegExp(r'\s*\([^)]*\)'), '')
+        .replaceAll(' de large', '')
+        .replaceAll(' de haut', '')
+        .trim();
+    final coupe = _valeur('Longueur à couper : ');
+    if (coupe != null) {
+      final section = _valeur('Section : ');
+      return section == null ? net(coupe) : '${net(section)} · ${net(coupe)}';
+    }
+    final longueur = _valeur('Longueur : ');
+    if (longueur != null) return net(longueur);
+    final piece = _valeur('Pièce : ');
+    if (piece != null) return net(piece);
+    final aire = _valeur('Aire nette : ');
+    if (aire != null) return net(aire);
+    return titre;
+  }
 }
 
 /// Une cote affichée : segment 3D et texte.

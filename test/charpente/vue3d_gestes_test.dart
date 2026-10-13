@@ -104,7 +104,7 @@ void main() {
     Preferences.unites.value = SystemeUnites.imperial;
   });
 
-  Future<void> ouvrir(WidgetTester t) async {
+  Future<void> ouvrir(WidgetTester t, {Scene? scene}) async {
     t.view.physicalSize = const Size(800, 1600);
     t.view.devicePixelRatio = 2;
     addTearDown(t.view.reset);
@@ -113,7 +113,10 @@ void main() {
         home: Scaffold(
           body: Padding(
             padding: const EdgeInsets.all(12),
-            child: Vue3D(scene: _scene(), horloge: () => t.binding.clock.now()),
+            child: Vue3D(
+              scene: scene ?? _scene(),
+              horloge: () => t.binding.clock.now(),
+            ),
           ),
         ),
       ),
@@ -220,13 +223,243 @@ void main() {
       await t.pump();
       final zoom = _echelle(t);
       await _toucherUnePiece(t);
-      // La fiche de la pièce réduit la zone : le zoom (relatif au cadrage) reste.
+      // Choisir une pièce ne change ni la zone ni le zoom (relatif au cadrage).
       final apres = _echelle(t);
       await t.tap(_cle('vue_3quarts')); // cadrage de départ de la zone actuelle
       await t.pump();
       final cadrage = _echelle(t);
       expect(apres / cadrage, closeTo(1.4, 0.05));
       expect(zoom, greaterThan(0));
+    });
+  });
+
+  group('pastille de mesure et fiche sous la vue', () {
+    Finder pastille() => _cle('vue_pastille');
+    Finder fiche() => _cle('vue_fiche');
+    Finder defilement() => _cle('vue_defilement');
+
+    double defile(WidgetTester t) => t
+        .state<ScrollableState>(
+          find
+              .descendant(of: defilement(), matching: find.byType(Scrollable))
+              .first,
+        )
+        .position
+        .pixels;
+
+    testWidgets(
+      'rien de touché : pas de pastille, rappel des gestes sous la vue',
+      (t) async {
+        await ouvrir(t);
+        expect(pastille(), findsNothing);
+        expect(fiche(), findsNothing);
+        expect(_aide, findsOneWidget);
+        expect(find.textContaining('double toucher'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'toucher une pièce : une petite pastille avec sa mesure en bref',
+      (t) async {
+        await ouvrir(t);
+        await _toucherUnePiece(t);
+        expect(pastille(), findsOneWidget);
+        final texte = t.widget<Text>(
+          find.descendant(of: pastille(), matching: find.byType(Text)),
+        );
+        // La mesure de la pièce choisie : une de celles de la scène (« 2×10 · 13' »).
+        final attendues = {for (final i in _scene().infos.values) i.court};
+        expect(attendues, contains(texte.data));
+        expect(texte.data!.length, lessThan(30));
+        // Petite : bien moins qu'une fiche.
+        final taille = t.getSize(pastille());
+        expect(taille.width, lessThan(150));
+        expect(taille.height, lessThan(32));
+      },
+    );
+
+    testWidgets('la pastille reste dans la zone de dessin', (t) async {
+      await ouvrir(t);
+      await _toucherUnePiece(t);
+      final zone = t.getRect(_zone);
+      final p = t.getRect(pastille());
+      expect(p.left, greaterThanOrEqualTo(zone.left));
+      expect(p.right, lessThanOrEqualTo(zone.right));
+      expect(p.top, greaterThanOrEqualTo(zone.top));
+      expect(p.bottom, lessThanOrEqualTo(zone.bottom));
+    });
+
+    testWidgets('la vue 3D ne rapetisse pas quand on touche une pièce', (
+      t,
+    ) async {
+      await ouvrir(t);
+      final avant = t.getSize(_zone);
+      await _toucherUnePiece(t);
+      expect(t.getSize(_zone), avant);
+      await t.tap(find.byTooltip('Fermer'));
+      await t.pumpAndSettle();
+      expect(t.getSize(_zone), avant);
+    });
+
+    testWidgets('la vue 3D prend presque toute la place, la fiche est dessous', (
+      t,
+    ) async {
+      await ouvrir(t);
+      await _toucherUnePiece(t);
+      final liste = t.getRect(defilement());
+      final zone = t.getRect(_zone);
+      // Il ne reste visible, sous le dessin, que la première ligne de la fiche.
+      expect(liste.bottom - zone.bottom, closeTo(52, 1));
+      expect(fiche(), findsOneWidget);
+      expect(t.getTopLeft(fiche()).dy, greaterThanOrEqualTo(zone.bottom));
+    });
+
+    testWidgets('en descendant, on lit le détail de la pièce', (t) async {
+      await ouvrir(t);
+      await _toucherUnePiece(t);
+      final liste = t.getRect(defilement());
+      // La dernière ligne de la fiche de la pièce choisie.
+      final choisie = _scene().infos.values.firstWhere(
+        (i) =>
+            i.court ==
+            t
+                .widget<Text>(
+                  find.descendant(of: pastille(), matching: find.byType(Text)),
+                )
+                .data,
+      );
+      final detail = find.text(choisie.lignes.last);
+      expect(detail, findsOneWidget);
+      expect(
+        t.getRect(detail).bottom,
+        greaterThan(liste.bottom),
+        reason: 'le détail est sous la vue, pas dessus',
+      );
+      // On fait glisser la partie visible de la fiche vers le haut.
+      await t.dragFrom(
+        t.getTopLeft(fiche()) + const Offset(60, 20),
+        const Offset(0, -300),
+      );
+      await t.pumpAndSettle();
+      expect(defile(t), greaterThan(0));
+      expect(t.getRect(detail).bottom, lessThanOrEqualTo(liste.bottom));
+    });
+
+    testWidgets(
+      'un geste vertical dans la vue 3D tourne, il ne fait pas défiler',
+      (t) async {
+        await ouvrir(t);
+        await _toucherUnePiece(t);
+        final haut = _camera(t).elevation as double;
+        final g = await t.startGesture(t.getCenter(_zone), pointer: 41);
+        for (var i = 1; i <= 8; i++) {
+          await g.moveBy(const Offset(0, -20));
+          await t.pump(const Duration(milliseconds: 16));
+        }
+        await g.up();
+        await t.pumpAndSettle();
+        expect(defile(t), 0);
+        expect(_camera(t).elevation as double, isNot(haut));
+        expect(
+          pastille(),
+          findsOneWidget,
+          reason: 'tourner garde la pièce choisie',
+        );
+      },
+    );
+
+    testWidgets('la pastille suit la pièce quand la vue change', (t) async {
+      await ouvrir(t);
+      await _toucherUnePiece(t);
+      final avant = t.getTopLeft(pastille());
+      await t.tap(_cle('vue_dessus'));
+      await t.pumpAndSettle();
+      expect(pastille(), findsOneWidget);
+      expect(t.getTopLeft(pastille()), isNot(avant));
+    });
+
+    testWidgets('Fermer : la pastille et la fiche disparaissent', (t) async {
+      await ouvrir(t);
+      await _toucherUnePiece(t);
+      await t.tap(find.byTooltip('Fermer'));
+      await t.pumpAndSettle();
+      expect(pastille(), findsNothing);
+      expect(fiche(), findsNothing);
+      expect(_aide, findsOneWidget);
+    });
+
+    testWidgets('toucher à côté des pièces : plus rien de choisi', (t) async {
+      await ouvrir(t);
+      await _toucherUnePiece(t);
+      final zone = t.getRect(_zone);
+      await t.tapAt(zone.topLeft + const Offset(3, 3));
+      await t.pump(const Duration(seconds: 1));
+      expect(pastille(), findsNothing);
+      expect(_aide, findsOneWidget);
+    });
+
+    testWidgets(
+      'la pastille ne gêne pas les gestes (elle laisse passer les touchers)',
+      (t) async {
+        await ouvrir(t);
+        await _toucherUnePiece(t);
+        final centre = t.getCenter(pastille());
+        final ignorer = find.ancestor(
+          of: pastille(),
+          matching: find.byType(IgnorePointer),
+        );
+        expect(ignorer, findsWidgets);
+        expect(centre.dx, greaterThan(0));
+      },
+    );
+
+    testWidgets('en mètres : mesure de la pastille en mètres', (t) async {
+      Preferences.unites.value = SystemeUnites.metrique;
+      await ouvrir(
+        t,
+        scene: construireScene(
+          plancher: calculerPlancher(
+            SpecPlancher(
+              forme: Polygone.rectangle(156, 126),
+              etriers: ModeEtriers.deuxBouts,
+            ),
+          ),
+          metrique: true,
+        ),
+      );
+      await _toucherUnePiece(t);
+      final texte = t.widget<Text>(
+        find.descendant(of: pastille(), matching: find.byType(Text)),
+      );
+      expect(texte.data, anyOf(contains('mm'), contains(' m')));
+    });
+
+    testWidgets('onglet 3D de l\'écran Charpente : même comportement', (
+      t,
+    ) async {
+      t.view.physicalSize = const Size(800, 1600);
+      t.view.devicePixelRatio = 2;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(
+        const MaterialApp(
+          home: Scaffold(
+            body: CharpenteScreen(
+              companyId: 'A',
+              chantierId: 'chA',
+              connecte: true,
+              listeEnregistrees: Text('(aucune commande)'),
+            ),
+          ),
+        ),
+      );
+      await t.pumpAndSettle();
+      await t.tap(find.widgetWithText(Tab, '3D'));
+      await t.pumpAndSettle();
+      final avant = t.getSize(_zone);
+      await _toucherUnePiece(t);
+      expect(pastille(), findsOneWidget);
+      expect(fiche(), findsOneWidget);
+      expect(t.getSize(_zone), avant);
     });
   });
 

@@ -51,8 +51,13 @@ Color _ombre(Color base, double intensite) => Color.fromARGB(
 
 DateTime _maintenant() => DateTime.now();
 
+/// Ce qui reste visible de la fiche de la pièce sous la vue 3D : on descend pour la lire.
+const double _hauteurApercu = 52;
+
 /// Vue 3D d'une scène : rotation à un doigt, zoom et déplacement à deux
-/// doigts (molette sur ordinateur), couches, cotes, fiche d'une pièce au toucher.
+/// doigts (molette sur ordinateur), couches, cotes. Toucher une pièce affiche sa mesure en
+/// bref dans une petite pastille à côté d'elle ; sa fiche complète est sous la vue (on
+/// descend pour la lire) : le dessin ne rapetisse jamais.
 ///
 /// Le geste prend toute la place dans la zone de dessin (le défilement de la
 /// page et le changement d'onglet ne s'en mêlent pas) : la vue 3D complète est
@@ -174,7 +179,7 @@ class _Vue3DState extends State<Vue3D> {
       if (c != null &&
           identical(_sceneAjustee, widget.scene) &&
           _echelleAjustee > 0) {
-        // Même scène, zone redimensionnée (fiche d'une pièce qui apparaît,
+        // Même scène, zone redimensionnée (rotation de l'écran, ouverture du
         // clavier) : le zoom et le déplacement choisis sont conservés.
         final k = ajustee.echelle / _echelleAjustee;
         c = ajustee.avec(
@@ -232,6 +237,21 @@ class _Vue3DState extends State<Vue3D> {
         ),
       );
     });
+  }
+
+  /// Où la pièce touchée apparaît à l'écran : le centre de ses solides.
+  Offset? _ancrePiece(Camera cam, Size taille) {
+    var x = 0.0;
+    var y = 0.0;
+    var n = 0;
+    for (final s in _visibles) {
+      if (s.groupe != _groupe) continue;
+      final p = cam.projeter(s.centre, taille.width, taille.height);
+      x += p.x;
+      y += p.y;
+      n++;
+    }
+    return n == 0 ? null : Offset(x / n, y / n);
   }
 
   void _toucher(Offset p) {
@@ -395,6 +415,7 @@ class _Vue3DState extends State<Vue3D> {
           );
         }
         final centre = Offset(taille.width / 2, taille.height / 2);
+        final ancre = info == null ? null : _ancrePiece(camera, taille);
         return ClipRect(
           child: Stack(
             children: [
@@ -430,6 +451,16 @@ class _Vue3DState extends State<Vue3D> {
                   ),
                 ),
               ),
+              // La mesure de la pièce touchée, en bref, à côté d'elle.
+              if (info != null && ancre != null)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: CustomSingleChildLayout(
+                      delegate: _PositionPastille(ancre),
+                      child: _PastilleMesure(info.court),
+                    ),
+                  ),
+                ),
               // Zoom au bouton : plus simple que le pincement d'une seule main.
               if (widget.controles)
                 Positioned(
@@ -553,31 +584,39 @@ class _Vue3DState extends State<Vue3D> {
         ),
         if (bornee)
           Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: zone,
+            // La vue 3D prend presque toute la place ; la fiche de la pièce est dessous : on
+            // descend pour la lire, et le dessin ne rapetisse jamais.
+            child: LayoutBuilder(
+              builder: (context, c) {
+                final hauteurVue = math.max(
+                  180.0,
+                  c.maxHeight - _hauteurApercu,
+                );
+                return ListView(
+                  key: const ValueKey('vue_defilement'),
+                  padding: EdgeInsets.zero,
+                  children: [
+                    SizedBox(
+                      height: hauteurVue,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: dessin,
+                      ),
+                    ),
+                    _Details(
+                      info: info,
+                      onFermer: () => setState(() => _groupe = null),
+                    ),
+                  ],
+                );
+              },
             ),
           )
-        else
+        else ...[
           ClipRRect(borderRadius: BorderRadius.circular(8), child: zone),
-        const SizedBox(height: 6),
-        if (info != null)
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 190),
-            child: SingleChildScrollView(
-              child: _Fiche(
-                info: info,
-                onFermer: () => setState(() => _groupe = null),
-              ),
-            ),
-          )
-        else
-          Text(
-            'Touchez une pièce pour voir sa mesure et sa coupe. Un doigt : '
-            'tourner ; deux doigts (ou boutons + et −) : zoom et déplacement ; '
-            'double toucher : vue de départ.',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
+          const SizedBox(height: 6),
+          _Details(info: info, onFermer: () => setState(() => _groupe = null)),
+        ],
       ],
     );
   }
@@ -676,40 +715,88 @@ class _Etapes extends StatelessWidget {
   }
 }
 
-class _Fiche extends StatelessWidget {
-  final InfoPiece info;
+/// Sous la vue 3D : la fiche de la pièce touchée (titre, section, longueur à couper, coupes…).
+/// Seule sa première ligne dépasse sous le dessin ; on descend pour lire le reste. Sans pièce
+/// touchée : un rappel des gestes.
+class _Details extends StatelessWidget {
+  final InfoPiece? info;
   final VoidCallback onFermer;
-  const _Fiche({required this.info, required this.onFermer});
+  const _Details({required this.info, required this.onFermer});
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      key: const ValueKey('vue_fiche'),
-      margin: EdgeInsets.zero,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+    final i = info;
+    final theme = Theme.of(context);
+    if (i == null) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    info.titre,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 16,
+            SizedBox(
+              height: _hauteurApercu,
+              child: Row(
+                children: [
+                  const Icon(Icons.touch_app_outlined, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Touchez une pièce pour voir sa mesure',
+                      style: theme.textTheme.bodyMedium,
                     ),
                   ),
-                ),
-                IconButton(
-                  tooltip: 'Fermer',
-                  icon: const Icon(Icons.close),
-                  onPressed: onFermer,
-                ),
-              ],
+                ],
+              ),
             ),
-            for (final l in info.lignes)
+            Text(
+              'Un doigt : tourner ; deux doigts (ou boutons + et −) : zoom et '
+              'déplacement ; double toucher : vue de départ.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ],
+        ),
+      );
+    }
+    return Card(
+      key: const ValueKey('vue_fiche'),
+      margin: const EdgeInsets.fromLTRB(0, 4, 0, 12),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 4, 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            SizedBox(
+              height: _hauteurApercu - 4,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: i.titre,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 16,
+                            ),
+                          ),
+                          TextSpan(text: '  ${i.court}'),
+                        ],
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Icon(Icons.keyboard_arrow_down, size: 20),
+                  IconButton(
+                    tooltip: 'Fermer',
+                    icon: const Icon(Icons.close),
+                    onPressed: onFermer,
+                  ),
+                ],
+              ),
+            ),
+            for (final l in i.lignes)
               Padding(
                 padding: const EdgeInsets.only(bottom: 2, right: 8),
                 child: Text(l),
@@ -719,6 +806,74 @@ class _Fiche extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Petit carré à côté de la pièce touchée : sa mesure en bref.
+class _PastilleMesure extends StatelessWidget {
+  final String texte;
+  const _PastilleMesure(this.texte);
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      key: const ValueKey('vue_pastille'),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: scheme.surface.withValues(alpha: 0.94),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: ThemeCompagnie.accentDe(context), width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Text(
+        texte,
+        maxLines: 1,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: scheme.onSurface,
+        ),
+      ),
+    );
+  }
+}
+
+/// Place la pastille en haut à droite de la pièce ; à gauche ou en dessous quand il n'y a pas la
+/// place ; jamais hors de la zone de dessin.
+class _PositionPastille extends SingleChildLayoutDelegate {
+  final Offset ancre;
+  const _PositionPastille(this.ancre);
+
+  static const double _ecart = 10;
+  static const double _marge = 4;
+
+  @override
+  BoxConstraints getConstraintsForChild(BoxConstraints c) => c.loosen();
+
+  @override
+  Offset getPositionForChild(Size zone, Size enfant) {
+    var x = ancre.dx + _ecart;
+    if (x + enfant.width > zone.width - _marge) {
+      x = ancre.dx - _ecart - enfant.width;
+    }
+    var y = ancre.dy - _ecart - enfant.height;
+    if (y < _marge) {
+      y = ancre.dy + _ecart;
+    }
+    return Offset(
+      x.clamp(_marge, math.max(_marge, zone.width - enfant.width - _marge)),
+      y.clamp(_marge, math.max(_marge, zone.height - enfant.height - _marge)),
+    );
+  }
+
+  @override
+  bool shouldRelayout(_PositionPastille old) => old.ancre != ancre;
 }
 
 // =============================================================================
