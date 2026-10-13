@@ -120,11 +120,29 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     return b.toString();
   }
 
-  double? _resultatFinal;
+  double? _resultat;
+
+  /// Le résultat affiché. Le changer quitte la vue DIAG (longueur, pente, angle).
+  double? get _resultatFinal => _resultat;
+  set _resultatFinal(double? v) {
+    _resultat = v;
+    _vueDiag = null;
+  }
+
+  /// DIAG rappelé (rien de tapé) : 0 = longueur, 1 = pente, 2 = angle ; null = pas de rappel.
+  /// Chaque appui sur DIAG passe à la vue suivante.
+  int? _vueDiag;
 
   double? _rise;
   double? _run;
   double? _diag;
+
+  /// Angle de la pente en degrés (saisi avec la touche ANGLE, ou déduit).
+  double? _angle;
+
+  /// Valeurs du triangle saisies (run, rise, diag, angle), la plus récente à la fin : les deux
+  /// dernières décident des deux autres.
+  final List<String> _saisiesTriangle = [];
   bool _afficherEnPieds = true;
 
   double? _memoire;
@@ -135,13 +153,6 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   double? get _pitch {
     if (_rise != null && _run != null && _run != 0) {
       return (_rise! / _run!) * 12;
-    }
-    return null;
-  }
-
-  double? get _pitchDegres {
-    if (_rise != null && _run != null && _run != 0) {
-      return atan(_rise! / _run!) * 180 / pi;
     }
     return null;
   }
@@ -484,6 +495,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _rise = null;
       _run = null;
       _diag = null;
+      _angle = null;
+      _saisiesTriangle.clear();
       _uniteUtiliseeDansFormule = false;
       _conversionExtra = null;
     });
@@ -863,6 +876,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     final double? valeurBrute = _valeurActuelle();
     if (valeurBrute == null) return;
     final double valeur = valeurBrute;
+    if (role == 'angle' && !(valeur > 0 && valeur < 90)) {
+      setState(() => _erreur = 'Angle entre 0 et 90°');
+      return;
+    }
+    if (role != 'angle' && !(valeur > 0)) return;
 
     setState(() {
       switch (role) {
@@ -875,13 +893,16 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         case 'diag':
           _diag = valeur;
           break;
+        case 'angle':
+          _angle = valeur;
+          break;
       }
-      _entreeCharpente = '';
-      _feet = null;
-      _inches = null;
-      _fracNum = null;
-      _fracDen = null;
-      _enAttenteDenominateur = false;
+      _saisiesTriangle
+        ..remove(role)
+        ..add(role);
+      if (_saisiesTriangle.length > 2) _saisiesTriangle.removeAt(0);
+      // Toute la saisie (pi-po comme m, cm, mm) : la valeur suivante repart de zéro.
+      _viderOperande();
       _jetons.clear();
       _erreur = null;
       _textes.clear();
@@ -891,13 +912,91 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     });
   }
 
+  /// DIAG : avec une valeur tapée (ou un résultat), la garde comme diagonale. Rien de tapé :
+  /// montre la diagonale, puis à chaque appui la pente, puis l'angle, puis de nouveau la longueur.
+  void _toucheDiag() {
+    final rienDeTape = _operandeVide && _jetons.isEmpty;
+    final rappel = rienDeTape && (_resultatFinal == null || _vueDiag != null);
+    if (!rappel || _diag == null) {
+      _stocker('diag');
+      return;
+    }
+    final vues = [0, if (_pitch != null) 1, if (_angle != null) 2];
+    final suivante = _vueDiag == null
+        ? vues.first
+        : vues[(vues.indexOf(_vueDiag!) + 1) % vues.length];
+    setState(() {
+      _resultatFinal = _diag; // la diagonale devient le résultat : on peut calculer avec elle
+      _vueDiag = suivante;
+      _uniteUtiliseeDansFormule = true;
+      _vueResultat = 0;
+      _textes.clear();
+      _jetons.clear();
+      _erreur = null;
+      _conversionExtra = null;
+    });
+  }
+
+  /// Ce que montre la vue DIAG : (titre, valeur).
+  (String, String) _texteVueDiag() => switch (_vueDiag) {
+    // La pente sur 12, comme sur le chantier (en métrique, le % en plus).
+    1 => (
+      _metrique
+          ? 'PITCH (${(_pitch! / 12 * 100).toStringAsFixed(1)} %)'
+          : 'PITCH',
+      '${_pitch!.toStringAsFixed(2)}/12',
+    ),
+    2 => ('ANGLE', '${_angle!.toStringAsFixed(1)}°'),
+    _ => ('DIAG', _texteResultatVue(_diag!)),
+  };
+
+  /// Triangle de la pente : les deux dernières valeurs saisies (RUN, RISE, DIAG ou ANGLE)
+  /// donnent les deux autres. Une seule saisie : rien à déduire.
   void _recalculerCharpente() {
-    if (_rise != null && _run != null) {
+    final s = _saisiesTriangle.toSet();
+    void seules(Set<String> gardees) {
+      if (!gardees.contains('run')) _run = null;
+      if (!gardees.contains('rise')) _rise = null;
+      if (!gardees.contains('diag')) _diag = null;
+      if (!gardees.contains('angle')) _angle = null;
+    }
+
+    if (s.length < 2) {
+      seules(s);
+      return;
+    }
+    const deg = pi / 180;
+    if (s.containsAll(['run', 'rise'])) {
       _diag = sqrt(_rise! * _rise! + _run! * _run!);
-    } else if (_rise != null && _diag != null && _diag! >= _rise!) {
-      _run = sqrt(_diag! * _diag! - _rise! * _rise!);
-    } else if (_run != null && _diag != null && _diag! >= _run!) {
-      _rise = sqrt(_diag! * _diag! - _run! * _run!);
+      _angle = atan2(_rise!, _run!) / deg;
+    } else if (s.containsAll(['run', 'diag']) ||
+        s.containsAll(['rise', 'diag'])) {
+      final cote = s.contains('run') ? _run! : _rise!;
+      if (_diag! <= cote) {
+        // DIAG doit être plus long que l'autre côté : rien n'est déduit.
+        seules(s);
+        _erreur = 'DIAG plus court que ${s.contains('run') ? 'RUN' : 'RISE'}';
+        return;
+      }
+      final autre = sqrt(_diag! * _diag! - cote * cote);
+      if (s.contains('run')) {
+        _rise = autre;
+      } else {
+        _run = autre;
+      }
+      _angle = atan2(_rise!, _run!) / deg;
+    } else {
+      final a = _angle! * deg;
+      if (s.contains('run')) {
+        _rise = _run! * tan(a);
+        _diag = _run! / cos(a);
+      } else if (s.contains('rise')) {
+        _run = _rise! / tan(a);
+        _diag = _rise! / sin(a);
+      } else {
+        _run = _diag! * cos(a);
+        _rise = _diag! * sin(a);
+      }
     }
   }
 
@@ -1123,8 +1222,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   Widget _ecranCharpente() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 14),
-      constraints: const BoxConstraints(minHeight: 150),
+      // Écran compact : la place va aux touches.
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+      constraints: const BoxConstraints(minHeight: 112),
       decoration: BoxDecoration(
         color: _lcdBg,
         borderRadius: BorderRadius.circular(8),
@@ -1140,9 +1240,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 children: [
                   if (_pitch != null)
                     Text(
-                      _metrique
-                          ? 'PENTE ${(_pitch! / 12 * 100).toStringAsFixed(1)} %'
-                          : 'PITCH ${_pitch!.toStringAsFixed(2)}/12',
+                      '${_metrique ? 'PENTE ${(_pitch! / 12 * 100).toStringAsFixed(1)} %' : 'PITCH ${_pitch!.toStringAsFixed(2)}/12'}'
+                      '${_angle == null ? '' : ' · ${_angle!.toStringAsFixed(1)}°'}',
                       style: TextStyle(
                         color: _texteLcd,
                         fontSize: 13,
@@ -1181,14 +1280,52 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       : _formatLongueurAlt(_diag!),
                   style: TextStyle(
                     color: _texteLcdSecondaire,
-                    fontSize: 16,
+                    fontSize: 15,
                     fontFamily: 'monospace',
                   ),
                 ),
               ),
             ),
-          const SizedBox(height: 6),
-          if (_resultatFinal != null)
+          const SizedBox(height: 4),
+          if (_vueDiag != null && _diag != null)
+            GestureDetector(
+              key: const ValueKey('lcd_vue_diag'),
+              onTap: _vueDiag == 0
+                  ? () => setState(() => _vueResultat++)
+                  : null,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text(
+                    _texteVueDiag().$1,
+                    style: TextStyle(
+                      color: _texteLcdSecondaire,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      fontFamily: 'monospace',
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: Text(
+                        _texteVueDiag().$2,
+                        style: TextStyle(
+                          color: _texteLcd,
+                          fontSize: 42,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (_resultatFinal != null)
             GestureDetector(
               onTap: _uniteUtiliseeDansFormule
                   ? () => setState(() => _vueResultat++)
@@ -1202,7 +1339,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       : _formatDecimal(_resultatFinal!),
                   style: TextStyle(
                     color: _texteLcd,
-                    fontSize: 50,
+                    fontSize: 42,
                     fontWeight: FontWeight.w700,
                     fontFamily: 'monospace',
                   ),
@@ -1216,7 +1353,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 _erreur!,
                 style: TextStyle(
                   color: _texteLcd,
-                  fontSize: 30,
+                  fontSize: 24,
                   fontWeight: FontWeight.w700,
                   fontFamily: 'monospace',
                 ),
@@ -1233,7 +1370,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       : (_formulePrecedente + _texteOperandeEnCours()),
                   style: TextStyle(
                     color: _texteLcd,
-                    fontSize: 34,
+                    fontSize: 30,
                     fontWeight: FontWeight.w600,
                     fontFamily: 'monospace',
                   ),
@@ -1292,6 +1429,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             _toucheMemoireGrande('RUN', _run, () => _stocker('run')),
             _toucheMemoireGrande('RISE', _rise, () => _stocker('rise')),
             _toucheMemoireDiagGrande(),
+            _toucheAngleGrande(),
             _toucheFonctionGrande('Conv', _appliquerConversion, fonction: true),
           ]),
           rangee(
@@ -1450,7 +1588,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
           key: const ValueKey('touche_DIAG'),
-          onPressed: () => _stocker('diag'),
+          onPressed: _toucheDiag,
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonFonction,
             foregroundColor: _texteSur(_boutonFonction),
@@ -1476,11 +1614,48 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                     fontWeight: FontWeight.w500,
                   ),
                 ),
-                if (_pitchDegres != null)
-                  Text(
-                    '${_pitchDegres!.toStringAsFixed(1)}°',
-                    style: const TextStyle(fontSize: 10),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// ANGLE : la pente en degrés (entrer 30 puis ANGLE ; avec RUN, RISE ou DIAG, le reste se
+  /// calcule).
+  Widget _toucheAngleGrande() {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: ElevatedButton(
+          key: const ValueKey('touche_ANGLE'),
+          onPressed: () => _stocker('angle'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _boutonFonction,
+            foregroundColor: _texteSur(_boutonFonction),
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'ANGLE',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  _angle == null ? '—' : '${_angle!.toStringAsFixed(1)}°',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
                   ),
+                ),
               ],
             ),
           ),
@@ -1578,14 +1753,21 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           style: ElevatedButton.styleFrom(
             backgroundColor: bg,
             foregroundColor: fg,
+            // Peu de marge : « Conv » tient sur une ligne même sur un petit téléphone.
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             side: claire ? const BorderSide(color: _boutonChiffreBorder) : null,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(10),
             ),
           ),
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
+            ),
           ),
         ),
       ),
@@ -1595,8 +1777,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
   Widget _ecranAutre() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
-      padding: const EdgeInsets.all(18),
-      constraints: const BoxConstraints(minHeight: 150),
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      constraints: const BoxConstraints(minHeight: 112),
       decoration: BoxDecoration(
         color: _lcdBg,
         borderRadius: BorderRadius.circular(8),
@@ -1622,7 +1804,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               '${_saisie.isEmpty ? '0' : _saisie} $_uniteBeton',
               style: TextStyle(
                 color: _texteLcd,
-                fontSize: 50,
+                fontSize: 42,
                 fontWeight: FontWeight.w700,
                 fontFamily: 'monospace',
               ),

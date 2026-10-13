@@ -34,7 +34,7 @@ void main() {
   }
 
   Finder resultat() =>
-      find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 50);
+      find.byWidgetPredicate((w) => w is Text && w.style?.fontSize == 42);
 
   String texteResultat(WidgetTester tester) =>
       tester.widget<Text>(resultat()).data!;
