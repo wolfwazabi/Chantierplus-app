@@ -169,12 +169,14 @@ class SpecEscalier {
   /// contremarches sont fermées et les limons suivent l'entraxe du fabricant.
   final ProduitComposite? composite;
 
-  /// Marches en composite : épaisseur du contreplaqué traité posé sous chaque marche (0 : sans).
-  final double contreplaque;
+  /// Marches en composite : un morceau de 2x12 traité à plat de chaque côté de chaque marche,
+  /// entre le limon de côté et le suivant (le dessus à égalité du siège), sous la planche de
+  /// côté du cadre et le bout des planches du centre.
+  final bool blocs2x12;
 
-  /// L'épaisseur de marche qui sert au traçage (en composite : planche + contreplaqué).
+  /// L'épaisseur de marche qui sert au traçage (en composite : celle de la planche).
   double get epaisseurMarcheEffective =>
-      composite == null ? epaisseurMarche : composite!.epaisseur + contreplaque;
+      composite == null ? epaisseurMarche : composite!.epaisseur;
 
   /// L'entraxe maximal des limons, une fois le composite pris en compte.
   double get espacementMaxEffectif => composite == null
@@ -200,7 +202,7 @@ class SpecEscalier {
     this.gorgeMin = 3.5,
     this.precisionTrace = 1 / 16,
     this.composite,
-    this.contreplaque = 0,
+    this.blocs2x12 = false,
   });
 
   LimitesEscalier get limites => LimitesEscalier.de(usage);
@@ -223,7 +225,7 @@ class SpecEscalier {
     gorgeMin: gorgeMin,
     precisionTrace: precisionTrace,
     composite: composite,
-    contreplaque: contreplaque,
+    blocs2x12: blocs2x12,
   );
 
   void valider() {
@@ -245,11 +247,6 @@ class SpecEscalier {
     borne(nez, 0, 4, 'Nez de marche');
     borne(epaisseurContremarche, 0.25, 2, 'Épaisseur de la contremarche');
     borne(espacementMax, 6, 48, 'Entraxe des limons');
-    if (!(contreplaque >= 0 && contreplaque <= 1.5)) {
-      throw const EscalierInvalide(
-        'Contreplaqué sous les marches : épaisseur invalide (entre 0 et 1 1/2 po).',
-      );
-    }
     borne(gorgeMin, 0, 12, 'Gorge minimale');
     borne(precisionTrace, 1 / 64, 1, 'Précision du traçage');
     final n = nombreContremarches;

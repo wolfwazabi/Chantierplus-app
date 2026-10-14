@@ -11,8 +11,8 @@ import 'plancher.dart' show longueursPlanchesParDefaut;
 ///  - chaque contremarche en fascia composite (la plus basse hauteur vendue qui la couvre),
 ///    refendue à la hauteur de la contremarche ;
 ///  - un 2x traité (« backing ») derrière chaque contremarche, pour visser la fascia ;
-///  - au choix, du contreplaqué traité sous chaque marche (largeur × giron, fil en travers des
-///    limons), dans des feuilles de 4 × 8 ;
+///  - au choix, un 2x12 traité à plat de chaque côté de chaque marche, entre le limon de côté et
+///    le suivant, sous la planche de côté du cadre ;
 ///  - limons à l'entraxe du fabricant.
 /// Les dimensions (largeur et épaisseur des planches, écart des attaches cachées, longueurs,
 /// fascias) viennent du produit choisi ([ProduitComposite]). Tout est en POUCES.
@@ -35,8 +35,14 @@ class MaterielComposite {
   final ResultatDecoupe backing;
   final String sectionBacking;
 
-  /// Contreplaqué traité sous les marches (null : sans).
-  final ResultatFeuilles? contreplaque;
+  /// 2x12 traités à plat aux côtés de chaque marche (null : sans).
+  final ResultatDecoupe? blocs;
+
+  /// Morceaux de 2x12 par marche (un de chaque côté ; un seul s'il n'y a que 2 limons).
+  final int blocsParMarche;
+
+  /// Longueur d'un morceau : l'espace libre entre le limon de côté et le suivant.
+  final double longueurBloc;
 
   /// Par marche : rangs de planches au centre (entre les côtés), et leur longueur.
   final int rangsCentre;
@@ -59,7 +65,9 @@ class MaterielComposite {
     required this.hauteurFascia,
     required this.backing,
     required this.sectionBacking,
-    this.contreplaque,
+    this.blocs,
+    this.blocsParMarche = 0,
+    this.longueurBloc = 0,
     required this.rangsCentre,
     required this.longueurCentre,
     required this.visApparentes,
@@ -157,23 +165,23 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
       : 0;
   final visFascia = r.nombreContremarches * visFasciaParLimon * limons;
 
-  // Contreplaqué : une pièce par marche, sur le siège des limons (largeur × giron), le fil de la
-  // feuille en travers des limons (le long des 8 pi).
-  final contreplaque = r.spec.contreplaque <= 0
+  // 2x12 à plat aux côtés : à chaque marche, un morceau entre le limon de côté et le suivant, de
+  // chaque côté (le milieu reste ouvert), de l'espace libre entre eux.
+  final longueurBloc = r.espacementReel - r.spec.section.epaisseur;
+  final blocsParMarche = math.min(2, limons - 1);
+  final blocs = !r.spec.blocs2x12
       ? null
-      : empaqueterFeuilles(
-          [
-            for (var k = 0; k < r.nombreMarches; k++)
-              PieceRect('cp$k', largeur, r.giron),
-          ],
-          longueurFeuille: 96,
-          largeurFeuille: 48,
-          trait: traitDeScie,
-        );
+      : decouperPlanches([
+          for (var k = 0; k < r.nombreMarches; k++)
+            for (var j = 0; j < blocsParMarche; j++)
+              PieceCoupe('bloc$k.$j', longueurBloc, 'bloc'),
+        ], longueursPlanchesParDefaut);
 
   return MaterielComposite(
     produit: produit,
-    contreplaque: contreplaque,
+    blocs: blocs,
+    blocsParMarche: blocs == null ? 0 : blocsParMarche,
+    longueurBloc: longueurBloc,
     planches: decouperPlanches(pieces, produit.longueurs),
     fascias: decouperPlanches(fascias, produit.longueursFascia),
     hauteurFascia: fascia.first,

@@ -41,8 +41,8 @@ class _EcranEscalierState extends State<EcranEscalier> {
   /// Marches en composite : le produit choisi (null : marches en bois).
   String? _composite;
 
-  /// Contreplaqué traité sous les marches composite (0 : sans).
-  double _contreplaque = 0.75;
+  /// 2x12 à plat aux côtés des marches composite.
+  bool _blocs2x12 = true;
   ProduitComposite? get _produit =>
       _composite == null ? null : produitComposite(_composite);
 
@@ -96,7 +96,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
     section: _section,
     espacementMax: _entraxe,
     composite: _produit,
-    contreplaque: _produit == null ? 0 : _contreplaque,
+    blocs2x12: _produit != null && _blocs2x12,
     // Traçage au 1/16 po ou au millimètre, selon le système d'unités.
     precisionTrace: metrique ? 1 / mmParPouce : 1 / 16,
   );
@@ -267,7 +267,6 @@ class _EcranEscalierState extends State<EcranEscalier> {
         titre: 'Marches et contremarches',
         resume: _produit != null
             ? '${_produit!.nom} en cadre · nez ${_l(_nez)} · fascia et backing 2x'
-                  '${_contreplaque > 0 ? ' · contreplaqué ${_l(_contreplaque)}' : ''}'
             : 'Marche ${_l(_epaisseurMarche)} · nez ${_l(_nez)} · contremarches '
                   '${_fermees ? 'fermées (${_l(_epaisseurContremarche)})' : 'ouvertes'}',
         enfants: [
@@ -301,27 +300,15 @@ class _EcranEscalierState extends State<EcranEscalier> {
                   id == null ? null : setState(() => _composite = id),
             ),
             SwitchListTile(
-              key: const ValueKey('escalier_contreplaque'),
+              key: const ValueKey('escalier_blocs'),
               contentPadding: EdgeInsets.zero,
-              title: const Text('Contreplaqué traité sous les marches'),
+              title: const Text('2x12 à plat aux côtés des marches'),
               subtitle: const Text(
-                'Une pièce par marche, fil en travers des limons',
+                'Entre le limon de côté et le suivant, sous la planche de côté du cadre',
               ),
-              value: _contreplaque > 0,
-              onChanged: (v) => setState(() => _contreplaque = v ? 0.75 : 0),
+              value: _blocs2x12,
+              onChanged: (v) => setState(() => _blocs2x12 = v),
             ),
-            if (_contreplaque > 0)
-              SegmentedButton<double>(
-                key: const ValueKey('escalier_contreplaque_epaisseur'),
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: 0.625, label: Text('5/8 po')),
-                  ButtonSegment(value: 0.75, label: Text('3/4 po')),
-                ],
-                selected: {_contreplaque},
-                onSelectionChanged: (s) =>
-                    setState(() => _contreplaque = s.first),
-              ),
             const SizedBox(height: 4),
             Text(
               key: const ValueKey('escalier_produit_fiche'),

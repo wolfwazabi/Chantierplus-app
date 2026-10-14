@@ -93,12 +93,13 @@ List<LigneMaterielEscalier> _materielComposite(
           '${c.sectionBacking} traité × ${p(lg)} (backing des contremarches)',
       'Derrière chaque fascia : $contremarches',
     ),
-    if (c.contreplaque != null)
-      LigneMaterielEscalier(
-        c.contreplaque!.nombre,
-        'Contreplaqué traité ${l(s.contreplaque)} 4 × 8',
-        '${r.nombreMarches} pièces de ${l(s.largeur)} × ${l(r.giron)}, une sous chaque marche '
-            '(fil en travers des limons)',
+    if (c.blocs != null)
+      ...lignes(
+        c.blocs!.parLongueur,
+        (lg) => '2x12 traité × ${p(lg)} (à plat aux côtés des marches)',
+        '${r.nombreMarches * c.blocsParMarche} morceaux de ${l(c.longueurBloc)}, '
+        '${c.blocsParMarche == 2 ? 'un de chaque côté de chaque marche' : 'un sous chaque marche'}, '
+        'entre le limon de côté et le suivant, sous la planche de côté',
       ),
     if (c.attaches > 0)
       LigneMaterielEscalier(

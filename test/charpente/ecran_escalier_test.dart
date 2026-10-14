@@ -570,19 +570,17 @@ void main() {
       // Générique prudent : limons à 9 po au plus, 5 limons en 36 po.
       expect(_texte('5 limons'), findsOneWidget);
 
-      // Contreplaqué traité sous les marches : oui par défaut, 3/4 ou 5/8 po, ou sans.
-      expect(_texte('Contreplaqué traité 3/4" 4 × 8'), findsOneWidget);
-      expect(_texte('· contreplaqué 3/4"'), findsOneWidget);
-      await t.tap(find.text('5/8 po'));
-      await t.pumpAndSettle();
-      expect(_texte('Contreplaqué traité 5/8" 4 × 8'), findsOneWidget);
-      await t.tap(_cle('escalier_contreplaque'));
-      await t.pumpAndSettle();
-      // Plus de ligne de contreplaqué dans les matériaux (l'interrupteur reste).
+      // 2x12 à plat aux côtés des marches : oui par défaut ; pas de contreplaqué.
+      expect(_texte('(à plat aux côtés des marches)'), findsWidgets);
+      expect(_texte('un de chaque côté de chaque marche'), findsOneWidget);
+      expect(_texte('ontreplaqué'), findsNothing);
       expect(_texte('4 × 8'), findsNothing);
-      await t.tap(_cle('escalier_contreplaque'));
+      await t.tap(_cle('escalier_blocs'));
       await t.pumpAndSettle();
-      expect(_texte('Contreplaqué traité 3/4" 4 × 8'), findsOneWidget);
+      expect(_texte('(à plat aux côtés des marches)'), findsNothing);
+      await t.tap(_cle('escalier_blocs'));
+      await t.pumpAndSettle();
+      expect(_texte('(à plat aux côtés des marches)'), findsWidgets);
 
       // Une marque : sa fiche (écarts, attaches, source) et ses limons.
       await t.tap(_cle('escalier_produit_generique'));

@@ -220,61 +220,76 @@ void main() {
     });
   });
 
-  group('contreplaqué traité sous les marches', () {
-    ResultatEscalier avec(double ep, {ProduitComposite? p}) => calculerEscalier(
+  group('2x12 à plat aux côtés des marches', () {
+    ResultatEscalier avec({
+      required bool blocs,
+      String produit = 'trex_enhance',
+      double largeur = 36,
+    }) => calculerEscalier(
       SpecEscalier(
         hauteurTotale: 108,
+        largeur: largeur,
         nez: 0.75,
-        composite: p ?? _produit('trex_enhance'),
-        contreplaque: ep,
+        composite: _produit(produit),
+        blocs2x12: blocs,
       ),
     );
 
-    test('son épaisseur s\'ajoute à la planche pour le traçage des limons', () {
-      expect(avec(0.75).hauteurDepart, closeTo(7.2 - (0.94 + 0.75), 1e-9));
-      expect(avec(0.625).hauteurDepart, closeTo(7.2 - (0.94 + 0.625), 1e-9));
-      expect(avec(0).hauteurDepart, closeTo(7.2 - 0.94, 1e-9));
+    test('un morceau de chaque côté de chaque marche, entre le limon de côté et le suivant', () {
+      final r = avec(blocs: true);
+      // 5 limons aux 9 po au plus : entraxe réel 34 1/2 / 4 = 8 5/8 ; libre : 7 1/8.
+      expect(r.nombreLimons, 5);
+      final c = calculerComposite(r);
+      expect(c.longueurBloc, closeTo(8.625 - 1.5, 1e-9));
+      expect(c.blocsParMarche, 2);
+      // Le milieu reste ouvert : 2 morceaux par marche, pas 4.
+      expect(_longueurs(c.blocs!), List.filled(14 * 2, 7.125));
+      expect(c.blocs!.horsLimites, isEmpty);
+    });
+
+    test('2 limons seulement : un morceau par marche', () {
+      // Fiberon aux 12 po, escalier de 12 po : 2 limons à 10 1/2 ; libre : 9.
+      final r = avec(blocs: true, produit: 'fiberon_good_life', largeur: 12);
+      expect(r.nombreLimons, 2);
+      final c = calculerComposite(r);
+      expect(c.blocsParMarche, 1);
+      expect(_longueurs(c.blocs!), List.filled(14, 9.0));
     });
 
     test(
-      'une pièce par marche (36 × 10 1/4), fil en travers des limons, en 4 × 8',
+      'la marche garde l\'épaisseur de la planche (pas de contreplaqué)',
       () {
-        final c = calculerComposite(avec(0.75));
-        final f = c.contreplaque!;
-        expect(f.horsLimites, isEmpty);
-        final places = [for (final s in f.feuilles) ...s.placements];
-        expect(places, hasLength(14));
-        for (final p in places) {
-          // Le long de la feuille (8 pi) : la largeur de l'escalier, jamais tournée.
-          expect(p.tournee, isFalse);
-          expect(p.a, 36);
-          expect(p.b, 10.25);
-        }
-        // 2 pièces le long de 96 po × 4 en travers de 48 po = 8 par feuille : 2 feuilles.
-        expect(f.nombre, 2);
+        expect(
+          avec(blocs: true).hauteurDepart,
+          closeTo(avec(blocs: false).hauteurDepart, 1e-9),
+        );
+        expect(avec(blocs: true).hauteurDepart, closeTo(7.2 - 0.94, 1e-9));
       },
     );
 
-    test('sans contreplaqué : rien', () {
-      expect(calculerComposite(avec(0)).contreplaque, isNull);
-    });
-
-    test('dans la liste de matériaux', () {
-      final t = materielEscalier(
-        avec(0.75),
-        metrique: false,
-      ).map((l) => '${l.quantite} × ${l.article} — ${l.detail}').join('\n');
-      expect(t, contains('2 × Contreplaqué traité 3/4" 4 × 8'));
-      expect(t, contains('14 pièces de 3\' × 10 1/4", une sous chaque marche'));
-      final sans = materielEscalier(avec(0), metrique: false);
+    test('dans la liste de matériaux ; sans : rien', () {
+      final lignes = materielEscalier(avec(blocs: true), metrique: false);
+      final t = lignes
+          .map((l) => '${l.quantite} × ${l.article} — ${l.detail}')
+          .join('\n');
+      expect(t, contains('2x12 traité ×'));
+      expect(t, contains('(à plat aux côtés des marches)'));
       expect(
-        sans.map((l) => l.article).join(),
-        isNot(contains('Contreplaqué')),
+        t,
+        contains(
+          '28 morceaux de 7 1/8", un de chaque côté de chaque marche, '
+          'entre le limon de côté et le suivant, sous la planche de côté',
+        ),
       );
-    });
-
-    test('épaisseur invalide : refusée', () {
-      expect(() => avec(2), throwsA(isA<EscalierInvalide>()));
+      expect(t, isNot(contains('ontreplaqué')));
+      expect(calculerComposite(avec(blocs: false)).blocs, isNull);
+      expect(
+        materielEscalier(
+          avec(blocs: false),
+          metrique: false,
+        ).map((l) => l.article).join(),
+        isNot(contains('2x12 traité')),
+      );
     });
   });
 
