@@ -965,6 +965,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     });
   }
 
+  /// Le pitch : la valeur seulement (3 11/16, ou 3.71 en métrique), sans « /12 ».
+  String _textePitch(double pouces) => _metrique
+      ? pouces.toStringAsFixed(2)
+      : _formatPoucesFraction(pouces).replaceAll('"', '');
+
   double _valeurVuePitch(int vue) {
     final pente = tan(_angle! * pi / 180);
     return switch (vue) {
@@ -980,12 +985,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     if (_rappelDiag) return ('DIAG', _texteResultatVue(_diag!));
     final v = _valeurVuePitch(_vuePitch!);
     return switch (_vuePitch!) {
-      0 => (
-        'PITCH',
-        _metrique
-            ? '${v.toStringAsFixed(2)} / 12'
-            : '${_formatPoucesFraction(v)} / 12',
-      ),
+      0 => ('PITCH', _textePitch(v)),
       1 => ('PENTE', v.toStringAsFixed(6)),
       2 => ('% PENTE', v.toStringAsFixed(6)),
       _ => ('PITCH', '${v.toStringAsFixed(2)}°'),
@@ -1284,7 +1284,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                     Text(
                       _metrique
                           ? 'PENTE ${(_pitch! / 12 * 100).toStringAsFixed(1)} %'
-                          : 'PITCH ${_pitch!.toStringAsFixed(2)}/12',
+                          : 'PITCH ${_textePitch(_pitch!)}',
                       style: TextStyle(
                         color: _texteLcd,
                         fontSize: 13,
@@ -1691,11 +1691,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _pitch == null
-                      ? '—'
-                      : _metrique
-                      ? '${_pitch!.toStringAsFixed(2)}/12'
-                      : '${_formatPoucesFraction(_pitch!)}/12',
+                  _pitch == null ? '—' : _textePitch(_pitch!),
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,

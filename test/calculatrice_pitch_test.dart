@@ -104,14 +104,14 @@ void main() {
     testWidgets('6 Po PITCH : un pitch de 6/12', (t) async {
       await ouvrir(t);
       await taper(t, ['6', 'Po', 'PITCH']);
-      expect(touche(t, 'PITCH'), ['PITCH', '6"/12']);
-      expect(affiche('PITCH 6.00/12'), isTrue);
+      expect(touche(t, 'PITCH'), ['PITCH', '6']);
+      expect(affiche('PITCH 6'), isTrue);
     });
 
     testWidgets('6 PITCH (sans unité) : 6°, soit 1 1/4/12', (t) async {
       await ouvrir(t);
       await taper(t, ['6', 'PITCH']);
-      expect(touche(t, 'PITCH'), ['PITCH', '1 1/4"/12']);
+      expect(touche(t, 'PITCH'), ['PITCH', '1 1/4']);
       await taper(t, ['PITCH', 'PITCH', 'PITCH', 'PITCH']);
       expect(rappel(t), ['PITCH', '6.00°']);
     });
@@ -124,7 +124,7 @@ void main() {
         await taper(t, ['1', '7', '.', '2', 'PITCH']);
         expect(find.byKey(const ValueKey('lcd_rappel')), findsNothing);
         await taper(t, ['PITCH']);
-        expect(rappel(t), ['PITCH', '3 11/16" / 12']);
+        expect(rappel(t), ['PITCH', '3 11/16']);
         await taper(t, ['PITCH']);
         expect(rappel(t), ['PENTE', '0.309552']);
         await taper(t, ['PITCH']);
@@ -132,9 +132,9 @@ void main() {
         await taper(t, ['PITCH']);
         expect(rappel(t), ['PITCH', '17.20°']);
         await taper(t, ['PITCH']);
-        expect(rappel(t), ['PITCH', '3 11/16" / 12']);
+        expect(rappel(t), ['PITCH', '3 11/16']);
         // La pente n'a pas changé.
-        expect(touche(t, 'PITCH'), ['PITCH', '3 11/16"/12']);
+        expect(touche(t, 'PITCH'), ['PITCH', '3 11/16']);
       },
     );
 
@@ -157,7 +157,7 @@ void main() {
       (t) async {
         await ouvrir(t);
         await taper(t, ['1', '4', '4', 'Po', 'RUN', '6', 'PITCH']);
-        expect(touche(t, 'PITCH'), ['PITCH', '1 1/4"/12']);
+        expect(touche(t, 'PITCH'), ['PITCH', '1 1/4']);
         expect(touche(t, 'RISE'), ['RISE', '15 1/8"']); // 144 × tan 6°
         expect(touche(t, 'DIAG'), ['DIAG', '144 13/16"']);
       },
@@ -166,7 +166,7 @@ void main() {
     testWidgets('RUN et RISE donnent la pente', (t) async {
       await ouvrir(t);
       await taper(t, ['1', '2', 'RUN', '6', 'RISE']);
-      expect(touche(t, 'PITCH'), ['PITCH', '6"/12']);
+      expect(touche(t, 'PITCH'), ['PITCH', '6']);
       expect(touche(t, 'DIAG'), ['DIAG', '13 7/16"']);
     });
 
@@ -302,10 +302,10 @@ void main() {
           'PITCH',
         ]);
         expect(touche(t, 'RISE'), ['RISE', '1500 mm']);
-        expect(touche(t, 'PITCH'), ['PITCH', '6.00/12']);
+        expect(touche(t, 'PITCH'), ['PITCH', '6.00']);
         expect(affiche('PENTE 50.0 %'), isTrue);
         await taper(t, ['PITCH']);
-        expect(rappel(t), ['PITCH', '6.00 / 12']);
+        expect(rappel(t), ['PITCH', '6.00']);
       },
     );
 
