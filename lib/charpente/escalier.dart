@@ -913,6 +913,18 @@ List<Verification> _verifier({
       'CNB 9.8.2.2',
     ),
   );
+  final produit = s.composite;
+  if (produit != null && s.nez > produit.debordNezMax + 1e-9) {
+    v.add(
+      Verification(
+        'nez_composite',
+        Niveau.avertissement,
+        'Nez de ${_l(s.nez, metrique)} : ${produit.nom} demande au plus '
+            '${_l(produit.debordNezMax, metrique)} au-delà de la contremarche.',
+        'Guide d\'installation ${produit.marque}',
+      ),
+    );
+  }
   if (!s.contremarchesFermees && s.composite == null) {
     v.add(
       const Verification(

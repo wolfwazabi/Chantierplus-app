@@ -562,10 +562,30 @@ void main() {
       expect(_texte('Planches Composite courant'), findsOneWidget);
       expect(_texte('Fascias Composite courant'), findsOneWidget);
       expect(_texte('(backing des contremarches)'), findsWidgets);
-      expect(_texte('Boîtes de vis et bouchons de la couleur'), findsOneWidget);
+      expect(
+        _texte('Vis et bouchons (vis et bouchons de la couleur)'),
+        findsOneWidget,
+      );
       expect(_texte('Marches de 3\''), findsNothing);
-      // Limons à 12 po au plus : 4 limons en 36 po.
-      expect(_texte('4 limons'), findsOneWidget);
+      // Générique prudent : limons à 9 po au plus, 5 limons en 36 po.
+      expect(_texte('5 limons'), findsOneWidget);
+
+      // Une marque : sa fiche (écarts, attaches, source) et ses limons.
+      await t.tap(_cle('escalier_produit_generique'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('TimberTech PRO (Legacy, Reserve)').last);
+      await t.pumpAndSettle();
+      final fiche = t.widget<Text>(_cle('escalier_produit_fiche')).data!;
+      expect(fiche, contains('Planches de 5 3/8" × 15/16"'));
+      expect(fiche, contains('limons aux 10" au plus'));
+      expect(fiche, contains('Toutes les planches en vis Cortex et bouchons'));
+      expect(fiche, contains('Attaches cachées interdites sur les marches'));
+      expect(fiche, contains('Source : TimberTech'));
+      expect(_texte('Planches TimberTech PRO'), findsOneWidget);
+      expect(
+        _texte('TimberTech PRO (Legacy, Reserve) en cadre'),
+        findsOneWidget,
+      );
       // Retour au bois : comme avant.
       await t.tap(_cle('escalier_composite'));
       await t.pumpAndSettle();

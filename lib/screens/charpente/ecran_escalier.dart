@@ -299,10 +299,14 @@ class _EcranEscalierState extends State<EcranEscalier> {
             Text(
               key: const ValueKey('escalier_produit_fiche'),
               'Planches de ${_l(_produit!.largeur)} × ${_l(_produit!.epaisseur)} ; '
-              'écart de ${_l(_produit!.ecart)} entre planches (${_produit!.attache}), '
+              'écart de ${_l(_produit!.ecart)} entre planches côte à côte, '
               '${_l(_produit!.ecartBout)} au bout contre le cadre ; limons aux '
-              '${_l(_produit!.entraxeMaxLimons)} au plus. Nez et côtés vissés en surface '
-              'avec bouchons (${_produit!.bouchons}).',
+              '${_l(_produit!.entraxeMaxLimons)} au plus ; nez de '
+              '${_l(_produit!.debordNezMax)} au plus. '
+              '${_produit!.attachesSurMarches ? 'Attaches ${_produit!.attache} au centre ; nez et côtés' : 'Toutes les planches'} '
+              'en ${_produit!.fixationSurface}.\n'
+              '${_produit!.noteEcarts}\n${_produit!.noteMarches}\n'
+              'Source : ${_produit!.source}.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
             espace,

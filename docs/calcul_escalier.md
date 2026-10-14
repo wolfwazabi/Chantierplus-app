@@ -86,6 +86,35 @@ gorge minimale de 3 1/2 po (règle de métier, erreur si moins).
 Tolérance de conversion : 0,05 mm (7 7/8 po = 200,025 mm compte pour la limite de 200 mm).
 Par défaut, le giron est 10 1/4 po : 10 po (254 mm) est 1 mm sous le minimum.
 
+## Marches en composite
+
+Option « Marches en composite » (groupe Marches et contremarches) et choix du produit
+(`lib/charpente/composite.dart`, calcul dans `escalier_composite.dart`) :
+
+- **Marches en cadre** : un nez sur toute la largeur, 2 côtés en onglet (profondeur de la
+  marche) et des planches au centre ; planches à bord carré dans les longueurs vendues du
+  produit. Écarts du fabricant : entre planches côte à côte, et au bout des planches du centre
+  contre les côtés (valeur par temps doux ; le tableau selon la température est affiché).
+- **Contremarches** en fascia (la plus basse hauteur vendue qui couvre la contremarche,
+  refendue), avec un **2x traité de backing** derrière chacune (2x8, 2x10 ou 2x12 selon la
+  hauteur). Pas de contreplaqué sous les marches.
+- **Fixation selon le guide** : la plupart des fabricants interdisent leurs attaches cachées
+  sur les marches (TimberTech, Fiberon, MoistureShield) : tout est vissé en surface, 2 vis par
+  limon dans chaque planche en travers et 2 par côté, avec bouchons (ou vis de la couleur,
+  ex. TOPLoc). Trex permet ses attaches Hideaway au centre (planches à bord carré rainurées à
+  la toupie) : une par limon intérieur à chaque joint. Fascias : 2 vis par limon.
+- **Limons** à l'entraxe du fabricant (ex. Trex Enhance 9 po, Select 200 mm et Transcend
+  230 mm au Canada, TimberTech 10 po, Fiberon 12 po, MoistureShield 8 à 9 po) ; le
+  « composite courant » prend 9 po (prudent).
+- **Épaisseur de marche** du traçage des limons = épaisseur de la planche ; avertissement si
+  le nez dépasse le maximum du fabricant (Trex 3/4 po, TimberTech 1 po, PVC 1/2 po…).
+
+Sources : guides et fiches des fabricants consultés le 13 octobre 2026 (cités dans chaque
+fiche). À revérifier avec le guide du produit posé : les gammes changent (MoistureShield a été
+racheté par Deckorators en 2026), certaines valeurs n'ont pas pu être vérifiées (longueurs du
+bord carré TimberTech, largeur réelle de la fascia AZEK, système de bouchons MoistureShield,
+format des boîtes de bouchons — la liste donne le nombre de vis et de bouchons).
+
 ## Limites et prudence
 
 - **Sources.** Les valeurs ont été recoupées dans des sources secondaires

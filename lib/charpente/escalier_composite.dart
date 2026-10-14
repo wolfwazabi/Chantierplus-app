@@ -37,7 +37,8 @@ class MaterielComposite {
   final int rangsCentre;
   final double longueurCentre;
 
-  /// Vis apparentes (nez et côtés des marches, vissés en surface) : autant de bouchons.
+  /// Vis en surface des marches (nez et côtés ; toutes les planches si le fabricant interdit ses
+  /// attaches sur les marches) : autant de bouchons si le produit en a.
   final int visApparentes;
 
   /// Attaches cachées des planches du centre.
@@ -60,12 +61,12 @@ class MaterielComposite {
     required this.visFascia,
   });
 
-  int get boitesBouchons => (visApparentes / produit.bouchonsParBoite).ceil();
   int get boitesAttaches => (attaches / produit.attachesParBoite).ceil();
 }
 
-/// Vis par limon dans le nez, et par côté de marche (vissés en surface, avec bouchons).
-const int visNezParLimon = 2;
+/// Vissage en surface : 2 vis par limon dans chaque planche en travers des limons, et 2 vis par
+/// côté de marche (dans le limon extérieur).
+const int visParLimonParPlanche = 2;
 const int visParCote = 2;
 
 /// Vis par limon dans chaque fascia (dans le backing).
@@ -131,14 +132,23 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
       ? '2x10'
       : '2x12';
 
-  // Fixation : le nez et les côtés (bords visibles) sont vissés en surface, chaque vis cachée
-  // par un bouchon ; les planches du centre posent sur les limons intérieurs avec une attache
-  // cachée à chaque joint de planches (devant, entre les rangs et au fond).
+  // Fixation : le nez et les côtés (bords visibles) sont vissés en surface. Les planches du
+  // centre posent sur les limons intérieurs : attaches cachées à chaque joint de planches
+  // (devant, entre les rangs et au fond) si le fabricant les permet sur les marches, sinon
+  // vissées en surface elles aussi.
   final limons = r.nombreLimons;
   final limonsInterieurs = math.max(0, limons - 2);
+  final avecAttaches = produit.attachesSurMarches && rangs > 0;
   final visApparentes =
-      r.nombreMarches * (visNezParLimon * limons + 2 * visParCote);
-  final attaches = r.nombreMarches * (rangs + 1) * limonsInterieurs;
+      r.nombreMarches *
+      (visParLimonParPlanche * limons +
+          2 * visParCote +
+          (avecAttaches
+              ? 0
+              : rangs * visParLimonParPlanche * limonsInterieurs));
+  final attaches = avecAttaches
+      ? r.nombreMarches * (rangs + 1) * limonsInterieurs
+      : 0;
   final visFascia = r.nombreContremarches * visFasciaParLimon * limons;
 
   return MaterielComposite(
@@ -151,7 +161,7 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
     rangsCentre: rangs,
     longueurCentre: longueurCentre,
     visApparentes: visApparentes,
-    attaches: rangs == 0 ? 0 : attaches,
+    attaches: attaches,
     visFascia: visFascia,
   );
 }

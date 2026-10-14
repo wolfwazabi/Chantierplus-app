@@ -102,11 +102,15 @@ List<LigneMaterielEscalier> _materielComposite(
             'du centre',
       ),
     LigneMaterielEscalier(
-      c.boitesBouchons,
-      'Boîte${c.boitesBouchons > 1 ? 's' : ''} de ${produit.bouchons} '
-          '(${produit.bouchonsParBoite})',
-      '${c.visApparentes} vis apparentes cachées par un bouchon : nez ($visNezParLimon par '
-          'limon) et côtés ($visParCote chacun) de chaque marche',
+      c.visApparentes,
+      produit.avecBouchons
+          ? 'Vis et bouchons (${produit.fixationSurface})'
+          : 'Vis (${produit.fixationSurface})',
+      '${produit.avecBouchons ? 'Vis en surface cachées par un bouchon' : 'Vis en surface'} : '
+      '$visParLimonParPlanche par limon dans le nez'
+      '${c.attaches == 0 && c.rangsCentre > 0 ? ' et dans les planches du centre' : ''}, '
+      '$visParCote par côté de marche'
+      '${produit.attachesSurMarches ? '' : ' (attaches cachées interdites sur les marches)'}',
     ),
     LigneMaterielEscalier(
       c.visFascia,
