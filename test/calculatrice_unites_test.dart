@@ -48,12 +48,12 @@ void main() {
     // Chaque rangée, de gauche à droite (sous la petite rangée de la mémoire).
     const grille = [
       ['PITCH', 'RISE', 'RUN', 'DIAG', 'Conv'],
-      ['m', 'cm', 'mm', 'x²', '√x'],
+      ['m', 'cm', 'mm', 'x²', 'x³'],
       ['Pi', 'Po', '/', '⌫', 'AC'],
       ['(', '7', '8', '9', '÷'],
       [')', '4', '5', '6', '×'],
       ['%', '1', '2', '3', '−'],
-      ['x³', '0', '.', '=', '+'],
+      ['√x', '0', '.', '=', '+'],
     ];
 
     for (final metrique in [false, true]) {
@@ -188,6 +188,66 @@ void main() {
       await taper(t, ['8', 'Pi', 'Conv']);
       expect(affiche('2.438 m'), isTrue);
       expect(affiche('96 po'), isTrue);
+    });
+  });
+
+  group('mode Escalier, à côté de Béton', () {
+    tearDown(() => CalculatriceScreen.mode.value = ModeCalculatrice.charpente);
+
+    testWidgets(
+      'le calculateur d\'escalier du chantier, et il garde ses valeurs',
+      (t) async {
+        await ouvrir(t);
+        final boutons = [
+          for (final m in ['charpente', 'beton', 'escalier'])
+            t.getCenter(find.byKey(ValueKey('mode_$m'))).dx,
+        ];
+        expect(boutons, orderedEquals([...boutons]..sort()));
+        expect(find.text('Escalier'), findsOneWidget);
+
+        await t.tap(find.byKey(const ValueKey('mode_escalier')));
+        await t.pumpAndSettle();
+        expect(find.byKey(const ValueKey('escalier_hauteur')), findsOneWidget);
+        expect(find.byKey(const ValueKey('touche_7')), findsNothing);
+        expect(t.takeException(), isNull);
+
+        // Une hauteur changée reste après un passage par la charpente.
+        await t.enterText(
+          find.descendant(
+            of: find.byKey(const ValueKey('escalier_hauteur')),
+            matching: find.byType(TextField),
+          ),
+          "8'",
+        );
+        await t.pumpAndSettle();
+        await t.tap(find.byKey(const ValueKey('mode_charpente')));
+        await t.pumpAndSettle();
+        expect(find.byKey(const ValueKey('touche_7')), findsOneWidget);
+        await t.tap(find.byKey(const ValueKey('mode_escalier')));
+        await t.pumpAndSettle();
+        expect(
+          t
+              .widget<TextField>(
+                find.descendant(
+                  of: find.byKey(const ValueKey('escalier_hauteur')),
+                  matching: find.byType(TextField),
+                ),
+              )
+              .controller!
+              .text,
+          "8'",
+        );
+      },
+    );
+
+    testWidgets('le calcul de la charpente reste aussi', (t) async {
+      await ouvrir(t);
+      await taper(t, ['1', '2', 'Po', '+', '3']);
+      await t.tap(find.byKey(const ValueKey('mode_escalier')));
+      await t.pumpAndSettle();
+      await t.tap(find.byKey(const ValueKey('mode_charpente')));
+      await t.pumpAndSettle();
+      expect(affiche('12" + 3'), isTrue);
     });
   });
 

@@ -4,9 +4,10 @@ import 'package:flutter/material.dart';
 
 import '../services/preferences.dart';
 import '../services/theme_compagnie.dart';
+import 'charpente/ecran_escalier.dart';
 
-/// Calculatrice affichée, choisie avec les boutons Charpente | Béton en haut.
-enum ModeCalculatrice { charpente, beton }
+/// Calculatrice affichée, choisie avec les boutons Charpente | Béton | Escalier en haut.
+enum ModeCalculatrice { charpente, beton, escalier }
 
 /// Levée par l'évaluation quand une division par zéro survient.
 class _DivisionParZero implements Exception {
@@ -1206,14 +1207,28 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           children: [
             _enteteMode(),
             const SizedBox(height: 8),
-            _mode == ModeCalculatrice.charpente
-                ? _ecranCharpente()
-                : _ecranAutre(),
-            const SizedBox(height: 8),
             Expanded(
-              child: _mode == ModeCalculatrice.charpente
-                  ? _clavierCharpente()
-                  : _clavierAutre(),
+              child: IndexedStack(
+                index: _mode == ModeCalculatrice.escalier ? 1 : 0,
+                sizing: StackFit.expand,
+                children: [
+                  Column(
+                    children: [
+                      _mode == ModeCalculatrice.beton
+                          ? _ecranAutre()
+                          : _ecranCharpente(),
+                      const SizedBox(height: 8),
+                      Expanded(
+                        child: _mode == ModeCalculatrice.beton
+                            ? _clavierAutre()
+                            : _clavierCharpente(),
+                      ),
+                    ],
+                  ),
+                  // Surface Material : les lignes à toucher de l'escalier y dessinent leur effet.
+                  const Material(color: _casing, child: EcranEscalier()),
+                ],
+              ),
             ),
           ],
         ),
@@ -1221,7 +1236,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  /// En-tête : choix Charpente | Béton, et unités en vigueur.
+  /// En-tête : choix Charpente | Béton | Escalier.
   Widget _enteteMode() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -1230,6 +1245,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           _boutonMode('Charpente', ModeCalculatrice.charpente),
           const SizedBox(width: 8),
           _boutonMode('Béton', ModeCalculatrice.beton),
+          const SizedBox(width: 8),
+          _boutonMode('Escalier', ModeCalculatrice.escalier),
         ],
       ),
     );
@@ -1493,7 +1510,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             unite('cm', _committerCentimetres),
             unite('mm', _committerMillimetres),
             fonction('x²', _appliquerCarre),
-            fonction('√x', _appliquerRacine),
+            fonction('x³', _appliquerCube),
           ]),
           rangee([
             unite('Pi', _committerFeet),
@@ -1524,7 +1541,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             operation('−', () => _appuyerOperateurCharpente('-')),
           ]),
           rangee([
-            fonction('x³', _appliquerCube),
+            fonction('√x', _appliquerRacine),
             _toucheChiffreGrande('0'),
             _toucheChiffreGrande('.'),
             operation('=', _appuyerEgalCharpente),
