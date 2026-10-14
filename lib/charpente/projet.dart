@@ -1,9 +1,11 @@
 import 'commande.dart';
+import 'composite.dart';
 import 'geometrie.dart';
 import 'mur.dart';
 import 'panneaux.dart';
 import 'plancher.dart';
 import 'scene.dart';
+import 'terrasse.dart';
 import 'unites.dart';
 
 /// Projet de charpente : plancher, murs, paramètres. Tout ce que l'utilisateur
@@ -231,6 +233,10 @@ class ParametresPlancher {
   final int clousParBoite;
   final double margeClous;
 
+  /// Dessus en composite (une plateforme, une terrasse) : l'identifiant du produit
+  /// ([produitComposite]) ; null : sous-plancher en feuilles (un agrandissement).
+  final String? composite;
+
   const ParametresPlancher({
     this.forme = const FormeRectangle(156, 126),
     this.espacement = 16,
@@ -257,6 +263,7 @@ class ParametresPlancher {
     this.clousParEtrier = 10,
     this.clousParBoite = 120,
     this.margeClous = 5,
+    this.composite,
   });
 
   ParametresPlancher copieAvec({
@@ -283,6 +290,7 @@ class ParametresPlancher {
     int? clousParEtrier,
     int? clousParBoite,
     double? margeClous,
+    String? Function()? composite,
   }) => ParametresPlancher(
     forme: forme ?? this.forme,
     espacement: espacement ?? this.espacement,
@@ -310,6 +318,7 @@ class ParametresPlancher {
     clousParEtrier: clousParEtrier ?? this.clousParEtrier,
     clousParBoite: clousParBoite ?? this.clousParBoite,
     margeClous: margeClous ?? this.margeClous,
+    composite: composite != null ? composite() : this.composite,
   );
 
   SpecPlancher versSpec(Polygone contour) => SpecPlancher(
@@ -439,6 +448,8 @@ class ProjetCharpente {
       'clousParEtrier': plancher.clousParEtrier,
       'clousParBoite': plancher.clousParBoite,
       'margeClous': plancher.margeClous,
+      // Seulement s'il y a du composite : les projets en feuilles ne changent pas.
+      if (plancher.composite != null) 'composite': plancher.composite,
     },
     'mursActifs': mursActifs,
     'murs': {
@@ -518,6 +529,7 @@ class ProjetCharpente {
       clousParEtrier: _entierOu(p['clousParEtrier'], 1, 40, 10),
       clousParBoite: _entierOu(p['clousParBoite'], 10, 5000, 120),
       margeClous: _numOu(p['margeClous'], 0, 100, 5),
+      composite: _composite(p['composite']),
     );
     final mode = ModeMurs.values.where((e) => e.name == m['mode']);
     if (mode.isEmpty) {
@@ -559,6 +571,15 @@ class ProjetCharpente {
   }
 }
 
+/// Produit composite du dessus du plancher : absent, ou un identifiant connu.
+String? _composite(Object? v) {
+  if (v == null) return null;
+  if (v is! String || !produitsComposite.any((p) => p.id == v)) {
+    throw const FormatException('produit composite inconnu');
+  }
+  return v;
+}
+
 /// Sections permises pour les solives.
 const sectionsPlancher = [section2x6, section2x8, section2x10, section2x12];
 
@@ -570,6 +591,11 @@ class ResultatsProjet {
   final Polygone? contour;
   final ResultatPlancher? plancher;
   final String? erreurPlancher;
+
+  /// Dessus du plancher en composite (null : en feuilles, ou impossible : voir
+  /// [erreurTerrasse]).
+  final ResultatTerrasse? terrasse;
+  final String? erreurTerrasse;
   final ResultatMurs? murs;
   final String? erreurMurs;
   final Scene scene;
@@ -579,13 +605,16 @@ class ResultatsProjet {
     this.contour,
     this.plancher,
     this.erreurPlancher,
+    this.terrasse,
+    this.erreurTerrasse,
     this.murs,
     this.erreurMurs,
     required this.scene,
     required this.commande,
   });
 
-  bool get aDesErreurs => erreurPlancher != null || erreurMurs != null;
+  bool get aDesErreurs =>
+      erreurPlancher != null || erreurTerrasse != null || erreurMurs != null;
 }
 
 /// Calcule le projet. Une erreur de saisie (forme impossible, ouverture trop
@@ -610,6 +639,22 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
     }
   }
 
+  // Dessus en composite : cadre, planches, fascia, sur le plancher calculé.
+  ResultatTerrasse? terrasse;
+  String? erreurTerrasse;
+  if (plancher != null && p.plancher.composite != null) {
+    try {
+      terrasse = calculerTerrasse(
+        plancher,
+        produitComposite(p.plancher.composite),
+        section: p.plancher.section,
+        metrique: metrique,
+      );
+    } on SpecInvalide catch (e) {
+      erreurTerrasse = e.message;
+    }
+  }
+
   ResultatMurs? murs;
   String? erreurMurs;
   if (p.mursActifs) {
@@ -628,6 +673,7 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
       : construireScene(
           plancher: plancher,
           sectionPlancher: p.plancher.section,
+          terrasse: terrasse,
           murs: murs,
           contour: p.murs.mode == ModeMurs.contour ? contour : null,
           metrique: metrique,
@@ -635,6 +681,7 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
   final commande = construireCommande(
     plancher: plancher,
     sectionPlancher: p.plancher.section,
+    terrasse: terrasse,
     murs: murs,
     metrique: metrique,
   );
@@ -642,6 +689,8 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
     contour: contour,
     plancher: plancher,
     erreurPlancher: erreurPlancher,
+    terrasse: terrasse,
+    erreurTerrasse: erreurTerrasse,
     murs: murs,
     erreurMurs: erreurMurs,
     scene: scene,

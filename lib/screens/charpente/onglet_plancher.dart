@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
+import '../../charpente/composite.dart';
 import '../../charpente/geometrie.dart';
 import '../../charpente/mur.dart' show SectionBois;
 import '../../charpente/panneaux.dart';
 import '../../charpente/plancher.dart';
 import '../../charpente/projet.dart';
+import '../../charpente/terrasse.dart';
 import '../../charpente/unites.dart';
 import '../../services/preferences.dart';
 import 'champs.dart';
@@ -57,6 +59,8 @@ class OngletPlancher extends StatelessWidget {
         if (projet.plancherActif) ...[
           if (res.erreurPlancher != null)
             BlocMessages([res.erreurPlancher!], erreur: true),
+          if (res.erreurTerrasse != null)
+            BlocMessages([res.erreurTerrasse!], erreur: true),
           if (res.plancher != null)
             Vue3D(
               key: const ValueKey('plancher_apercu'),
@@ -176,66 +180,95 @@ class OngletPlancher extends StatelessWidget {
           ),
           SectionRepliable(
             cle: 'sous_plancher',
-            titre: 'Sous-plancher',
+            titre: 'Dessus du plancher',
             resume: _resumeSousPlancher(),
             enfants: [
-              Text(
-                'Feuilles en travers des solives, joints décalés, '
-                'chaque joint sur une solive.',
-                style: Theme.of(context).textTheme.bodySmall,
+              SegmentedButton<bool>(
+                key: const ValueKey('dessus_plancher'),
+                showSelectedIcon: false,
+                segments: const [
+                  ButtonSegment(
+                    value: false,
+                    label: Text('Feuilles'),
+                    tooltip: 'Sous-plancher en feuilles (un agrandissement)',
+                  ),
+                  ButtonSegment(
+                    value: true,
+                    label: Text('Composite'),
+                    tooltip:
+                        'Plateforme : planches de composite, cadre et fascia',
+                  ),
+                ],
+                selected: {_p.composite != null},
+                onSelectionChanged: (s) => _set(
+                  _p.copieAvec(
+                    composite: () =>
+                        s.first ? produitCompositeGenerique.id : null,
+                  ),
+                ),
               ),
               const SizedBox(height: 8),
-              DropdownButtonFormField<FormatPanneau>(
-                key: ValueKey('format_${_p.panneau.id}'),
-                initialValue: _p.panneau,
-                decoration: const InputDecoration(
-                  labelText: 'Format des feuilles',
-                  border: OutlineInputBorder(),
-                  isDense: true,
+              if (_p.composite != null)
+                ..._composite(context)
+              else ...[
+                Text(
+                  'Feuilles en travers des solives, joints décalés, '
+                  'chaque joint sur une solive.',
+                  style: Theme.of(context).textTheme.bodySmall,
                 ),
-                items: [
-                  for (final f in formatsPanneaux.where((f) => !f.estIsolant))
-                    DropdownMenuItem(
-                      value: f,
-                      child: Text(
-                        _metrique
-                            ? '${f.nom} (${f.surfaceM2.toStringAsFixed(2)} m²)'
-                            : '${f.nom} (${f.surfacePi2.toStringAsFixed(0)} pi²)',
+                const SizedBox(height: 8),
+                DropdownButtonFormField<FormatPanneau>(
+                  key: ValueKey('format_${_p.panneau.id}'),
+                  initialValue: _p.panneau,
+                  decoration: const InputDecoration(
+                    labelText: 'Format des feuilles',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  items: [
+                    for (final f in formatsPanneaux.where((f) => !f.estIsolant))
+                      DropdownMenuItem(
+                        value: f,
+                        child: Text(
+                          _metrique
+                              ? '${f.nom} (${f.surfaceM2.toStringAsFixed(2)} m²)'
+                              : '${f.nom} (${f.surfacePi2.toStringAsFixed(0)} pi²)',
+                        ),
+                      ),
+                  ],
+                  onChanged: (f) =>
+                      f == null ? null : _set(_p.copieAvec(panneau: f)),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: ChampLongueur(
+                        label: 'Décalage des joints',
+                        valeur: _p.decalageMin,
+                        min: 0,
+                        max: 96,
+                        aide: 'Minimum entre 2 rangées',
+                        onChange: (v) => _set(_p.copieAvec(decalageMin: v)),
                       ),
                     ),
-                ],
-                onChanged: (f) =>
-                    f == null ? null : _set(_p.copieAvec(panneau: f)),
-              ),
-              const SizedBox(height: 12),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: ChampLongueur(
-                      label: 'Décalage des joints',
-                      valeur: _p.decalageMin,
-                      min: 0,
-                      max: 96,
-                      aide: 'Minimum entre 2 rangées',
-                      onChange: (v) => _set(_p.copieAvec(decalageMin: v)),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ChampNombre(
+                        label: 'Marge d\'achat',
+                        valeur: _p.margePanneauxPourcent,
+                        min: 0,
+                        max: 50,
+                        decimales: 0,
+                        suffixe: '%',
+                        onChange: (v) =>
+                            _set(_p.copieAvec(margePanneauxPourcent: v)),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ChampNombre(
-                      label: 'Marge d\'achat',
-                      valeur: _p.margePanneauxPourcent,
-                      min: 0,
-                      max: 50,
-                      decimales: 0,
-                      suffixe: '%',
-                      onChange: (v) =>
-                          _set(_p.copieAvec(margePanneauxPourcent: v)),
-                    ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
+              ],
             ],
           ),
           SectionRepliable(
@@ -259,7 +292,8 @@ class OngletPlancher extends StatelessWidget {
             ],
           ),
           const TitreSection('Résultats'),
-          if (res.plancher != null) _Resultats(res.plancher!, projet),
+          if (res.plancher != null)
+            _Resultats(res.plancher!, projet, res.terrasse),
         ],
       ],
     );
@@ -312,9 +346,47 @@ class OngletPlancher extends StatelessWidget {
         '${po.section.nom} · ${po.pieuxParPoutre} pieux par poutre$patte';
   }
 
-  String _resumeSousPlancher() =>
-      '${_p.panneau.nom} · joints décalés de ${_l(_p.decalageMin)} · '
-      'marge ${formatNombre(_p.margePanneauxPourcent, decimales: 0)} %';
+  String _resumeSousPlancher() => _p.composite != null
+      ? '${produitComposite(_p.composite).nom} · cadre en onglet · fascia'
+      : '${_p.panneau.nom} · joints décalés de ${_l(_p.decalageMin)} · '
+            'marge ${formatNombre(_p.margePanneauxPourcent, decimales: 0)} %';
+
+  /// Dessus en composite : le produit et ce que son guide demande.
+  List<Widget> _composite(BuildContext context) {
+    final p = produitComposite(_p.composite);
+    return [
+      DropdownButtonFormField<String>(
+        key: ValueKey('plancher_produit_${p.id}'),
+        initialValue: p.id,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          labelText: 'Produit',
+          border: OutlineInputBorder(),
+          isDense: true,
+        ),
+        items: [
+          for (final q in produitsComposite)
+            DropdownMenuItem(value: q.id, child: Text(q.nom)),
+        ],
+        onChanged: (id) =>
+            id == null ? null : _set(_p.copieAvec(composite: () => id)),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        key: const ValueKey('plancher_produit_fiche'),
+        'Cadre de planches à rive carrée en onglet sur le pourtour (sauf contre la maison), '
+        'planches rainurées au centre en travers des solives avec les attaches ${p.attache}, '
+        'fascia sur les rives, blocage sous le cadre qui longe les solives.\n'
+        'Planches de ${_l(p.largeur)} × ${_l(p.epaisseur)} ; écart de ${_l(p.ecartPlancher)} '
+        'entre planches, ${_l(p.ecartBout)} au bout contre le cadre, '
+        '${_l(ecartMaisonComposite)} contre la maison ; solives aux '
+        '${_l(p.entraxeMaxSolives)} au plus.\n'
+        '${p.notePlancher}\n'
+        'Source : ${p.source}.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ];
+  }
 
   String _resumeBois() {
     final l = [..._p.longueursPlanches]..sort();
@@ -1029,7 +1101,8 @@ class _Points extends StatelessWidget {
 class _Resultats extends StatelessWidget {
   final ResultatPlancher r;
   final ProjetCharpente projet;
-  const _Resultats(this.r, this.projet);
+  final ResultatTerrasse? terrasse;
+  const _Resultats(this.r, this.projet, this.terrasse);
 
   @override
   Widget build(BuildContext context) {
@@ -1074,12 +1147,34 @@ class _Resultats extends StatelessWidget {
         'Portée la plus longue',
         formatLongueur(r.porteeMax, metrique: metrique),
       ),
-      (
-        'Feuilles de sous-plancher',
-        '${r.panneaux.feuillesACommander} à commander '
-            '(${r.panneaux.feuillesUtilisees} utilisées, perte '
-            '${formatNombre(r.panneaux.pertePourcent, decimales: 0)} %)',
-      ),
+      if (terrasse case final t?) ...[
+        (
+          'Composite ${t.produit.nom}',
+          '${t.cadre.length} planches de cadre, ${t.centre.length} planches au centre '
+              '(${t.rangees} rangées)',
+        ),
+        (
+          'Fascia',
+          '${formatLongueur(t.fascias.fold(0.0, (a, f) => a + f.longueur), metrique: metrique)} '
+              'de ${formatLongueur(t.hauteurFascia, metrique: metrique)}',
+        ),
+        (
+          'Attaches ${t.produit.attache}',
+          '${t.attaches} (${t.boitesAttaches} boîte${t.boitesAttaches > 1 ? 's' : ''})',
+        ),
+        if (t.blocs > 0)
+          (
+            'Blocage du cadre',
+            '${t.blocs} blocs de ${formatLongueur(t.longueurBloc, metrique: metrique)} '
+                'en ${projet.plancher.section.nom}',
+          ),
+      ] else
+        (
+          'Feuilles de sous-plancher',
+          '${r.panneaux.feuillesACommander} à commander '
+              '(${r.panneaux.feuillesUtilisees} utilisées, perte '
+              '${formatNombre(r.panneaux.pertePourcent, decimales: 0)} %)',
+        ),
     ];
     return Card(
       child: Padding(
@@ -1140,6 +1235,7 @@ class _Resultats extends StatelessWidget {
             BlocMessages([
               ...r.avertissements,
               ...?r.poutres?.avertissements.map((a) => 'Poutres : $a'),
+              ...?terrasse?.avertissements,
             ]),
           ],
         ),

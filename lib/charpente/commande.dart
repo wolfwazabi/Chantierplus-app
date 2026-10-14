@@ -1,16 +1,18 @@
 import 'empaquetage.dart';
 import 'mur.dart';
 import 'plancher.dart';
+import 'terrasse.dart';
 import 'unites.dart';
 
 /// Liste d'achat : tout le bois, les feuilles, la quincaillerie, la membrane et
 /// le revêtement d'un projet (plancher + murs), regroupés par article.
 
-enum CategorieCommande { bois, panneaux, quincaillerie, finition }
+enum CategorieCommande { bois, panneaux, composite, quincaillerie, finition }
 
 String libelleCategorie(CategorieCommande c) => switch (c) {
   CategorieCommande.bois => 'Bois d\'œuvre',
   CategorieCommande.panneaux => 'Feuilles',
+  CategorieCommande.composite => 'Composite',
   CategorieCommande.quincaillerie => 'Quincaillerie',
   CategorieCommande.finition => 'Membrane, fourrures et revêtement',
 };
@@ -206,12 +208,83 @@ void _bois(
   }
 }
 
+/// Composite du dessus d'un plancher : planches du cadre et du centre, fascias, attaches, vis.
+void _terrasse(
+  List<LigneCommande> out,
+  ResultatTerrasse t,
+  String sectionPlancher,
+  bool metrique,
+) {
+  final p = t.produit;
+  String pi(double po) => formatPlanche(po, metrique: metrique);
+  void planches(ResultatDecoupe d, String Function(double) article) {
+    for (final e in d.parLongueur.entries) {
+      out.add(
+        LigneCommande(
+          categorie: CategorieCommande.composite,
+          article: article(e.key),
+          quantite: e.value.toDouble(),
+          usage: 'Plancher',
+        ),
+      );
+    }
+  }
+
+  planches(
+    t.planchesCadre,
+    (lg) => 'Planches ${p.nom} à rive carrée × ${pi(lg)}',
+  );
+  planches(t.planchesCentre, (lg) => 'Planches ${p.nom} rainurées × ${pi(lg)}');
+  planches(
+    t.planchesFascia,
+    (lg) =>
+        'Fascias ${p.marque} ${formatLongueur(t.hauteurFascia, metrique: metrique)} × ${pi(lg)}',
+  );
+  if (t.attaches > 0) {
+    out.add(
+      LigneCommande(
+        categorie: CategorieCommande.quincaillerie,
+        article:
+            'Attaches cachées ${p.attache} (boîte de ${p.attachesParBoite})',
+        quantite: t.boitesAttaches.toDouble(),
+        usage: 'Plancher',
+      ),
+    );
+  }
+  out.add(
+    LigneCommande(
+      categorie: CategorieCommande.quincaillerie,
+      article: p.avecBouchons
+          ? 'Vis et bouchons (${p.fixationSurface})'
+          : 'Vis (${p.fixationSurface})',
+      quantite: t.visSurface.toDouble(),
+      usage: 'Plancher',
+    ),
+  );
+  out.add(
+    LigneCommande(
+      categorie: CategorieCommande.quincaillerie,
+      article: 'Vis de fascia de la couleur',
+      quantite: t.visFascia.toDouble(),
+      usage: 'Plancher',
+    ),
+  );
+  _bois(
+    out,
+    t.blocage,
+    sectionPlancher,
+    'Plancher (blocage du cadre)',
+    metrique,
+  );
+}
+
 /// Construit la liste d'achat. [plancher] et [murs] sont facultatifs (au moins
 /// l'un des deux). [sectionPlancher] : section des solives, des rives et des
-/// entremises.
+/// entremises. [terrasse] : le dessus en composite (à la place du sous-plancher).
 Commande construireCommande({
   ResultatPlancher? plancher,
   SectionBois sectionPlancher = section2x10,
+  ResultatTerrasse? terrasse,
   ResultatMurs? murs,
   bool metrique = false,
 }) {
@@ -265,7 +338,10 @@ Commande construireCommande({
       avert.addAll(poutres.avertissements.map((a) => 'Poutres : $a'));
     }
     final pn = plancher.panneaux;
-    if (pn.feuillesACommander > 0) {
+    if (terrasse != null) {
+      _terrasse(brutes, terrasse, sectionPlancher.nom, metrique);
+      avert.addAll(terrasse.avertissements.map((a) => 'Plancher : $a'));
+    } else if (pn.feuillesACommander > 0) {
       brutes.add(
         LigneCommande(
           categorie: CategorieCommande.panneaux,

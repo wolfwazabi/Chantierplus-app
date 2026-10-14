@@ -509,7 +509,10 @@ class _Vue3DState extends State<Vue3D> {
         if (aPlancher)
           _Etapes(
             titre: 'Plancher',
-            libelles: _libellesPlancher,
+            // Dessus en composite : la 3e étape montre les planches, pas des feuilles.
+            libelles: scene.solides.any((s) => s.matiere == Matiere.composite)
+                ? [..._libellesPlancher.take(2), '+ Composite']
+                : _libellesPlancher,
             valeur: _etapePlancher,
             onChange: (v) => setState(() {
               _etapePlancher = v;

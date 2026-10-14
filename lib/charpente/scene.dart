@@ -4,6 +4,7 @@ import 'geometrie.dart';
 import 'mur.dart';
 import 'plancher.dart';
 import 'solides.dart';
+import 'terrasse.dart';
 import 'unites.dart';
 
 export 'solides.dart' show Scene, Solide, Calque, Matiere, InfoPiece, Cote, P3;
@@ -82,9 +83,14 @@ void _ajouterPlancher(
   _Constructeur c,
   ResultatPlancher r,
   SectionBois section,
+  ResultatTerrasse? terrasse,
 ) {
   final spec = r.spec;
-  final tSub = spec.panneau.epaisseur ?? _epSousPlancherDefaut;
+  // Dessus en composite : l'épaisseur de la planche à la place de la feuille.
+  final tSub =
+      terrasse?.produit.epaisseur ??
+      spec.panneau.epaisseur ??
+      _epSousPlancherDefaut;
   final zHaut = -tSub;
   final zBas = zHaut - section.profondeur;
   final f = r.formePivotee;
@@ -224,10 +230,15 @@ void _ajouterPlancher(
     ]);
   }
 
+  // --- Dessus en composite (cadre, planches du centre, fascias) --------------
+  if (terrasse != null) {
+    _ajouterTerrasse(c, terrasse, versForme, zHaut, section);
+  }
+
   // --- Sous-plancher ---------------------------------------------------------
   final pn = r.panneaux;
   final b = f.boite;
-  for (var k = 0; k < pn.poses.length; k++) {
+  for (var k = 0; k < (terrasse == null ? pn.poses.length : 0); k++) {
     final p = pn.poses[k];
     final contour = polygoneDansRectangle(f.sommets, p.u0, p.u1, p.v0, p.v1);
     if (contour.length < 3 || aireSignee(contour).abs() < 1e-6) {
@@ -523,6 +534,80 @@ void _ajouterMurs(_Constructeur c, ResultatMurs r, Polygone? contour) {
   }
 }
 
+void _ajouterTerrasse(
+  _Constructeur c,
+  ResultatTerrasse t,
+  Pt Function(Pt) versForme,
+  double zDessous,
+  SectionBois section,
+) {
+  final p = t.produit;
+  List<Pt> boucle(List<Pt> contour) {
+    final pts = contour.map(versForme).toList();
+    return aireSignee(pts) < 0 ? pts.reversed.toList() : pts;
+  }
+
+  void planche(
+    String groupe,
+    Matiere matiere,
+    List<Pt> contour,
+    double z0,
+    double z1,
+  ) {
+    if (contour.length < 3 || aireSignee(contour).abs() < 1e-6) return;
+    c.ajouter(
+      extrusionHorizontale(
+        id: c.id,
+        groupe: groupe,
+        calque: Calque.sousPlancher,
+        matiere: matiere,
+        boucles: [boucle(contour)],
+        z0: z0,
+        z1: z1,
+      ),
+    );
+  }
+
+  for (final (k, pl) in t.cadre.indexed) {
+    final groupe = 'tc$k';
+    planche(groupe, Matiere.composite, pl.contour, zDessous, 0);
+    c.info(groupe, 'Planche du cadre', [
+      'Longueur à couper : ${c.l(pl.longueur)} (pointe longue)',
+      '${p.nom} à rive carrée, en onglet aux coins',
+      if (pl.morceaux > 1) 'En ${pl.morceaux} morceaux, joints sur un bloc',
+      pl.longeSolives
+          ? 'Sur du blocage aux ${c.l(espacementBlocageCadre)}'
+          : 'Sur les bouts des solives et la rive',
+      'Vissée en surface : ${p.fixationSurface}',
+    ]);
+  }
+  for (final (k, pl) in t.centre.indexed) {
+    final groupe = 'tp$k';
+    planche(groupe, Matiere.composite, pl.contour, zDessous, 0);
+    c.info(groupe, 'Planche du centre', [
+      'Longueur à couper : ${c.l(pl.longueur)}',
+      '${p.nom} rainurée${pl.refendue ? ', refendue' : ''}',
+      'Rangée ${pl.rangee + 1} de ${t.rangees}',
+      'Attaches ${p.attache} : ${pl.appuis} (une par solive)',
+    ]);
+  }
+  for (final (k, fa) in t.fascias.indexed) {
+    final groupe = 'tf$k';
+    planche(
+      groupe,
+      Matiere.fascia,
+      fa.contour,
+      zDessous - t.hauteurFascia,
+      zDessous,
+    );
+    c.info(groupe, 'Fascia', [
+      'Pièce : ${c.l(fa.longueur)} × ${c.l(t.hauteurFascia)}',
+      if (fa.morceaux > 1) 'En ${fa.morceaux} morceaux',
+      '${p.marque}, vissée dans la rive (${section.nom}) sous le débord des planches',
+    ]);
+  }
+}
+
 // =============================================================================
 // Scène complète
 // =============================================================================
@@ -532,13 +617,14 @@ void _ajouterMurs(_Constructeur c, ResultatMurs r, Polygone? contour) {
 Scene construireScene({
   ResultatPlancher? plancher,
   SectionBois sectionPlancher = section2x10,
+  ResultatTerrasse? terrasse,
   ResultatMurs? murs,
   Polygone? contour,
   bool metrique = false,
 }) {
   final c = _Constructeur(metrique);
   if (plancher != null) {
-    _ajouterPlancher(c, plancher, sectionPlancher);
+    _ajouterPlancher(c, plancher, sectionPlancher, terrasse);
   }
   if (murs != null) {
     _ajouterMurs(c, murs, contour ?? plancher?.spec.forme);

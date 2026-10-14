@@ -1,5 +1,5 @@
 /// Produits de terrasse en composite (ou PVC) : ce que disent les guides d'installation des
-/// fabricants pour des marches d'escalier. Tout est en POUCES. Sources : guides et fiches des
+/// fabricants pour des marches d'escalier et pour le dessus d'une plateforme. Tout est en POUCES. Sources : guides et fiches des
 /// fabricants consultés le 13 octobre 2026 (voir [ProduitComposite.source]) ; à revérifier avec
 /// le guide du produit posé, les gammes changent.
 class ProduitComposite {
@@ -48,6 +48,32 @@ class ProduitComposite {
   /// Ce que le guide demande de particulier pour les marches.
   final String noteMarches;
 
+  /// Plancher (dessus d'une plateforme) : écart entre planches côte à côte avec l'attache cachée.
+  final double ecartPlancher;
+
+  /// Longueurs vendues des planches rainurées (le centre du plancher).
+  final List<double> longueursRainurees;
+
+  /// Entraxe maximal des solives sous un plancher de ce produit, planches perpendiculaires
+  /// (valeur canadienne quand elle diffère).
+  final double entraxeMaxSolives;
+
+  /// Épaisseur de la fascia (pour le dessin et le débord du cadre).
+  final double epaisseurFascia;
+
+  /// Vis de fascia : par rangée verticale, et espacement des rangées.
+  final int visFasciaParRangee;
+  final double espacementVisFascia;
+
+  /// Vis en surface au milieu de chaque planche du centre, en plus des attaches (Fiberon).
+  final int visCentreParPlanche;
+
+  /// Débord maximal des planches du plancher au-delà de la rive ou de la fascia.
+  final double debordPlancherMax;
+
+  /// Ce que le guide demande de particulier pour un plancher.
+  final String notePlancher;
+
   /// D'où viennent ces valeurs.
   final String source;
 
@@ -71,6 +97,15 @@ class ProduitComposite {
     required this.entraxeMaxLimons,
     required this.debordNezMax,
     required this.noteMarches,
+    required this.ecartPlancher,
+    required this.longueursRainurees,
+    required this.entraxeMaxSolives,
+    required this.epaisseurFascia,
+    required this.visFasciaParRangee,
+    required this.espacementVisFascia,
+    required this.visCentreParPlanche,
+    required this.debordPlancherMax,
+    required this.notePlancher,
     required this.source,
   });
 
@@ -80,6 +115,7 @@ class ProduitComposite {
 const _po12 = <double>[144];
 const _carre12a20 = <double>[144, 192, 240];
 const _carre16et20 = <double>[192, 240];
+const _rainure12a20 = <double>[144, 192, 240];
 
 const _trexGuide =
     'Trex, guide d\'installation 2026 (images.salsify.com/…/hqvoka6uysitrwuk4oij.pdf) et fiche Enhance';
@@ -91,6 +127,12 @@ const _trexMarches =
     'toupie ; sinon vis en surface. Écart de 1/4 à 3/8 po entre les planches des marches ; '
     'fascia de contremarche : 2 vis par limon.';
 
+const _trexPlancher =
+    'Au Canada (CCMC 13125-R) : Enhance aux 300 mm, Select et Transcend aux 400 mm. Hideaway : '
+    '1 attache par solive par planche (boîte de 90 = 50 pi²). Joints bout à bout sur une solive '
+    '(Butt Joint Clip, ou 2x4 contre la solive). Cadre : 2 solives de plus sous la bordure, 2 vis '
+    'aux 16 po. Fascia : 3 vis aux 18 po (2 sur une rive 2x8), à 1 po des bords.';
+
 const _ttGuide =
     'TimberTech, guide d\'installation composite et fiches 2024 (assets.timbertech.com)';
 const _ttEcarts =
@@ -99,6 +141,12 @@ const _ttEcarts =
 const _ttMarches =
     'Attaches cachées interdites sur les marches : vis Cortex (bouchons) ou TOPLoc. Limon central '
     'obligatoire ; marche sans contremarche déconseillée.';
+
+const _ttPlancher =
+    'Solives aux 16 po au plus (12 conseillé). CONCEALoc : 1 attache et 1 vis par solive (boîte '
+    'de 175 = 100 pi²). Joints bout à bout : toujours sur une solive doublée. Cadre : blocage aux '
+    '16 po au plus, 2 vis de chaque côté de l\'onglet. Fascia : vis en alternance haut et bas aux '
+    '12 po.';
 
 const _fibGuide =
     'Fiberon, instructions PE FIB-0354-LIT 10/25 et ESR-4947 (fiberondecking.com)';
@@ -109,11 +157,25 @@ const _fibMarches =
     'Planches rainurées interdites sur les marches : bord carré vissé en surface (PRO PLUG ou '
     'Cortex). Au moins 2 portées ; contremarche : 2 vis par limon.';
 
+const _fibPlancher =
+    'Solives aux 16 po au plus. Phantom : 1 attache par solive dans la rainure, plus 2 vis en '
+    'surface à la solive près du milieu de chaque planche ; départ et fin : STARTER aux 16 po ou '
+    'vis en surface. Joints : solives doublées (écartées de 1/2 po) ou cales. Cadre : rive carrée, '
+    '2 vis par solive. Fascia : 3 vis aux 12 po, à 1 po des bords.';
+
 const _msGuide =
-    'MoistureShield, guide d\'installation mars 2021 et fiches 04-26 (moistureshield.com) ; '
+    'MoistureShield, guide d\'installation mars 2021 (révisé 2024), fiches 04-26 et CCMC 13191-R '
+    '(moistureshield.com) ; '
     'gamme rachetée par Deckorators en 2026 : offre à reconfirmer';
 const _msEcarts =
     'Bout à bout : 1/8 po au moins ; 1/4 po contre une structure.';
+const _msPlancher =
+    'Solives aux 16 po (Canada : 400 mm, CCMC 13191-R pour Vision ; Elevate non évalué). '
+    'Attache Aegis ou Deck Clip : 1 de chaque côté de la planche à chaque solive (90 = 50 pi²). '
+    'Joints : chaque bout sur sa solive ; joints alignés sur une solive doublée. Fascia '
+    '0,67 × 11,25 po : 3 vis par rangée aux 12 à 16 po, sous le débord. Elevate : débord de '
+    '1/4 po au plus, pas de bouchons.';
+
 const _msMarches =
     'Marches vissées en surface, 2 vis par limon ; au moins 5 limons ; marche d\'au moins 11 po. '
     'Système de bouchons à confirmer chez le fabricant.';
@@ -140,6 +202,15 @@ const produitCompositeGenerique = ProduitComposite(
   entraxeMaxLimons: 9,
   debordNezMax: 0.75,
   noteMarches: 'Valeurs prudentes : la plupart des fabricants demandent des marches vissées en surface.',
+  ecartPlancher: 3 / 16,
+  longueursRainurees: _rainure12a20,
+  entraxeMaxSolives: 16,
+  epaisseurFascia: 0.75,
+  visFasciaParRangee: 3,
+  espacementVisFascia: 16,
+  visCentreParPlanche: 0,
+  debordPlancherMax: 0.5,
+  notePlancher: 'Valeurs courantes : vérifier le guide du produit posé.',
   source: 'Valeurs courantes ; vérifier le guide du produit posé.',
 );
 
@@ -166,6 +237,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 9,
     debordNezMax: 0.75,
     noteMarches: _trexMarches,
+    ecartPlancher: 3 / 16, // 5 mm ; l'attache Hideaway fait l'écart
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 12, // « 300 mm » au Canada (CCMC 13125-R) : 12 po
+    epaisseurFascia: 0.56,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 18,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher: _trexPlancher,
     source: _trexGuide,
   ),
   ProduitComposite(
@@ -188,6 +268,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 200 / 25.4, // 200 mm au Canada
     debordNezMax: 0.75,
     noteMarches: _trexMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16, // « 400 mm » au Canada : 16 po
+    epaisseurFascia: 0.56,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 18,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher: _trexPlancher,
     source: _trexGuide,
   ),
   ProduitComposite(
@@ -210,6 +299,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 230 / 25.4, // 230 mm au Canada
     debordNezMax: 0.75,
     noteMarches: _trexMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16, // « 400 mm » au Canada : 16 po
+    epaisseurFascia: 0.56,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 18,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher: _trexPlancher,
     source: _trexGuide,
   ),
   ProduitComposite(
@@ -232,6 +330,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 10,
     debordNezMax: 1,
     noteMarches: _ttMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.58,
+    visFasciaParRangee: 2,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher: _ttPlancher,
     source: _ttGuide,
   ),
   ProduitComposite(
@@ -254,6 +361,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 8,
     debordNezMax: 1,
     noteMarches: _ttMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.58,
+    visFasciaParRangee: 2,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher: _ttPlancher,
     source: _ttGuide,
   ),
   ProduitComposite(
@@ -276,6 +392,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 10,
     debordNezMax: 1,
     noteMarches: _ttMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.58,
+    visFasciaParRangee: 2,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher: _ttPlancher,
     source: _ttGuide,
   ),
   ProduitComposite(
@@ -298,6 +423,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 9,
     debordNezMax: 1,
     noteMarches: _ttMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.58,
+    visFasciaParRangee: 2,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher: _ttPlancher,
     source: _ttGuide,
   ),
   ProduitComposite(
@@ -317,8 +451,8 @@ const produitsComposite = <ProduitComposite>[
     avecBouchons: true,
     longueurs: _carre12a20,
     hauteursFascia: [
-      11.25,
-    ], // fascia de 12 po nominal : largeur réelle non vérifiée
+      11.75,
+    ], // fascia PVC 0,5 × 11,75 po (guide Advanced PVC 07/26)
     longueursFascia: _po12,
     entraxeMaxLimons: 10,
     debordNezMax: 0.5,
@@ -326,6 +460,17 @@ const produitsComposite = <ProduitComposite>[
         'Bord carré vissé en surface (Cortex ou TOPLoc) ; contremarche : 2 vis par limon, '
         'blocage derrière si les limons sont à plus de 10 po. Longueurs du bord carré et largeur '
         'de la fascia à vérifier.',
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.5,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.75,
+    notePlancher:
+        'PVC : solives aux 16 po au plus (12 conseillé) ; bouts serrés ; solive ou blocage double '
+        'aux joints ; fascia sur fond plein (rive 2x12), 3 vis par rangée aux 12 po.',
     source: 'TimberTech, guide d\'installation PVC et fiche AZEK 2024 (assets.timbertech.com)',
   ),
   ProduitComposite(
@@ -348,6 +493,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 12,
     debordNezMax: 0.5,
     noteMarches: _fibMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.75,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 2,
+    debordPlancherMax: 0.5,
+    notePlancher: _fibPlancher,
     source: _fibGuide,
   ),
   ProduitComposite(
@@ -370,6 +524,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 12,
     debordNezMax: 1,
     noteMarches: _fibMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.75,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 2,
+    debordPlancherMax: 1,
+    notePlancher: _fibPlancher,
     source: _fibGuide,
   ),
   ProduitComposite(
@@ -392,6 +555,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 12,
     debordNezMax: 0.5,
     noteMarches: _fibMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.75,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 12,
+    visCentreParPlanche: 2,
+    debordPlancherMax: 0.5,
+    notePlancher: _fibPlancher,
     source: _fibGuide,
   ),
   ProduitComposite(
@@ -414,6 +586,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 9,
     debordNezMax: 0.75,
     noteMarches: _msMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.67,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 16,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 1.5,
+    notePlancher: _msPlancher,
     source: _msGuide,
   ),
   ProduitComposite(
@@ -436,6 +617,15 @@ const produitsComposite = <ProduitComposite>[
     entraxeMaxLimons: 8,
     debordNezMax: 0.75,
     noteMarches: _msMarches,
+    ecartPlancher: 3 / 16,
+    longueursRainurees: _rainure12a20,
+    entraxeMaxSolives: 16,
+    epaisseurFascia: 0.67,
+    visFasciaParRangee: 3,
+    espacementVisFascia: 16,
+    visCentreParPlanche: 0,
+    debordPlancherMax: 0.25,
+    notePlancher: _msPlancher,
     source: _msGuide,
   ),
 ];
