@@ -36,11 +36,48 @@ int _compte(Scene s, String prefixe) => {
 );
 
 void main() {
-  test('escalier en bois : pas de vue 3D', () {
-    expect(
-      sceneEscalier(_escalier(produit: null), metrique: false).estVide,
-      isTrue,
-    );
+  test(
+    'escalier en bois : limons, une marche par siège, pas de fascia ni de 2x12',
+    () {
+      final r = _escalier(produit: null);
+      final s = sceneEscalier(r, metrique: false);
+      expect(_compte(s, 'limon'), r.nombreLimons);
+      expect(_compte(s, 'marche'), r.nombreMarches);
+      expect(_compte(s, 'fascia'), 0);
+      expect(_compte(s, 'bloc'), 0);
+      expect(_compte(s, 'contremarche'), 0); // contremarches ouvertes
+      // Contremarches fermées : une par contremarche ; jumelé, la plus haute est la rive.
+      final fermees = calculerEscalier(
+        const SpecEscalier(hauteurTotale: 108, contremarchesFermees: true),
+      );
+      expect(
+        _compte(sceneEscalier(fermees, metrique: false), 'contremarche'),
+        fermees.nombreContremarches,
+      );
+      expect(
+        _compte(
+          sceneEscalier(fermees, metrique: false, jumele: true),
+          'contremarche',
+        ),
+        fermees.nombreContremarches - 1,
+      );
+      // Seul : un bout de plancher du haut ; jumelé : non.
+      expect(s.infos.containsKey('plancher'), isTrue);
+      expect(
+        sceneEscalier(
+          r,
+          metrique: false,
+          jumele: true,
+        ).infos.containsKey('plancher'),
+        isFalse,
+      );
+    },
+  );
+
+  test('jumelé en composite : la plus haute fascia est celle du plancher', () {
+    final s = sceneEscalier(_escalier(), metrique: false, jumele: true);
+    expect(_compte(s, 'fascia'), 14);
+    expect(s.infos.containsKey('plancher'), isFalse);
   });
 
   test('comme la photo : limons, une fascia à chaque contremarche (sans backing), 2x12 aux côtés, '

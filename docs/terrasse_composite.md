@@ -52,3 +52,24 @@ des feuilles (z = 0 : dessus des planches).
 À revérifier avec le guide du produit posé : les gammes et les guides changent. Non publiés par
 les fabricants (donc pas calculés) : appui minimal aux joints, dégagement au-dessus du sol d'une
 terrasse surélevée.
+
+## Escalier jumelé au plancher
+
+Onglet **Escalier** de la charpente (entre Murs et 3D) : « Inclure un escalier ». Le calcul est
+celui de l'écran Escalier (`EcranEscalier(projet: true)`), avec :
+
+- la **hauteur de la plateforme** (du sol fini au dessus fini) comme hauteur totale ;
+- des marches **en composite du même produit** que le dessus du plancher (en bois si le plancher
+  est en feuilles) ; la plus haute contremarche est la **fascia du plancher** (elle n'est pas
+  comptée avec l'escalier) ;
+- sa **place** : le côté du plancher (pas celui de la maison), **centré** ou **à une distance du
+  coin de gauche** vu de l'extérieur ; un escalier trop large pour le côté est refusé avec un
+  message.
+
+Choix enregistrés dans le projet (`ParametresEscalier`, `lib/charpente/escalier_projet.dart` ;
+clés `escalierActif` et `escalier`, absentes des projets sans escalier). La 3D place l'escalier
+contre la face de la fascia (ou de la rive) du côté choisi, son haut au dessus du plancher
+(`placerEscalier`). La commande ajoute les limons (« Escalier (limons) »), les marches, les
+fascias, les 2x12 à plat et la quincaillerie ; les mêmes articles que le plancher s'additionnent.
+L'assistant IA ne connaît pas encore le composite ni l'escalier : ils sont gardés tels quels
+quand il modifie le calcul.

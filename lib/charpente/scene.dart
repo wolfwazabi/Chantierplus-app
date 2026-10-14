@@ -619,10 +619,30 @@ Scene construireScene({
   SectionBois sectionPlancher = section2x10,
   ResultatTerrasse? terrasse,
   ResultatMurs? murs,
+  Scene? escalier,
   Polygone? contour,
   bool metrique = false,
 }) {
   final c = _Constructeur(metrique);
+  // Escalier déjà placé dans le repère du plancher : ses pièces s'ajoutent telles quelles.
+  if (escalier != null) {
+    for (final s in escalier.solides) {
+      c.ajouter(
+        Solide(
+          id: c.id,
+          groupe: s.groupe,
+          calque: s.calque,
+          matiere: s.matiere,
+          coque: s.coque,
+          z0: s.z0,
+          z1: s.z1,
+          faces: s.faces,
+        ),
+      );
+    }
+    c.infos.addAll(escalier.infos);
+    c.cotes.addAll(escalier.cotes);
+  }
   if (plancher != null) {
     _ajouterPlancher(c, plancher, sectionPlancher, terrasse);
   }

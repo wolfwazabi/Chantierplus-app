@@ -1,9 +1,12 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../charpente/composite.dart';
 import '../../charpente/escalier.dart';
 import '../../charpente/escalier_composite.dart';
+import '../../charpente/escalier_projet.dart';
 import '../../charpente/escalier_solveur.dart';
 import '../../charpente/escalier_texte.dart';
 import '../../charpente/unites.dart';
@@ -18,9 +21,34 @@ import 'schema_limon.dart';
 ///
 /// [simple] (la calculatrice, édition gratuite) : les limons seulement, en bois — ni composite,
 /// ni matériaux pour la commande ; ça reste propre à la section Chantier.
+///
+/// [projet] (onglet Escalier de la charpente) : l'escalier est jumelé au plancher ; sa hauteur
+/// est celle de la plateforme et ses marches suivent le dessus du plancher
+/// ([compositeDuPlancher] ; null : en bois). Les choix partent de [initial] et chaque changement
+/// est rendu par [onChange].
 class EcranEscalier extends StatefulWidget {
   final bool simple;
-  const EcranEscalier({super.key, this.simple = false});
+  final bool projet;
+  final ParametresEscalier? initial;
+  final ValueChanged<ParametresEscalier>? onChange;
+  final String? compositeDuPlancher;
+
+  /// Projet en composite : la plus haute contremarche est la fascia du plancher.
+  final bool contremarcheHautFournie;
+
+  /// Projet : ce qui va en haut de l'écran (inclure l'escalier, sa place sur le plancher).
+  final List<Widget> entete;
+
+  const EcranEscalier({
+    super.key,
+    this.simple = false,
+    this.projet = false,
+    this.initial,
+    this.onChange,
+    this.compositeDuPlancher,
+    this.contremarcheHautFournie = false,
+    this.entete = const [],
+  });
 
   @override
   State<EcranEscalier> createState() => _EcranEscalierState();
@@ -46,8 +74,94 @@ class _EcranEscalierState extends State<EcranEscalier> {
   /// Marches en composite : le produit choisi (null : marches en bois).
   String? _composite;
 
-  ProduitComposite? get _produit =>
-      _composite == null || widget.simple ? null : produitComposite(_composite);
+  /// Projet : la place sur le plancher (réglée par l'onglet), gardée telle quelle.
+  ParametresEscalier _base = const ParametresEscalier();
+
+  /// Dernier état rendu à [EcranEscalier.onChange].
+  String? _dernierEnvoi;
+
+  ProduitComposite? get _produit {
+    if (widget.projet) {
+      final id = widget.compositeDuPlancher;
+      return id == null ? null : produitComposite(id);
+    }
+    return _composite == null || widget.simple
+        ? null
+        : produitComposite(_composite);
+  }
+
+  ParametresEscalier get _parametres => _base.copieAvec(
+    hauteur: _hauteur,
+    largeur: _largeur,
+    usage: _usage,
+    mode: _mode,
+    giron: _giron,
+    course: _course,
+    contremarcheSouhaitee: _souhaitee,
+    nombreImpose: _nombreImpose,
+    nombre: _nombre,
+    epaisseurMarche: _epaisseurMarche,
+    nez: _nez,
+    contremarchesFermees: _fermees,
+    epaisseurContremarche: _epaisseurContremarche,
+    section: _section,
+    entraxe: _entraxe,
+    composite: () => _composite,
+  );
+
+  void _charger(ParametresEscalier p) {
+    _base = p;
+    _hauteur = p.hauteur;
+    _largeur = p.largeur;
+    _usage = p.usage;
+    _mode = p.mode;
+    _giron = p.giron;
+    _course = p.course;
+    _souhaitee = p.contremarcheSouhaitee;
+    _nombreImpose = p.nombreImpose;
+    _nombre = p.nombre;
+    _epaisseurMarche = p.epaisseurMarche;
+    _nez = p.nez;
+    _fermees = p.contremarchesFermees;
+    _epaisseurContremarche = p.epaisseurContremarche;
+    _section = p.section;
+    _entraxe = p.entraxe;
+    _composite = p.composite;
+    _dernierEnvoi = jsonEncode(p.toJson());
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initial case final p?) {
+      _charger(p);
+    }
+  }
+
+  @override
+  void didUpdateWidget(EcranEscalier old) {
+    super.didUpdateWidget(old);
+    // Changé ailleurs (place sur le plancher, calcul ouvert, nouveau calcul) : on suit.
+    final p = widget.initial;
+    if (p != null &&
+        jsonEncode(p.toJson()) != jsonEncode(_parametres.toJson())) {
+      _charger(p);
+    }
+  }
+
+  /// Chaque changement des choix est rendu au projet.
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    final rappel = widget.onChange;
+    if (rappel == null) return;
+    final p = _parametres;
+    final texte = jsonEncode(p.toJson());
+    if (texte != _dernierEnvoi) {
+      _dernierEnvoi = texte;
+      rappel(p);
+    }
+  }
 
   // Mode « à partir de ce que je connais » : 2 données ou plus, le calcul trouve le
   // reste avec les girons et contremarches idéals du Code.
@@ -99,6 +213,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
     section: _section,
     espacementMax: _entraxe,
     composite: _produit,
+    contremarcheHautFournie: widget.projet && widget.contremarcheHautFournie,
     // Traçage au 1/16 po ou au millimètre, selon le système d'unités.
     precisionTrace: metrique ? 1 / mmParPouce : 1 / 16,
   );
@@ -132,6 +247,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
         return ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
+            ...widget.entete,
             ..._formulaire(),
             if (erreur != null)
               BlocMessages(
@@ -154,23 +270,26 @@ class _EcranEscalierState extends State<EcranEscalier> {
   List<Widget> _formulaire() {
     const espace = SizedBox(height: 12);
     return [
-      SwitchListTile(
-        key: const ValueKey('escalier_mode_donnees'),
-        contentPadding: EdgeInsets.zero,
-        title: const Text('Partir de ce que je connais'),
-        subtitle: const Text(
-          'Donnez 2 mesures ou plus : le calcul trouve le reste.',
+      if (!widget.projet)
+        SwitchListTile(
+          key: const ValueKey('escalier_mode_donnees'),
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Partir de ce que je connais'),
+          subtitle: const Text(
+            'Donnez 2 mesures ou plus : le calcul trouve le reste.',
+          ),
+          value: _modeDonnees,
+          onChanged: (v) => setState(() => _modeDonnees = v),
         ),
-        value: _modeDonnees,
-        onChanged: (v) => setState(() => _modeDonnees = v),
-      ),
       if (_modeDonnees) ..._panneauDonnees(),
       const TitreSection('Dimensions'),
       if (!_modeDonnees) ...[
         ChampLongueur(
           key: const ValueKey('escalier_hauteur'),
-          label: 'Hauteur totale',
-          aide: 'Du plancher fini du bas au plancher fini du haut.',
+          label: widget.projet ? 'Hauteur de la plateforme' : 'Hauteur totale',
+          aide: widget.projet
+              ? 'Du sol fini au dessus fini de la plateforme.'
+              : 'Du plancher fini du bas au plancher fini du haut.',
           valeur: _hauteur,
           min: 4,
           max: 400,
@@ -277,7 +396,12 @@ class _EcranEscalierState extends State<EcranEscalier> {
             : 'Marche ${_l(_epaisseurMarche)} · nez ${_l(_nez)} · contremarches '
                   '${_fermees ? 'fermées (${_l(_epaisseurContremarche)})' : 'ouvertes'}',
         enfants: [
-          if (!widget.simple)
+          if (widget.projet && _produit != null)
+            Text(
+              key: const ValueKey('escalier_composite_plancher'),
+              'Marches en composite ${_produit!.nom}, comme le dessus du plancher.',
+            ),
+          if (!widget.simple && !widget.projet)
             SwitchListTile(
               key: const ValueKey('escalier_composite'),
               contentPadding: EdgeInsets.zero,
@@ -291,22 +415,23 @@ class _EcranEscalierState extends State<EcranEscalier> {
               ),
             ),
           if (_produit != null) ...[
-            DropdownButtonFormField<String>(
-              key: ValueKey('escalier_produit_$_composite'),
-              initialValue: _composite,
-              isExpanded: true,
-              decoration: const InputDecoration(
-                labelText: 'Produit',
-                border: OutlineInputBorder(),
-                isDense: true,
+            if (!widget.projet)
+              DropdownButtonFormField<String>(
+                key: ValueKey('escalier_produit_$_composite'),
+                initialValue: _composite,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  labelText: 'Produit',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+                items: [
+                  for (final p in produitsComposite)
+                    DropdownMenuItem(value: p.id, child: Text(p.nom)),
+                ],
+                onChanged: (id) =>
+                    id == null ? null : setState(() => _composite = id),
               ),
-              items: [
-                for (final p in produitsComposite)
-                  DropdownMenuItem(value: p.id, child: Text(p.nom)),
-              ],
-              onChanged: (id) =>
-                  id == null ? null : setState(() => _composite = id),
-            ),
             const SizedBox(height: 4),
             Text(
               key: const ValueKey('escalier_produit_fiche'),
@@ -730,7 +855,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
         ],
       ),
       if (!widget.simple) ...[
-        const TitreSection('Matériaux'),
+        TitreSection(
+          'Matériaux',
+          aide: widget.projet ? 'Aussi dans l\'onglet Commande.' : null,
+        ),
         _Carte(
           cle: 'escalier_materiaux',
           lignes: [

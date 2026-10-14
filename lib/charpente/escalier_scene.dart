@@ -1,23 +1,23 @@
 import 'dart:math' as math;
 
+import 'composite.dart';
 import 'escalier.dart';
 import 'escalier_composite.dart';
 import 'geometrie.dart';
 import 'solides.dart';
 import 'unites.dart';
 
-/// Vue 3D d'un escalier en composite, comme la photo de référence de Philip : les limons, les
-/// fascias des contremarches vissées sur les limons et les 2x12 à plat aux côtés des marches.
-/// La marche du haut est posée en cadre (nez, deux côtés en onglet, planches du centre) ; les
-/// autres sont laissées ouvertes pour qu'on voie la structure. Un bout du plancher du haut
-/// (rive et dessus) situe l'escalier.
+/// Vue 3D d'un escalier. En composite, comme la photo de référence de Philip : les limons, les
+/// fascias des contremarches vissées sur les limons et les 2x12 à plat aux côtés des marches ; la
+/// marche du haut est posée en cadre (nez, deux côtés en onglet, planches du centre) et les
+/// autres sont laissées ouvertes pour qu'on voie la structure. En bois : les limons, les marches
+/// et les contremarches fermées. Seul, un bout du plancher du haut (rive et dessus) situe
+/// l'escalier ; jumelé à un plancher ([placerEscalier]), c'est le vrai plancher.
 ///
 /// Repère : x en travers de l'escalier (0 : face extérieure du limon de gauche, en montant),
 /// y dans le sens de la montée (0 : face de la coupe de départ des limons), z vers le haut
 /// (0 : plancher fini du bas). Les limons sont tranchés marche par marche : chaque tranche est
 /// convexe, ce que demande l'ordre d'affichage de la vue 3D.
-///
-/// Escalier en bois (sans composite) : scène vide.
 
 /// Épaisseur de la fascia, pour le dessin seulement (elle n'entre pas dans le calcul).
 const double _epFascia = 0.75;
@@ -144,13 +144,15 @@ class _Pieces {
   }
 }
 
-Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
+/// [jumele] : l'escalier descend d'un plancher du projet (pas de bout de plancher dessiné ; en
+/// composite, la plus haute contremarche est la fascia du plancher).
+Scene sceneEscalier(
+  ResultatEscalier r, {
+  required bool metrique,
+  bool jumele = false,
+}) {
   final s = r.spec;
   final produit = s.composite;
-  if (produit == null) {
-    return Scene.vide;
-  }
-  final c = calculerComposite(r);
   final p = _Pieces(metrique);
   String l(double po) => p.l(po);
 
@@ -196,9 +198,91 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
     }
   }
 
+  if (produit != null) {
+    _composite(p, r, produit, jumele: jumele);
+  } else {
+    _bois(p, r, jumele: jumele);
+  }
+
+  // Plancher du haut, seul : la rive où les limons s'accrochent, et le dessus qui dépasse la
+  // dernière contremarche comme un nez.
+  final course = r.course;
+  final hauteur = s.hauteurTotale;
+  if (!jumele) {
+    final devant = produit != null
+        ? _epFascia
+        : (s.contremarchesFermees ? s.epaisseurContremarche : 0.0);
+    p.infos['plancher'] = InfoPiece('Plancher du haut', [
+      'Hauteur : ${l(hauteur)} au-dessus du plancher du bas',
+    ]);
+    p.boite(
+      'plancher',
+      Matiere.rive,
+      0,
+      largeur,
+      course,
+      course + 1.5,
+      hauteur - t - _hauteurRive,
+      hauteur - t,
+    );
+    p.boite(
+      'plancher',
+      produit != null ? Matiere.composite : Matiere.sousPlancher,
+      0,
+      largeur,
+      course - devant - s.nez,
+      course + _profondeurPlancherHaut,
+      hauteur - t,
+      hauteur,
+    );
+  }
+
+  // Cotes : hauteur totale, course et largeur.
+  final cotes = [
+    Cote(
+      P3(largeur + 4, -_epFascia, 0),
+      P3(largeur + 4, -_epFascia, hauteur),
+      'Hauteur ${l(hauteur)}',
+      Calque.escalier,
+    ),
+    Cote(
+      P3(largeur + 4, 0, -2),
+      P3(largeur + 4, course, -2),
+      'Course ${l(course)}',
+      Calque.escalier,
+    ),
+    Cote(
+      P3(0, -_epFascia - 4, 0),
+      P3(largeur, -_epFascia - 4, 0),
+      'Largeur ${l(largeur)}',
+      Calque.escalier,
+    ),
+  ];
+  return _scene(p.solides, p.infos, cotes);
+}
+
+/// Composite : fascias, 2x12 à plat aux côtés, la marche du haut en cadre.
+void _composite(
+  _Pieces p,
+  ResultatEscalier r,
+  ProduitComposite produit, {
+  required bool jumele,
+}) {
+  final s = r.spec;
+  final c = calculerComposite(r);
+  String l(double po) => p.l(po);
+  final n = r.nombreContremarches;
+  final g = r.giron;
+  final h = r.contremarche;
+  final t = s.epaisseurMarcheEffective;
+  final largeur = s.largeur;
+  final ep = s.section.epaisseur;
+  final e = r.espacementReel;
+
   // Contremarches : la fascia vissée directement sur la coupe d'aplomb des limons, du siège de la
-  // marche du dessous au siège de la marche du dessus (la hauteur de la contremarche).
-  for (var k = 1; k <= n; k++) {
+  // marche du dessous au siège de la marche du dessus (la hauteur de la contremarche). Jumelé à un
+  // plancher, la plus haute est la fascia du plancher.
+  for (var k = 1; k <= (jumele ? n - 1 : n); k++) {
     final yCoupe = (k - 1) * g;
     final z0 = math.max(0.0, (k - 1) * h - t);
     final z1 = k * h - t;
@@ -253,7 +337,8 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
     final k = n - 1;
     final b = produit.largeur;
     final avant = (k - 1) * g - _epFascia - s.nez;
-    final fond = k * g - _epFascia;
+    // Jumelé : jusqu'à la fascia du plancher, qui fait la contremarche du haut.
+    final fond = jumele ? k * g : k * g - _epFascia;
     final z0 = k * h - t, z1 = k * h;
     p.infos['nez'] = InfoPiece('Nez de marche', [
       'Longueur à couper : ${l(largeur)}',
@@ -312,60 +397,66 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
       );
     }
   }
+}
 
-  // Plancher du haut : la rive où les limons s'accrochent, et le dessus qui dépasse la fascia de
-  // la dernière contremarche comme un nez.
-  final course = r.course;
-  final hauteur = s.hauteurTotale;
-  p.infos['plancher'] = InfoPiece('Plancher du haut', [
-    'Hauteur : ${l(hauteur)} au-dessus du plancher du bas',
-  ]);
-  p.boite(
-    'plancher',
-    Matiere.rive,
-    0,
-    largeur,
-    course,
-    course + 1.5,
-    hauteur - t - _hauteurRive,
-    hauteur - t,
-  );
-  p.boite(
-    'plancher',
-    Matiere.composite,
-    0,
-    largeur,
-    course - _epFascia - s.nez,
-    course + _profondeurPlancherHaut,
-    hauteur - t,
-    hauteur,
-  );
+/// Bois : une marche sur chaque siège (giron + nez), les contremarches si elles sont fermées.
+void _bois(_Pieces p, ResultatEscalier r, {required bool jumele}) {
+  final s = r.spec;
+  String l(double po) => p.l(po);
+  final n = r.nombreContremarches;
+  final g = r.giron;
+  final h = r.contremarche;
+  final t = s.epaisseurMarche;
+  final largeur = s.largeur;
+  final ec = s.contremarchesFermees ? s.epaisseurContremarche : 0.0;
+  for (var k = 1; k < n; k++) {
+    final groupe = 'marche$k';
+    p.infos[groupe] = InfoPiece('Marche $k', [
+      'Longueur à couper : ${l(largeur)}',
+      'Profondeur : ${l(r.profondeurMarche)} (giron ${l(g)} + nez ${l(s.nez)})',
+      'Épaisseur : ${l(t)}',
+    ]);
+    p.boite(
+      groupe,
+      Matiere.rive,
+      0,
+      largeur,
+      (k - 1) * g - ec - s.nez,
+      k * g - ec,
+      k * h - t,
+      k * h,
+    );
+  }
+  if (!s.contremarchesFermees) return;
+  for (var k = 1; k <= (jumele ? n - 1 : n); k++) {
+    final groupe = 'contremarche$k';
+    final z0 = math.max(0.0, (k - 1) * h - t), z1 = k * h - t;
+    p.infos[groupe] = InfoPiece('Contremarche $k', [
+      'Pièce : ${l(largeur)} × ${l(z1 - z0)}',
+      'Épaisseur : ${l(ec)}',
+    ]);
+    p.boite(
+      groupe,
+      Matiere.bois,
+      0,
+      largeur,
+      (k - 1) * g - ec,
+      (k - 1) * g,
+      z0,
+      z1,
+    );
+  }
+}
 
-  // Cotes : hauteur totale, course et largeur.
-  final cotes = [
-    Cote(
-      P3(largeur + 4, -_epFascia, 0),
-      P3(largeur + 4, -_epFascia, hauteur),
-      'Hauteur ${l(hauteur)}',
-      Calque.escalier,
-    ),
-    Cote(
-      P3(largeur + 4, 0, -2),
-      P3(largeur + 4, course, -2),
-      'Course ${l(course)}',
-      Calque.escalier,
-    ),
-    Cote(
-      P3(0, -_epFascia - 4, 0),
-      P3(largeur, -_epFascia - 4, 0),
-      'Largeur ${l(largeur)}',
-      Calque.escalier,
-    ),
-  ];
-
+Scene _scene(
+  List<Solide> solides,
+  Map<String, InfoPiece> infos,
+  List<Cote> cotes,
+) {
+  if (solides.isEmpty) return Scene.vide;
   var min = const P3(double.infinity, double.infinity, double.infinity);
   var max = const P3(-double.infinity, -double.infinity, -double.infinity);
-  for (final so in p.solides) {
+  for (final so in solides) {
     for (final q in so.coque) {
       min = P3(math.min(min.x, q.x), math.min(min.y, q.y), min.z);
       max = P3(math.max(max.x, q.x), math.max(max.y, q.y), max.z);
@@ -374,10 +465,59 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
     max = P3(max.x, max.y, math.max(max.z, so.z1));
   }
   return Scene(
-    solides: p.solides,
-    infos: p.infos,
+    solides: solides,
+    infos: infos,
     cotes: cotes,
     min: min,
     max: max,
+  );
+}
+
+/// L'escalier [s] (dans son repère) placé dans le repère d'un plancher : (x, y) = (0, 0) tombe sur
+/// [origine], x suit [u] (en travers) et y suit [w] (le sens de la montée), z est décalé de
+/// [dz]. Les pièces prennent le préfixe « escalier. ».
+Scene placerEscalier(
+  Scene s, {
+  required Pt origine,
+  required Pt u,
+  required Pt w,
+  required double dz,
+}) {
+  Pt plan(Pt q) => origine + u * q.x + w * q.y;
+  P3 point(P3 q) {
+    final pp = plan(Pt(q.x, q.y));
+    return P3(pp.x, pp.y, q.z + dz);
+  }
+
+  P3 direction(P3 v) {
+    final d = u * v.x + w * v.y;
+    return P3(d.x, d.y, v.z);
+  }
+
+  return _scene(
+    [
+      for (final so in s.solides)
+        Solide(
+          id: so.id,
+          groupe: 'escalier.${so.groupe}',
+          calque: so.calque,
+          matiere: so.matiere,
+          coque: [for (final q in so.coque) plan(q)],
+          z0: so.z0 + dz,
+          z1: so.z1 + dz,
+          faces: [
+            for (final f in so.faces)
+              Face(
+                [
+                  for (final b in f.boucles) [for (final q in b) point(q)],
+                ],
+                direction(f.normale),
+                laterale: f.laterale,
+              ),
+          ],
+        ),
+    ],
+    {for (final e in s.infos.entries) 'escalier.${e.key}': e.value},
+    [for (final c in s.cotes) Cote(point(c.a), point(c.b), c.texte, c.calque)],
   );
 }

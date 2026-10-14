@@ -1,4 +1,6 @@
 import 'empaquetage.dart';
+import 'escalier.dart';
+import 'escalier_composite.dart';
 import 'mur.dart';
 import 'plancher.dart';
 import 'terrasse.dart';
@@ -278,6 +280,103 @@ void _terrasse(
   );
 }
 
+/// L'escalier du projet : limons, marches (bois ou composite), contremarches ou fascias, 2x12 à
+/// plat, attaches et vis. Les planches et la quincaillerie du composite s'additionnent à celles
+/// du plancher (mêmes articles).
+void _escalier(List<LigneCommande> out, ResultatEscalier r, bool metrique) {
+  final s = r.spec;
+  String l(double po) => formatLongueur(po, metrique: metrique);
+  String pi(double po) => formatPlanche(po, metrique: metrique);
+  out.add(
+    LigneCommande(
+      categorie: CategorieCommande.bois,
+      article: _planche(s.section.nom, r.longueurCommerciale, metrique),
+      quantite: r.nombreLimons.toDouble(),
+      usage: 'Escalier (limons)',
+    ),
+  );
+  final p = s.composite;
+  if (p == null) {
+    out.add(
+      LigneCommande(
+        categorie: CategorieCommande.bois,
+        article:
+            'Marche de ${l(s.largeur)} × ${l(r.profondeurMarche)} × ${l(s.epaisseurMarche)}',
+        quantite: r.nombreMarches.toDouble(),
+        usage: 'Escalier',
+      ),
+    );
+    if (s.contremarchesFermees) {
+      out.add(
+        LigneCommande(
+          categorie: CategorieCommande.bois,
+          article:
+              'Contremarche de ${l(s.largeur)} × ${l(r.contremarche)} × ${l(s.epaisseurContremarche)}',
+          quantite: r.nombreContremarches.toDouble(),
+          usage: 'Escalier',
+        ),
+      );
+    }
+    return;
+  }
+  final c = calculerComposite(r);
+  void planches(ResultatDecoupe d, String Function(double) article) {
+    for (final e in d.parLongueur.entries) {
+      out.add(
+        LigneCommande(
+          categorie: CategorieCommande.composite,
+          article: article(e.key),
+          quantite: e.value.toDouble(),
+          usage: 'Escalier',
+        ),
+      );
+    }
+  }
+
+  planches(c.planches, (lg) => 'Planches ${p.nom} à rive carrée × ${pi(lg)}');
+  planches(
+    c.fascias,
+    (lg) => 'Fascias ${p.marque} ${l(c.hauteurFascia)} × ${pi(lg)}',
+  );
+  _bois(
+    out,
+    c.blocs,
+    '2×12',
+    'Escalier (2x12 à plat)',
+    metrique,
+    suffixe: ' traité',
+  );
+  if (c.attaches > 0) {
+    out.add(
+      LigneCommande(
+        categorie: CategorieCommande.quincaillerie,
+        article:
+            'Attaches cachées ${p.attache} (boîte de ${p.attachesParBoite})',
+        quantite: c.boitesAttaches.toDouble(),
+        usage: 'Escalier',
+      ),
+    );
+  }
+  out.add(
+    LigneCommande(
+      categorie: CategorieCommande.quincaillerie,
+      article: p.avecBouchons
+          ? 'Vis et bouchons (${p.fixationSurface})'
+          : 'Vis (${p.fixationSurface})',
+      quantite: c.visApparentes.toDouble(),
+      usage: 'Escalier',
+    ),
+  );
+  out.add(
+    LigneCommande(
+      categorie: CategorieCommande.quincaillerie,
+      article: 'Vis de fascia de la couleur',
+      quantite: c.visFascia.toDouble(),
+      usage: 'Escalier',
+    ),
+  );
+}
+
 /// Construit la liste d'achat. [plancher] et [murs] sont facultatifs (au moins
 /// l'un des deux). [sectionPlancher] : section des solives, des rives et des
 /// entremises. [terrasse] : le dessus en composite (à la place du sous-plancher).
@@ -286,10 +385,14 @@ Commande construireCommande({
   SectionBois sectionPlancher = section2x10,
   ResultatTerrasse? terrasse,
   ResultatMurs? murs,
+  ResultatEscalier? escalier,
   bool metrique = false,
 }) {
   final brutes = <LigneCommande>[];
   final avert = <String>[];
+  if (escalier != null) {
+    _escalier(brutes, escalier, metrique);
+  }
 
   if (plancher != null) {
     _bois(brutes, plancher.bois, sectionPlancher.nom, 'Plancher', metrique);

@@ -64,9 +64,11 @@ List<LigneMaterielEscalier> _materielComposite(
       'Par marche, en cadre : nez de ${l(s.largeur)}, 2 côtés de '
       '${l(r.profondeurMarche)} en onglet'
       '${n == 0 ? '' : ', $n planche${n > 1 ? 's' : ''} de ${l(c.longueurCentre)} au centre'}';
-  final contremarches =
-      '${r.nombreContremarches} contremarches de ${l(s.largeur)}, refendues à '
-      '${l(r.contremarche)}';
+  final contremarches = s.contremarcheHautFournie
+      ? '${r.nombreContremarches - 1} contremarches de ${l(s.largeur)}, refendues à '
+            '${l(r.contremarche)} (la plus haute : la fascia du plancher)'
+      : '${r.nombreContremarches} contremarches de ${l(s.largeur)}, refendues à '
+            '${l(r.contremarche)}';
   List<LigneMaterielEscalier> lignes(
     Map<double, int> parLongueur,
     String Function(double) article,

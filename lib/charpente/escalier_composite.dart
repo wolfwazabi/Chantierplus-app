@@ -112,6 +112,9 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
   }
 
   final hauteur = r.contremarche;
+  // Jumelé à une plateforme en composite : la plus haute contremarche est la fascia du plancher.
+  final contremarches =
+      r.nombreContremarches - (r.spec.contremarcheHautFournie ? 1 : 0);
   final fascia = ([
     ...produit.hauteursFascia,
   ]..sort()).where((h) => h >= hauteur - 1e-9);
@@ -124,7 +127,7 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
   final fasciaMax = produit.longueursFascia.reduce(math.max);
   final morceaux = (largeur / fasciaMax - 1e-9).ceil();
   final fascias = [
-    for (var k = 0; k < r.nombreContremarches; k++)
+    for (var k = 0; k < contremarches; k++)
       for (var j = 0; j < morceaux; j++)
         PieceCoupe('f$k.$j', largeur / morceaux, 'contremarche'),
   ];
@@ -145,7 +148,7 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
   final attaches = avecAttaches
       ? r.nombreMarches * (rangs + 1) * limonsInterieurs
       : 0;
-  final visFascia = r.nombreContremarches * visFasciaParLimon * limons;
+  final visFascia = contremarches * visFasciaParLimon * limons;
 
   // 2x12 à plat aux côtés : à chaque marche, un morceau entre le limon de côté et le suivant, de
   // chaque côté (le milieu reste ouvert), de l'espace libre entre eux.

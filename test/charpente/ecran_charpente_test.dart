@@ -563,7 +563,7 @@ void main() {
         await t.pumpAndSettle();
         expect(find.text('Plan lu'), findsNothing);
         expect(nom(t), 'Garage Tremblay');
-        expect(ongletChoisi(t), 3);
+        expect(ongletChoisi(t), 4); // Commande (après Escalier et 3D)
         // La commande affichée est celle du plan : chaque ligne calculée y figure.
         final attendue = calculerProjet(
           LecturePlan.depuis(lectureGarage())
@@ -649,7 +649,7 @@ void main() {
       await t.tap(find.byKey(const ValueKey('plan_remplacer')));
       await t.pumpAndSettle();
       expect(nom(t), 'Mon projet');
-      expect(ongletChoisi(t), 3);
+      expect(ongletChoisi(t), 4); // Commande (après Escalier et 3D)
     });
   });
 

@@ -1,5 +1,11 @@
+import 'dart:convert';
+
 import 'commande.dart';
 import 'composite.dart';
+import 'escalier.dart';
+import 'escalier_composite.dart';
+import 'escalier_projet.dart';
+import 'escalier_scene.dart';
 import 'geometrie.dart';
 import 'mur.dart';
 import 'panneaux.dart';
@@ -394,12 +400,19 @@ class ProjetCharpente {
   final bool mursActifs;
   final ParametresMursProjet murs;
 
+  /// Escalier jumelé au plancher : il descend d'un côté, à la hauteur de la plateforme ; ses
+  /// marches sont en composite si le dessus du plancher l'est.
+  final bool escalierActif;
+  final ParametresEscalier escalier;
+
   const ProjetCharpente({
     this.nom = '',
     this.plancherActif = true,
     this.plancher = const ParametresPlancher(),
     this.mursActifs = false,
     this.murs = const ParametresMursProjet(),
+    this.escalierActif = false,
+    this.escalier = const ParametresEscalier(),
   });
 
   ProjetCharpente copieAvec({
@@ -408,12 +421,16 @@ class ProjetCharpente {
     ParametresPlancher? plancher,
     bool? mursActifs,
     ParametresMursProjet? murs,
+    bool? escalierActif,
+    ParametresEscalier? escalier,
   }) => ProjetCharpente(
     nom: nom ?? this.nom,
     plancherActif: plancherActif ?? this.plancherActif,
     plancher: plancher ?? this.plancher,
     mursActifs: mursActifs ?? this.mursActifs,
     murs: murs ?? this.murs,
+    escalierActif: escalierActif ?? this.escalierActif,
+    escalier: escalier ?? this.escalier,
   );
 
   // ---------------------------------------------------------------------------
@@ -462,6 +479,10 @@ class ProjetCharpente {
       'libres': [for (final m in murs.libres) _murJson(m)],
       'params': _paramsMursJson(murs.params),
     },
+    // Seulement s'il y a un escalier (ou des choix d'escalier) : les autres projets ne changent pas.
+    if (escalierActif) 'escalierActif': true,
+    if (escalierActif || !_escalierParDefaut(escalier))
+      'escalier': escalier.toJson(),
   };
 
   /// Lit un projet. Lance [FormatException] si le contenu est mal formé ; les
@@ -567,9 +588,16 @@ class ProjetCharpente {
         libres: [for (final e in libres) _murDe(e)],
         params: _paramsMursDe(m['params']),
       ),
+      escalierActif: _boolOu(j['escalierActif'], false),
+      escalier: j['escalier'] == null
+          ? const ParametresEscalier()
+          : ParametresEscalier.fromJson(j['escalier']),
     );
   }
 }
+
+bool _escalierParDefaut(ParametresEscalier e) =>
+    jsonEncode(e.toJson()) == jsonEncode(const ParametresEscalier().toJson());
 
 /// Produit composite du dessus du plancher : absent, ou un identifiant connu.
 String? _composite(Object? v) {
@@ -596,6 +624,10 @@ class ResultatsProjet {
   /// [erreurTerrasse]).
   final ResultatTerrasse? terrasse;
   final String? erreurTerrasse;
+
+  /// Escalier jumelé (null : sans escalier, ou impossible : voir [erreurEscalier]).
+  final ResultatEscalier? escalier;
+  final String? erreurEscalier;
   final ResultatMurs? murs;
   final String? erreurMurs;
   final Scene scene;
@@ -607,6 +639,8 @@ class ResultatsProjet {
     this.erreurPlancher,
     this.terrasse,
     this.erreurTerrasse,
+    this.escalier,
+    this.erreurEscalier,
     this.murs,
     this.erreurMurs,
     required this.scene,
@@ -614,7 +648,10 @@ class ResultatsProjet {
   });
 
   bool get aDesErreurs =>
-      erreurPlancher != null || erreurTerrasse != null || erreurMurs != null;
+      erreurPlancher != null ||
+      erreurTerrasse != null ||
+      erreurEscalier != null ||
+      erreurMurs != null;
 }
 
 /// Calcule le projet. Une erreur de saisie (forme impossible, ouverture trop
@@ -655,6 +692,13 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
     }
   }
 
+  final (escalier, erreurEscalier, sceneEsc) = _escalierDuProjet(
+    p,
+    contour: plancher == null ? null : contour,
+    terrasse: terrasse,
+    metrique: metrique,
+  );
+
   ResultatMurs? murs;
   String? erreurMurs;
   if (p.mursActifs) {
@@ -668,13 +712,14 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
     }
   }
 
-  final scene = (plancher == null && murs == null)
+  final scene = (plancher == null && murs == null && sceneEsc == null)
       ? Scene.vide
       : construireScene(
           plancher: plancher,
           sectionPlancher: p.plancher.section,
           terrasse: terrasse,
           murs: murs,
+          escalier: sceneEsc,
           contour: p.murs.mode == ModeMurs.contour ? contour : null,
           metrique: metrique,
         );
@@ -683,6 +728,7 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
     sectionPlancher: p.plancher.section,
     terrasse: terrasse,
     murs: murs,
+    escalier: escalier,
     metrique: metrique,
   );
   return ResultatsProjet(
@@ -691,10 +737,84 @@ ResultatsProjet calculerProjet(ProjetCharpente p, {bool metrique = false}) {
     erreurPlancher: erreurPlancher,
     terrasse: terrasse,
     erreurTerrasse: erreurTerrasse,
+    escalier: escalier,
+    erreurEscalier: erreurEscalier,
     murs: murs,
     erreurMurs: erreurMurs,
     scene: scene,
     commande: commande,
+  );
+}
+
+/// L'escalier du projet : son calcul, ou le message qui l'empêche, et sa 3D placée sur le côté
+/// choisi du plancher ([contour] ; sans plancher, l'escalier seul). Jumelé à une plateforme en
+/// composite, ses marches sont du même produit et sa plus haute contremarche est la fascia du
+/// plancher ; il part de la face de la fascia (ou de la rive).
+(ResultatEscalier?, String?, Scene?) _escalierDuProjet(
+  ProjetCharpente p, {
+  required Polygone? contour,
+  required ResultatTerrasse? terrasse,
+  required bool metrique,
+}) {
+  if (!p.escalierActif) return (null, null, null);
+  final e = p.escalier;
+  String l(double po) => formatLongueur(po, metrique: metrique);
+  final idComposite = p.plancherActif ? p.plancher.composite : null;
+  final produit = idComposite == null ? null : produitComposite(idComposite);
+  final jumele = contour != null;
+  final ResultatEscalier r;
+  try {
+    r = calculerEscalier(
+      e.versSpec(
+        metrique: metrique,
+        composite: produit,
+        contremarcheHautFournie: jumele && terrasse != null,
+      ),
+      metrique: metrique,
+    );
+    if (produit != null) calculerComposite(r);
+  } on EscalierInvalide catch (x) {
+    return (null, x.message, null);
+  }
+  final locale = sceneEscalier(r, metrique: metrique, jumele: jumele);
+  if (!jumele) return (r, null, locale);
+
+  final cote = e.cote;
+  if (cote >= contour.nombre) {
+    return (
+      r,
+      'Le côté ${cote + 1} n\'existe pas sur ce plancher : choisissez un côté.',
+      null,
+    );
+  }
+  if (cote == p.plancher.coteMaison) {
+    return (r, 'L\'escalier ne peut pas descendre du côté de la maison.', null);
+  }
+  final longueur = contour.longueurCote(cote);
+  final debut = e.centre ? (longueur - e.largeur) / 2 : e.distanceCoin;
+  if (debut < -0.01 || debut + e.largeur > longueur + 0.01) {
+    return (
+      r,
+      'L\'escalier de ${l(e.largeur)} ne rentre pas sur le côté ${cote + 1} (${l(longueur)})'
+          '${e.centre ? '' : ' à ${l(e.distanceCoin)} du coin'}.',
+      null,
+    );
+  }
+  final a = contour.sommet(cote);
+  final u = (contour.sommet(cote + 1) - a).unitaire;
+  final w = contour.normaleInterieure(cote);
+  // Le haut des limons contre la face de la fascia du plancher (ou de la rive).
+  final face = terrasse == null ? 0.0 : terrasse.produit.epaisseurFascia;
+  return (
+    r,
+    null,
+    placerEscalier(
+      locale,
+      origine: a + u * debut - w * (r.course + face),
+      u: u,
+      w: w,
+      dz: -e.hauteur,
+    ),
   );
 }
 

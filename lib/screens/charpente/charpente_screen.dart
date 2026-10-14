@@ -15,6 +15,7 @@ import 'barre_reglages.dart';
 import 'champs.dart';
 import 'lire_plan_screen.dart';
 import 'onglet_commande.dart';
+import 'onglet_escalier.dart';
 import 'onglet_murs.dart';
 import 'onglet_plancher.dart';
 import 'vue_3d.dart';
@@ -61,7 +62,7 @@ class CharpenteScreen extends StatefulWidget {
 
 class _CharpenteScreenState extends State<CharpenteScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _onglets = TabController(length: 4, vsync: this);
+  late final TabController _onglets = TabController(length: 5, vsync: this);
   ProjetCharpente _projet = const ProjetCharpente();
   late ResultatsProjet _res;
   List<LigneCommande> _manuelles = [];
@@ -236,7 +237,16 @@ class _CharpenteScreenState extends State<CharpenteScreen>
     );
     if (p != null && mounted) {
       _nom.text = p.nom;
-      _changer(p);
+      // L'assistant ne connaît pas le composite ni l'escalier : on les garde tels quels.
+      _changer(
+        p.copieAvec(
+          plancher: p.plancher.copieAvec(
+            composite: () => _projet.plancher.composite,
+          ),
+          escalierActif: _projet.escalierActif,
+          escalier: _projet.escalier,
+        ),
+      );
       _onglets.animateTo(0);
     }
   }
@@ -317,7 +327,7 @@ class _CharpenteScreenState extends State<CharpenteScreen>
       final nom = p.nom.isEmpty ? _nom.text : p.nom;
       _nom.text = nom;
       _changer(p.copieAvec(nom: nom));
-      _onglets.animateTo(3);
+      _onglets.animateTo(4);
     }
   }
 
@@ -410,6 +420,7 @@ class _CharpenteScreenState extends State<CharpenteScreen>
           tabs: const [
             Tab(height: 40, child: _Etiquette(Icons.grid_on, 'Plancher')),
             Tab(height: 40, child: _Etiquette(Icons.view_week, 'Murs')),
+            Tab(height: 40, child: _Etiquette(Icons.stairs, 'Escalier')),
             Tab(height: 40, child: _Etiquette(Icons.view_in_ar, '3D')),
             Tab(height: 40, child: _Etiquette(Icons.list_alt, 'Commande')),
           ],
@@ -428,7 +439,7 @@ class _CharpenteScreenState extends State<CharpenteScreen>
                 projet: _projet,
                 resultats: _res,
                 onChange: _changer,
-                ouvrir3D: () => _onglets.animateTo(2),
+                ouvrir3D: () => _onglets.animateTo(3),
                 reglagesHabituels: BarreReglagesHabituels(
                   cle: 'plancher',
                   existe: _habitudes.plancher != null,
@@ -441,7 +452,7 @@ class _CharpenteScreenState extends State<CharpenteScreen>
                 projet: _projet,
                 resultats: _res,
                 onChange: _changer,
-                ouvrir3D: () => _onglets.animateTo(2),
+                ouvrir3D: () => _onglets.animateTo(3),
                 reglagesHabituels: BarreReglagesHabituels(
                   cle: 'murs',
                   existe: _habitudes.murs != null,
@@ -449,6 +460,11 @@ class _CharpenteScreenState extends State<CharpenteScreen>
                   onGarder: () => _garderHabitudes(plancher: false),
                   onRemettre: () => _remettreHabitudes(plancher: false),
                 ),
+              ),
+              OngletEscalier(
+                projet: _projet,
+                resultats: _res,
+                onChange: _changer,
               ),
               _Onglet3D(resultats: _res),
               OngletCommande(
@@ -509,6 +525,14 @@ class _Onglet3D extends StatelessWidget {
           if (resultats.erreurPlancher != null)
             BlocMessages([
               'Plancher : ${resultats.erreurPlancher}',
+            ], erreur: true),
+          if (resultats.erreurTerrasse != null)
+            BlocMessages([
+              'Plancher : ${resultats.erreurTerrasse}',
+            ], erreur: true),
+          if (resultats.erreurEscalier != null)
+            BlocMessages([
+              'Escalier : ${resultats.erreurEscalier}',
             ], erreur: true),
           if (resultats.erreurMurs != null)
             BlocMessages(['Murs : ${resultats.erreurMurs}'], erreur: true),

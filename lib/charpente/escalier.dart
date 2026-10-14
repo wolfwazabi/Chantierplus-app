@@ -169,6 +169,10 @@ class SpecEscalier {
   /// contremarches sont fermées et les limons suivent l'entraxe du fabricant.
   final ProduitComposite? composite;
 
+  /// Escalier jumelé à une plateforme en composite : la plus haute contremarche est la fascia de
+  /// la rive du plancher (elle n'est pas comptée avec l'escalier).
+  final bool contremarcheHautFournie;
+
   /// L'épaisseur de marche qui sert au traçage (en composite : celle de la planche).
   double get epaisseurMarcheEffective =>
       composite == null ? epaisseurMarche : composite!.epaisseur;
@@ -197,6 +201,7 @@ class SpecEscalier {
     this.gorgeMin = 3.5,
     this.precisionTrace = 1 / 16,
     this.composite,
+    this.contremarcheHautFournie = false,
   });
 
   LimitesEscalier get limites => LimitesEscalier.de(usage);
@@ -219,6 +224,7 @@ class SpecEscalier {
     gorgeMin: gorgeMin,
     precisionTrace: precisionTrace,
     composite: composite,
+    contremarcheHautFournie: contremarcheHautFournie,
   );
 
   void valider() {
