@@ -59,7 +59,7 @@ String texteEscalier(ResultatEscalier r, {required bool metrique}) {
       '(${formatNombre(poucesEnMm(r.giron), decimales: 1)} mm), '
       'profondeur ${l(r.profondeurMarche)}',
     )
-    ..writeln('Course horizontale : ${l(r.course)}')
+    ..writeln('Course : ${l(r.course)}')
     ..writeln('Pente : ${formatAngle(r.angle)}')
     ..writeln()
     ..writeln('LIMON (${s.section.nom})')

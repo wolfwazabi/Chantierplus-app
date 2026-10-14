@@ -509,4 +509,33 @@ void main() {
       },
     );
   });
+
+  testWidgets(
+    'textes : « Course », la largeur des limons, la hauteur d\'un plancher fini à l\'autre',
+    (t) async {
+      await ouvrir(t);
+      expect(_texte('Course horizontale'), findsNothing);
+      expect(
+        _texte('Course'),
+        findsWidgets,
+      ); // le bouton « Course disponible » et le résultat
+      // L'aide « d'un plancher fini à l'autre » est celle de la hauteur, pas de toute la section.
+      final hauteur = t.widget<TextField>(_champ('escalier_hauteur'));
+      expect(
+        hauteur.decoration!.helperText,
+        'Du plancher fini du bas au plancher fini du haut.',
+      );
+      final largeur = t.widget<TextField>(_champ('escalier_largeur'));
+      expect(largeur.decoration!.labelText, 'Largeur des limons');
+      expect(largeur.decoration!.helperText, contains('Hors tout'));
+      // Le texte copié dit aussi « Course ».
+      expect(
+        texteEscalier(
+          calculerEscalier(const SpecEscalier(hauteurTotale: 108)),
+          metrique: false,
+        ),
+        contains('Course : '),
+      );
+    },
+  );
 }

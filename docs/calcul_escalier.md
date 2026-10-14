@@ -75,7 +75,7 @@ pointe du haut). Les mesures viennent de `etiquettesCoupes` (testée).
 | Contremarche | 125 à 200 mm | 125 à 180 mm |
 | Giron | 255 à 355 mm | 280 mm minimum |
 | Profondeur de la marche | de son giron à son giron + 25 mm | idem |
-| Largeur libre | 860 mm minimum | 900 mm minimum |
+| Largeur (des limons, hors tout) | 860 mm minimum | 900 mm minimum |
 | Échappée (rappel seulement) | 1 950 mm | 2 050 mm |
 | Hauteur d'une volée | 3,7 m au plus (art. 9.8.3.3) | idem |
 | Uniformité (traçage arrondi) | 5 mm entre voisines, 10 mm sur la volée | idem |

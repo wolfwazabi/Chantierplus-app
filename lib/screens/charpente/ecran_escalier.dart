@@ -147,14 +147,12 @@ class _EcranEscalierState extends State<EcranEscalier> {
         onChanged: (v) => setState(() => _modeDonnees = v),
       ),
       if (_modeDonnees) ..._panneauDonnees(),
-      const TitreSection(
-        'Dimensions',
-        aide: 'Du plancher fini du bas au plancher fini du haut.',
-      ),
+      const TitreSection('Dimensions'),
       if (!_modeDonnees) ...[
         ChampLongueur(
           key: const ValueKey('escalier_hauteur'),
           label: 'Hauteur totale',
+          aide: 'Du plancher fini du bas au plancher fini du haut.',
           valeur: _hauteur,
           min: 4,
           max: 400,
@@ -164,7 +162,8 @@ class _EcranEscalierState extends State<EcranEscalier> {
       ],
       ChampLongueur(
         key: const ValueKey('escalier_largeur'),
-        label: 'Largeur libre de l\'escalier',
+        label: 'Largeur des limons',
+        aide: 'Hors tout : du côté extérieur d\'un limon à l\'autre.',
         valeur: _largeur,
         min: 12,
         max: 240,
@@ -215,7 +214,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
         else
           ChampLongueur(
             key: const ValueKey('escalier_course'),
-            label: 'Course horizontale disponible',
+            label: 'Course disponible',
             aide: 'De la face de la 1re contremarche à la face du plancher du haut.',
             valeur: _course,
             min: 4,
@@ -365,7 +364,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
         espace,
         ChampLongueur(
           key: const ValueKey('escalier_d_course'),
-          label: 'Course horizontale',
+          label: 'Course',
           aide: 'De la face de la 1re contremarche à la face du plancher du haut.',
           valeur: _dCourse,
           min: 4,
@@ -502,7 +501,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
             'Profondeur de la marche',
             '${l(r.profondeurMarche)}  (giron + nez)',
           ),
-          _Ligne('Course horizontale', l(r.course)),
+          _Ligne('Course', l(r.course)),
           _Ligne('Pente', formatAngle(r.angle)),
         ],
       ),
