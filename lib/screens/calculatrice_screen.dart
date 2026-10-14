@@ -177,14 +177,18 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
 
   double _valeurOperandeCourant() {
     _finaliserFraction();
+    // Pieds-pouces et m-cm-mm peuvent se mêler (pour Conv) : tout est ramené à l'unité de
+    // base, le pouce en impérial et le millimètre en métrique.
+    final pouce = _metrique ? 25.4 : 1.0;
+    final mm = _metrique ? 1.0 : 1 / 25.4;
     double total = 0;
-    if (_feet != null) total += _feet! * 12;
-    if (_metres != null) total += _metres! * 1000;
-    if (_centimetres != null) total += _centimetres! * 10;
-    if (_millimetres != null) total += _millimetres!;
-    if (_inches != null) total += _inches!;
+    if (_feet != null) total += _feet! * 12 * pouce;
+    if (_metres != null) total += _metres! * 1000 * mm;
+    if (_centimetres != null) total += _centimetres! * 10 * mm;
+    if (_millimetres != null) total += _millimetres! * mm;
+    if (_inches != null) total += _inches! * pouce;
     if (_fracNum != null && _fracDen != null && _fracDen != 0) {
-      total += _fracNum! / _fracDen!;
+      total += _fracNum! / _fracDen! * pouce;
     }
     if (_entreeCharpente.isNotEmpty) {
       total += double.tryParse(_entreeCharpente) ?? 0;
@@ -1421,20 +1425,22 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
           if (_conversionExtra != null)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: _conversionExtra!
-                    .map(
-                      (l) => Text(
-                        l,
-                        style: TextStyle(
-                          color: _texteLcdSecondaire,
-                          fontSize: 17,
-                          fontFamily: 'monospace',
-                        ),
+              // Côte à côte (2 lignes au lieu de 4) : l'écran ne grandit pas aux dépens des
+              // touches.
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 16,
+                children: [
+                  for (final l in _conversionExtra!)
+                    Text(
+                      l,
+                      style: TextStyle(
+                        color: _texteLcdSecondaire,
+                        fontSize: 16,
+                        fontFamily: 'monospace',
                       ),
-                    )
-                    .toList(),
+                    ),
+                ],
               ),
             ),
         ],
@@ -1473,6 +1479,28 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             _touchePitchGrande(),
             _toucheFonctionGrande('Conv', _appliquerConversion, fonction: true),
           ]),
+          // Unités de l'autre système (pour Conv) : petites touches au-dessus de celles du
+          // système choisi, dans les mêmes colonnes.
+          SizedBox(
+            height: 38,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ...(_metrique
+                    ? [
+                        _toucheUnitePetite('Pi', _committerFeet),
+                        _toucheUnitePetite('Po', _committerPouces),
+                        _toucheUnitePetite('/', _committerSeizieme),
+                      ]
+                    : [
+                        _toucheUnitePetite('m', _committerMetres),
+                        _toucheUnitePetite('cm', _committerCentimetres),
+                        _toucheUnitePetite('mm', _committerMillimetres),
+                      ]),
+                const Expanded(child: SizedBox()),
+              ],
+            ),
+          ),
           rangee(
             _metrique
                 ? [
@@ -1699,6 +1727,33 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Petite touche d'unité (rangée de l'autre système).
+  Widget _toucheUnitePetite(String label, VoidCallback onTap) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.all(3),
+        child: ElevatedButton(
+          key: ValueKey('touche_$label'),
+          onPressed: onTap,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: _boutonChiffreBg,
+            foregroundColor: _boutonChiffreTexte,
+            side: const BorderSide(color: _boutonChiffreBorder),
+            padding: EdgeInsets.zero,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: Text(
+            label,
+            maxLines: 1,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
         ),
       ),

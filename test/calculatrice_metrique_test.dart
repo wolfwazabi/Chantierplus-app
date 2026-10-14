@@ -113,15 +113,21 @@ void main() {
   });
 
   group('Métrique', () {
-    testWidgets('touches m, cm, mm à la place de Pi, Po, /', (tester) async {
-      await ouvrir(tester, metrique: true);
-      for (final t in ['m', 'cm', 'mm']) {
-        expect(find.byKey(ValueKey('touche_$t')), findsOneWidget, reason: t);
-      }
-      for (final t in ['Pi', 'Po', '/']) {
-        expect(find.byKey(ValueKey('touche_$t')), findsNothing, reason: t);
-      }
-    });
+    testWidgets(
+      'm, cm, mm en grandes touches ; Pi, Po, / en petites au-dessus (Conv)',
+      (tester) async {
+        await ouvrir(tester, metrique: true);
+        for (final t in ['m', 'cm', 'mm', 'Pi', 'Po', '/']) {
+          expect(find.byKey(ValueKey('touche_$t')), findsOneWidget, reason: t);
+        }
+        double hauteur(String t) =>
+            tester.getSize(find.byKey(ValueKey('touche_$t'))).height;
+        double y(String t) =>
+            tester.getCenter(find.byKey(ValueKey('touche_$t'))).dy;
+        expect(hauteur('Pi'), lessThan(hauteur('m')));
+        expect(y('Pi'), lessThan(y('m')));
+      },
+    );
 
     final cas = <List<String>, String>{
       ['2', 'm', '3', '5', 'cm', '4', 'mm', '=']: '2 m 35 cm 4 mm',
