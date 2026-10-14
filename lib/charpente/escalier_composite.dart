@@ -11,6 +11,8 @@ import 'plancher.dart' show longueursPlanchesParDefaut;
 ///  - chaque contremarche en fascia composite (la plus basse hauteur vendue qui la couvre),
 ///    refendue à la hauteur de la contremarche ;
 ///  - un 2x traité (« backing ») derrière chaque contremarche, pour visser la fascia ;
+///  - au choix, du contreplaqué traité sous chaque marche (largeur × giron, fil en travers des
+///    limons), dans des feuilles de 4 × 8 ;
 ///  - limons à l'entraxe du fabricant.
 /// Les dimensions (largeur et épaisseur des planches, écart des attaches cachées, longueurs,
 /// fascias) viennent du produit choisi ([ProduitComposite]). Tout est en POUCES.
@@ -33,6 +35,9 @@ class MaterielComposite {
   final ResultatDecoupe backing;
   final String sectionBacking;
 
+  /// Contreplaqué traité sous les marches (null : sans).
+  final ResultatFeuilles? contreplaque;
+
   /// Par marche : rangs de planches au centre (entre les côtés), et leur longueur.
   final int rangsCentre;
   final double longueurCentre;
@@ -54,6 +59,7 @@ class MaterielComposite {
     required this.hauteurFascia,
     required this.backing,
     required this.sectionBacking,
+    this.contreplaque,
     required this.rangsCentre,
     required this.longueurCentre,
     required this.visApparentes,
@@ -151,8 +157,23 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
       : 0;
   final visFascia = r.nombreContremarches * visFasciaParLimon * limons;
 
+  // Contreplaqué : une pièce par marche, sur le siège des limons (largeur × giron), le fil de la
+  // feuille en travers des limons (le long des 8 pi).
+  final contreplaque = r.spec.contreplaque <= 0
+      ? null
+      : empaqueterFeuilles(
+          [
+            for (var k = 0; k < r.nombreMarches; k++)
+              PieceRect('cp$k', largeur, r.giron),
+          ],
+          longueurFeuille: 96,
+          largeurFeuille: 48,
+          trait: traitDeScie,
+        );
+
   return MaterielComposite(
     produit: produit,
+    contreplaque: contreplaque,
     planches: decouperPlanches(pieces, produit.longueurs),
     fascias: decouperPlanches(fascias, produit.longueursFascia),
     hauteurFascia: fascia.first,

@@ -169,9 +169,12 @@ class SpecEscalier {
   /// contremarches sont fermées et les limons suivent l'entraxe du fabricant.
   final ProduitComposite? composite;
 
-  /// L'épaisseur de marche qui sert au traçage.
+  /// Marches en composite : épaisseur du contreplaqué traité posé sous chaque marche (0 : sans).
+  final double contreplaque;
+
+  /// L'épaisseur de marche qui sert au traçage (en composite : planche + contreplaqué).
   double get epaisseurMarcheEffective =>
-      composite?.epaisseur ?? epaisseurMarche;
+      composite == null ? epaisseurMarche : composite!.epaisseur + contreplaque;
 
   /// L'entraxe maximal des limons, une fois le composite pris en compte.
   double get espacementMaxEffectif => composite == null
@@ -197,6 +200,7 @@ class SpecEscalier {
     this.gorgeMin = 3.5,
     this.precisionTrace = 1 / 16,
     this.composite,
+    this.contreplaque = 0,
   });
 
   LimitesEscalier get limites => LimitesEscalier.de(usage);
@@ -219,6 +223,7 @@ class SpecEscalier {
     gorgeMin: gorgeMin,
     precisionTrace: precisionTrace,
     composite: composite,
+    contreplaque: contreplaque,
   );
 
   void valider() {
@@ -240,6 +245,11 @@ class SpecEscalier {
     borne(nez, 0, 4, 'Nez de marche');
     borne(epaisseurContremarche, 0.25, 2, 'Épaisseur de la contremarche');
     borne(espacementMax, 6, 48, 'Entraxe des limons');
+    if (!(contreplaque >= 0 && contreplaque <= 1.5)) {
+      throw const EscalierInvalide(
+        'Contreplaqué sous les marches : épaisseur invalide (entre 0 et 1 1/2 po).',
+      );
+    }
     borne(gorgeMin, 0, 12, 'Gorge minimale');
     borne(precisionTrace, 1 / 64, 1, 'Précision du traçage');
     final n = nombreContremarches;

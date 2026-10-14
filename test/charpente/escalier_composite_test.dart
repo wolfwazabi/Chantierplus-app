@@ -220,6 +220,64 @@ void main() {
     });
   });
 
+  group('contreplaqué traité sous les marches', () {
+    ResultatEscalier avec(double ep, {ProduitComposite? p}) => calculerEscalier(
+      SpecEscalier(
+        hauteurTotale: 108,
+        nez: 0.75,
+        composite: p ?? _produit('trex_enhance'),
+        contreplaque: ep,
+      ),
+    );
+
+    test('son épaisseur s\'ajoute à la planche pour le traçage des limons', () {
+      expect(avec(0.75).hauteurDepart, closeTo(7.2 - (0.94 + 0.75), 1e-9));
+      expect(avec(0.625).hauteurDepart, closeTo(7.2 - (0.94 + 0.625), 1e-9));
+      expect(avec(0).hauteurDepart, closeTo(7.2 - 0.94, 1e-9));
+    });
+
+    test(
+      'une pièce par marche (36 × 10 1/4), fil en travers des limons, en 4 × 8',
+      () {
+        final c = calculerComposite(avec(0.75));
+        final f = c.contreplaque!;
+        expect(f.horsLimites, isEmpty);
+        final places = [for (final s in f.feuilles) ...s.placements];
+        expect(places, hasLength(14));
+        for (final p in places) {
+          // Le long de la feuille (8 pi) : la largeur de l'escalier, jamais tournée.
+          expect(p.tournee, isFalse);
+          expect(p.a, 36);
+          expect(p.b, 10.25);
+        }
+        // 2 pièces le long de 96 po × 4 en travers de 48 po = 8 par feuille : 2 feuilles.
+        expect(f.nombre, 2);
+      },
+    );
+
+    test('sans contreplaqué : rien', () {
+      expect(calculerComposite(avec(0)).contreplaque, isNull);
+    });
+
+    test('dans la liste de matériaux', () {
+      final t = materielEscalier(
+        avec(0.75),
+        metrique: false,
+      ).map((l) => '${l.quantite} × ${l.article} — ${l.detail}').join('\n');
+      expect(t, contains('2 × Contreplaqué traité 3/4" 4 × 8'));
+      expect(t, contains('14 pièces de 3\' × 10 1/4", une sous chaque marche'));
+      final sans = materielEscalier(avec(0), metrique: false);
+      expect(
+        sans.map((l) => l.article).join(),
+        isNot(contains('Contreplaqué')),
+      );
+    });
+
+    test('épaisseur invalide : refusée', () {
+      expect(() => avec(2), throwsA(isA<EscalierInvalide>()));
+    });
+  });
+
   group('liste de matériaux', () {
     String texte(ProduitComposite? p) => materielEscalier(
       calculerEscalier(_spec(composite: p)),

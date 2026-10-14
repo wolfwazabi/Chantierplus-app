@@ -97,7 +97,9 @@ Option « Marches en composite » (groupe Marches et contremarches) et choix du 
   contre les côtés (valeur par temps doux ; le tableau selon la température est affiché).
 - **Contremarches** en fascia (la plus basse hauteur vendue qui couvre la contremarche,
   refendue), avec un **2x traité de backing** derrière chacune (2x8, 2x10 ou 2x12 selon la
-  hauteur). Pas de contreplaqué sous les marches.
+  hauteur). Au choix (oui par défaut), du **contreplaqué traité** de 5/8 ou 3/4 po sous chaque
+  marche (largeur × giron, fil en travers des limons) dans des feuilles de 4 × 8 ; son
+  épaisseur s'ajoute à celle de la planche pour le traçage des limons.
 - **Fixation selon le guide** : la plupart des fabricants interdisent leurs attaches cachées
   sur les marches (TimberTech, Fiberon, MoistureShield) : tout est vissé en surface, 2 vis par
   limon dans chaque planche en travers et 2 par côté, avec bouchons (ou vis de la couleur,
@@ -106,7 +108,7 @@ Option « Marches en composite » (groupe Marches et contremarches) et choix du 
 - **Limons** à l'entraxe du fabricant (ex. Trex Enhance 9 po, Select 200 mm et Transcend
   230 mm au Canada, TimberTech 10 po, Fiberon 12 po, MoistureShield 8 à 9 po) ; le
   « composite courant » prend 9 po (prudent).
-- **Épaisseur de marche** du traçage des limons = épaisseur de la planche ; avertissement si
+- **Épaisseur de marche** du traçage des limons = planche (+ contreplaqué) ; avertissement si
   le nez dépasse le maximum du fabricant (Trex 3/4 po, TimberTech 1 po, PVC 1/2 po…).
 
 Sources : guides et fiches des fabricants consultés le 13 octobre 2026 (cités dans chaque
