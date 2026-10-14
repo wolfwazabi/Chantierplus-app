@@ -1448,7 +1448,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  /// Disposition « chantier classique » (modèle 1).
+  /// Disposition inspirée du Construction Master : 5 colonnes sans case vide. Les mesures du
+  /// triangle en haut, puis les unités (métriques au-dessus des impériales), puis les chiffres
+  /// avec leurs fonctions à gauche et les opérations à droite ; = à côté de +. La même
+  /// disposition en impérial et en métrique.
   Widget _clavierCharpente() {
     Widget rangee(List<Widget> touches) => Expanded(
       child: Row(
@@ -1456,8 +1459,14 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         children: touches,
       ),
     );
+    Widget unite(String l, VoidCallback f) =>
+        _toucheFonctionGrande(l, f, claire: true);
+    Widget fonction(String l, VoidCallback f) =>
+        _toucheFonctionGrande(l, f, fonction: true);
+    Widget operation(String l, VoidCallback f) =>
+        _toucheFonctionGrande(l, f, operateur: true);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 12),
       child: Column(
         children: [
           SizedBox(
@@ -1473,131 +1482,53 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             ),
           ),
           rangee([
-            _toucheMemoireGrande('RUN', _run, () => _stocker('run')),
-            _toucheMemoireGrande('RISE', _rise, () => _stocker('rise')),
-            _toucheMemoireDiagGrande(),
             _touchePitchGrande(),
-            _toucheFonctionGrande('Conv', _appliquerConversion, fonction: true),
-          ]),
-          // Unités de l'autre système (pour Conv) : petites touches au-dessus de celles du
-          // système choisi, dans les mêmes colonnes.
-          SizedBox(
-            height: 38,
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                ...(_metrique
-                    ? [
-                        _toucheUnitePetite('Pi', _committerFeet),
-                        _toucheUnitePetite('Po', _committerPouces),
-                        _toucheUnitePetite('/', _committerSeizieme),
-                      ]
-                    : [
-                        _toucheUnitePetite('m', _committerMetres),
-                        _toucheUnitePetite('cm', _committerCentimetres),
-                        _toucheUnitePetite('mm', _committerMillimetres),
-                      ]),
-                const Expanded(child: SizedBox()),
-              ],
-            ),
-          ),
-          rangee(
-            _metrique
-                ? [
-                    _toucheFonctionGrande('m', _committerMetres, claire: true),
-                    _toucheFonctionGrande(
-                      'cm',
-                      _committerCentimetres,
-                      claire: true,
-                    ),
-                    _toucheFonctionGrande(
-                      'mm',
-                      _committerMillimetres,
-                      claire: true,
-                    ),
-                    _toucheFonctionGrande(
-                      '⌫',
-                      _effacerDernierCharpente,
-                      claire: true,
-                    ),
-                  ]
-                : [
-                    _toucheFonctionGrande('Pi', _committerFeet, claire: true),
-                    _toucheFonctionGrande('Po', _committerPouces, claire: true),
-                    _toucheFonctionGrande(
-                      '/',
-                      _committerSeizieme,
-                      claire: true,
-                    ),
-                    _toucheFonctionGrande(
-                      '⌫',
-                      _effacerDernierCharpente,
-                      claire: true,
-                    ),
-                  ],
-          ),
-          rangee([
-            _toucheFonctionGrande('(', _ouvrirParenthese, fonction: true),
-            _toucheFonctionGrande(')', _fermerParenthese, fonction: true),
-            _toucheFonctionGrande('x²', _appliquerCarre, fonction: true),
-            _toucheFonctionGrande('√x', _appliquerRacine, fonction: true),
+            _toucheMemoireGrande('RISE', _rise, () => _stocker('rise')),
+            _toucheMemoireGrande('RUN', _run, () => _stocker('run')),
+            _toucheMemoireDiagGrande(),
+            fonction('Conv', _appliquerConversion),
           ]),
           rangee([
+            unite('m', _committerMetres),
+            unite('cm', _committerCentimetres),
+            unite('mm', _committerMillimetres),
+            fonction('x²', _appliquerCarre),
+            fonction('√x', _appliquerRacine),
+          ]),
+          rangee([
+            unite('Pi', _committerFeet),
+            unite('Po', _committerPouces),
+            unite('/', _committerSeizieme),
+            unite('⌫', _effacerDernierCharpente),
+            _toucheFonctionGrande('AC', _toutEffacerCharpente, effacer: true),
+          ]),
+          rangee([
+            fonction('(', _ouvrirParenthese),
             _toucheChiffreGrande('7'),
             _toucheChiffreGrande('8'),
             _toucheChiffreGrande('9'),
-            _toucheFonctionGrande(
-              '÷',
-              () => _appuyerOperateurCharpente('÷'),
-              operateur: true,
-            ),
+            operation('÷', () => _appuyerOperateurCharpente('÷')),
           ]),
           rangee([
+            fonction(')', _fermerParenthese),
             _toucheChiffreGrande('4'),
             _toucheChiffreGrande('5'),
             _toucheChiffreGrande('6'),
-            _toucheFonctionGrande(
-              '×',
-              () => _appuyerOperateurCharpente('×'),
-              operateur: true,
-            ),
+            operation('×', () => _appuyerOperateurCharpente('×')),
           ]),
           rangee([
+            fonction('%', _appliquerPourcent),
             _toucheChiffreGrande('1'),
             _toucheChiffreGrande('2'),
             _toucheChiffreGrande('3'),
-            _toucheFonctionGrande(
-              '−',
-              () => _appuyerOperateurCharpente('-'),
-              operateur: true,
-            ),
+            operation('−', () => _appuyerOperateurCharpente('-')),
           ]),
           rangee([
-            _toucheFonctionGrande('AC', _toutEffacerCharpente, effacer: true),
+            fonction('x³', _appliquerCube),
             _toucheChiffreGrande('0'),
             _toucheChiffreGrande('.'),
-            _toucheFonctionGrande(
-              '+',
-              () => _appuyerOperateurCharpente('+'),
-              operateur: true,
-            ),
-          ]),
-          rangee([
-            _toucheFonctionGrande('x³', _appliquerCube, fonction: true),
-            _toucheFonctionGrande('%', _appliquerPourcent, fonction: true),
-            Expanded(
-              flex: 2,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _toucheFonctionGrande(
-                    '=',
-                    _appuyerEgalCharpente,
-                    operateur: true,
-                  ),
-                ],
-              ),
-            ),
+            operation('=', _appuyerEgalCharpente),
+            operation('+', () => _appuyerOperateurCharpente('+')),
           ]),
         ],
       ),
@@ -1727,33 +1658,6 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  /// Petite touche d'unité (rangée de l'autre système).
-  Widget _toucheUnitePetite(String label, VoidCallback onTap) {
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.all(3),
-        child: ElevatedButton(
-          key: ValueKey('touche_$label'),
-          onPressed: onTap,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: _boutonChiffreBg,
-            foregroundColor: _boutonChiffreTexte,
-            side: const BorderSide(color: _boutonChiffreBorder),
-            padding: EdgeInsets.zero,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(8),
-            ),
-          ),
-          child: Text(
-            label,
-            maxLines: 1,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
           ),
         ),
       ),

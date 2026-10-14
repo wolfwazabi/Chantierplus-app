@@ -44,32 +44,79 @@ void main() {
   bool affiche(String texte) =>
       find.textContaining(texte).evaluate().isNotEmpty;
 
-  group('impérial : m, cm, mm en petites touches', () {
+  group('disposition : 5 colonnes comme le Construction Master', () {
+    // Chaque rangée, de gauche à droite (sous la petite rangée de la mémoire).
+    const grille = [
+      ['PITCH', 'RISE', 'RUN', 'DIAG', 'Conv'],
+      ['m', 'cm', 'mm', 'x²', '√x'],
+      ['Pi', 'Po', '/', '⌫', 'AC'],
+      ['(', '7', '8', '9', '÷'],
+      [')', '4', '5', '6', '×'],
+      ['%', '1', '2', '3', '−'],
+      ['x³', '0', '.', '=', '+'],
+    ];
+
+    for (final metrique in [false, true]) {
+      testWidgets(
+        'toutes les cases remplies, alignées en colonnes (${metrique ? 'métrique' : 'impérial'})',
+        (t) async {
+          await ouvrir(t, metrique: metrique);
+          Rect r(String k) => t.getRect(find.byKey(ValueKey('touche_$k')));
+          for (var i = 0; i < grille.length; i++) {
+            for (var j = 0; j < 5; j++) {
+              final k = grille[i][j];
+              expect(
+                find.byKey(ValueKey('touche_$k')),
+                findsOneWidget,
+                reason: k,
+              );
+              // Même rangée : même hauteur ; même colonne : même position.
+              expect(
+                r(k).center.dy,
+                closeTo(r(grille[i][0]).center.dy, 1),
+                reason: k,
+              );
+              expect(
+                r(k).center.dx,
+                closeTo(r(grille[0][j]).center.dx, 1),
+                reason: k,
+              );
+              expect(r(k).height, closeTo(r('7').height, 1), reason: k);
+              if (i > 0) {
+                expect(
+                  r(k).top,
+                  greaterThan(r(grille[i - 1][j]).bottom - 1),
+                  reason: k,
+                );
+              }
+            }
+          }
+          // Plus de touche ANGLE ni de petite rangée d'unités.
+          expect(find.byKey(const ValueKey('touche_ANGLE')), findsNothing);
+        },
+      );
+    }
+
     testWidgets(
-      'au-dessus de Pi, Po et /, dans les mêmes colonnes, plus petites',
+      'des touches plus hautes qu\'avant sur un téléphone ordinaire',
       (t) async {
-        await ouvrir(t);
-        Rect r(String k) => t.getRect(find.byKey(ValueKey('touche_$k')));
-        for (final (petite, grande) in [
-          ('m', 'Pi'),
-          ('cm', 'Po'),
-          ('mm', '/'),
-        ]) {
-          expect(
-            r(petite).bottom,
-            lessThanOrEqualTo(r(grande).top),
-            reason: petite,
-          );
-          expect(
-            r(petite).center.dx,
-            closeTo(r(grande).center.dx, 1),
-            reason: petite,
-          );
-          expect(r(petite).height, lessThan(r(grande).height), reason: petite);
-        }
+        t.view.physicalSize = const Size(360 * 3, 740 * 3);
+        t.view.devicePixelRatio = 3;
+        addTearDown(t.view.reset);
+        await t.pumpWidget(
+          const MaterialApp(home: Scaffold(body: CalculatriceScreen())),
+        );
+        await t.pump();
+        // Avant : environ 45 de haut ; maintenant plus de 55.
+        expect(
+          t.getSize(find.byKey(const ValueKey('touche_7'))).height,
+          greaterThan(55),
+        );
       },
     );
+  });
 
+  group('impérial : m, cm, mm pour Conv', () {
     testWidgets('3048 mm Conv : 10 pi, 120 po, 3,048 m', (t) async {
       await ouvrir(t);
       await taper(t, ['3', '0', '4', '8', 'mm', 'Conv']);

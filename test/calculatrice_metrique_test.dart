@@ -113,21 +113,17 @@ void main() {
   });
 
   group('Métrique', () {
-    testWidgets(
-      'm, cm, mm en grandes touches ; Pi, Po, / en petites au-dessus (Conv)',
-      (tester) async {
-        await ouvrir(tester, metrique: true);
-        for (final t in ['m', 'cm', 'mm', 'Pi', 'Po', '/']) {
-          expect(find.byKey(ValueKey('touche_$t')), findsOneWidget, reason: t);
-        }
-        double hauteur(String t) =>
-            tester.getSize(find.byKey(ValueKey('touche_$t'))).height;
-        double y(String t) =>
-            tester.getCenter(find.byKey(ValueKey('touche_$t'))).dy;
-        expect(hauteur('Pi'), lessThan(hauteur('m')));
-        expect(y('Pi'), lessThan(y('m')));
-      },
-    );
+    testWidgets('m, cm, mm et Pi, Po, / : les deux, m-cm-mm au-dessus (Conv)', (
+      tester,
+    ) async {
+      await ouvrir(tester, metrique: true);
+      for (final t in ['m', 'cm', 'mm', 'Pi', 'Po', '/']) {
+        expect(find.byKey(ValueKey('touche_$t')), findsOneWidget, reason: t);
+      }
+      double y(String t) =>
+          tester.getCenter(find.byKey(ValueKey('touche_$t'))).dy;
+      expect(y('m'), lessThan(y('Pi')));
+    });
 
     final cas = <List<String>, String>{
       ['2', 'm', '3', '5', 'cm', '4', 'mm', '=']: '2 m 35 cm 4 mm',
