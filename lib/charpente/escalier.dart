@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'composite.dart';
 import 'geometrie.dart';
 import 'unites.dart';
 
@@ -163,6 +164,20 @@ class SpecEscalier {
   /// Les mesures de traçage sont arrondies à ce pas (1/16 po ou 1 mm).
   final double precisionTrace;
 
+  /// Marches en composite (en cadre, fascia et 2x de backing aux contremarches), de ce
+  /// produit ; null : marches en bois. La marche a l'épaisseur de la planche, les
+  /// contremarches sont fermées et les limons suivent l'entraxe du fabricant.
+  final ProduitComposite? composite;
+
+  /// L'épaisseur de marche qui sert au traçage.
+  double get epaisseurMarcheEffective =>
+      composite?.epaisseur ?? epaisseurMarche;
+
+  /// L'entraxe maximal des limons, une fois le composite pris en compte.
+  double get espacementMaxEffectif => composite == null
+      ? espacementMax
+      : math.min(espacementMax, composite!.entraxeMaxLimons);
+
   const SpecEscalier({
     required this.hauteurTotale,
     this.largeur = 36,
@@ -181,6 +196,7 @@ class SpecEscalier {
     this.espacementMax = 16,
     this.gorgeMin = 3.5,
     this.precisionTrace = 1 / 16,
+    this.composite,
   });
 
   LimitesEscalier get limites => LimitesEscalier.de(usage);
@@ -202,6 +218,7 @@ class SpecEscalier {
     espacementMax: espacementMax,
     gorgeMin: gorgeMin,
     precisionTrace: precisionTrace,
+    composite: composite,
   );
 
   void valider() {
@@ -500,7 +517,7 @@ ResultatEscalier _calculer(SpecEscalier s, int n, bool metrique) {
   final lim = s.limites;
   final h = s.hauteurTotale;
   final r = h / n;
-  final t = s.epaisseurMarche;
+  final t = s.epaisseurMarcheEffective;
   if (t >= r) {
     throw const EscalierInvalide(
       'L\'épaisseur de la marche doit être inférieure à la hauteur de contremarche.',
@@ -557,7 +574,8 @@ ResultatEscalier _calculer(SpecEscalier s, int n, bool metrique) {
 
   // Limons : un à chaque bord, les autres répartis à l'entraxe maximal ou moins.
   final portee = s.largeur - s.section.epaisseur;
-  final nbLimons = math.max(1, (portee / s.espacementMax - 1e-9).ceil()) + 1;
+  final nbLimons =
+      math.max(1, (portee / s.espacementMaxEffectif - 1e-9).ceil()) + 1;
   final entraxe = portee / (nbLimons - 1);
 
   // Traçage arrondi : chaque hauteur et chaque position est arrondie seule (pas
@@ -880,7 +898,7 @@ List<Verification> _verifier({
     Verification(
       'tete',
       Niveau.info,
-      'La pointe du haut du limon est ${_l(s.epaisseurMarche, metrique)} sous le '
+      'La pointe du haut du limon est ${_l(s.epaisseurMarcheEffective, metrique)} sous le '
           'plancher fini du haut : elle affleure l\'ossature du plancher du haut '
           'si sous-plancher et finition ont l\'épaisseur d\'une marche. Sinon, '
           'recoupez la pointe au niveau de l\'ossature.',
@@ -895,7 +913,7 @@ List<Verification> _verifier({
       'CNB 9.8.2.2',
     ),
   );
-  if (!s.contremarchesFermees) {
+  if (!s.contremarchesFermees && s.composite == null) {
     v.add(
       const Verification(
         'ouvertes',

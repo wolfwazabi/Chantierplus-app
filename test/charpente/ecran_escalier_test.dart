@@ -10,6 +10,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'aide_reglages.dart';
+
 Finder _cle(String k) => find.byKey(ValueKey(k));
 Finder _champ(String cle) =>
     find.descendant(of: _cle(cle), matching: find.byType(TextField));
@@ -536,6 +538,39 @@ void main() {
         ),
         contains('Course : '),
       );
+    },
+  );
+
+  testWidgets(
+    'marches en composite : produit, fiche, matériaux ; l\'épaisseur vient de la planche',
+    (t) async {
+      await ouvrir(t);
+      await deplierReglages(t, ['escalier_marches']);
+      expect(_cle('escalier_ep_marche'), findsOneWidget);
+      await t.tap(_cle('escalier_composite'));
+      await t.pumpAndSettle();
+      // Bois → composite : l'épaisseur et les contremarches viennent du produit.
+      expect(_cle('escalier_ep_marche'), findsNothing);
+      expect(_cle('escalier_fermees'), findsNothing);
+      expect(_cle('escalier_produit_generique'), findsOneWidget);
+      expect(
+        _texte('écart de 3/16" entre planches'),
+        findsWidgets,
+      ); // fiche et matériaux
+      expect(_texte('Composite courant en cadre'), findsOneWidget);
+      // Matériaux : planches, fascias, backing, bouchons ; plus de « Marches de … ».
+      expect(_texte('Planches Composite courant'), findsOneWidget);
+      expect(_texte('Fascias Composite courant'), findsOneWidget);
+      expect(_texte('(backing des contremarches)'), findsWidgets);
+      expect(_texte('Boîtes de vis et bouchons de la couleur'), findsOneWidget);
+      expect(_texte('Marches de 3\''), findsNothing);
+      // Limons à 12 po au plus : 4 limons en 36 po.
+      expect(_texte('4 limons'), findsOneWidget);
+      // Retour au bois : comme avant.
+      await t.tap(_cle('escalier_composite'));
+      await t.pumpAndSettle();
+      expect(_cle('escalier_ep_marche'), findsOneWidget);
+      expect(_texte('Planches Composite courant'), findsNothing);
     },
   );
 }

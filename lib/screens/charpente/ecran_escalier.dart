@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../charpente/composite.dart';
 import '../../charpente/escalier.dart';
 import '../../charpente/escalier_solveur.dart';
 import '../../charpente/escalier_texte.dart';
@@ -36,6 +37,11 @@ class _EcranEscalierState extends State<EcranEscalier> {
   double _epaisseurContremarche = 0.75;
   SectionLimon _section = SectionLimon.s2x12;
   double _entraxe = 16;
+
+  /// Marches en composite : le produit choisi (null : marches en bois).
+  String? _composite;
+  ProduitComposite? get _produit =>
+      _composite == null ? null : produitComposite(_composite);
 
   // Mode « à partir de ce que je connais » : 2 données ou plus, le calcul trouve le
   // reste avec les girons et contremarches idéals du Code.
@@ -86,6 +92,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
     epaisseurContremarche: _epaisseurContremarche,
     section: _section,
     espacementMax: _entraxe,
+    composite: _produit,
     // Traçage au 1/16 po ou au millimètre, selon le système d'unités.
     precisionTrace: metrique ? 1 / mmParPouce : 1 / 16,
   );
@@ -254,19 +261,62 @@ class _EcranEscalierState extends State<EcranEscalier> {
       SectionRepliable(
         cle: 'escalier_marches',
         titre: 'Marches et contremarches',
-        resume:
-            'Marche ${_l(_epaisseurMarche)} · nez ${_l(_nez)} · contremarches '
-            '${_fermees ? 'fermées (${_l(_epaisseurContremarche)})' : 'ouvertes'}',
+        resume: _produit != null
+            ? '${_produit!.nom} en cadre · nez ${_l(_nez)} · fascia et backing 2x'
+            : 'Marche ${_l(_epaisseurMarche)} · nez ${_l(_nez)} · contremarches '
+                  '${_fermees ? 'fermées (${_l(_epaisseurContremarche)})' : 'ouvertes'}',
         enfants: [
-          ChampLongueur(
-            key: const ValueKey('escalier_ep_marche'),
-            label: 'Épaisseur de la marche',
-            valeur: _epaisseurMarche,
-            min: 0.25,
-            max: 4,
-            onChange: (v) => setState(() => _epaisseurMarche = v),
+          SwitchListTile(
+            key: const ValueKey('escalier_composite'),
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Marches en composite'),
+            subtitle: const Text(
+              'En cadre, contremarches en fascia avec un 2x de backing',
+            ),
+            value: _composite != null,
+            onChanged: (v) => setState(
+              () => _composite = v ? produitCompositeGenerique.id : null,
+            ),
           ),
-          espace,
+          if (_produit != null) ...[
+            DropdownButtonFormField<String>(
+              key: ValueKey('escalier_produit_$_composite'),
+              initialValue: _composite,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Produit',
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              items: [
+                for (final p in produitsComposite)
+                  DropdownMenuItem(value: p.id, child: Text(p.nom)),
+              ],
+              onChanged: (id) =>
+                  id == null ? null : setState(() => _composite = id),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              key: const ValueKey('escalier_produit_fiche'),
+              'Planches de ${_l(_produit!.largeur)} × ${_l(_produit!.epaisseur)} ; '
+              'écart de ${_l(_produit!.ecart)} entre planches (${_produit!.attache}), '
+              '${_l(_produit!.ecartBout)} au bout contre le cadre ; limons aux '
+              '${_l(_produit!.entraxeMaxLimons)} au plus. Nez et côtés vissés en surface '
+              'avec bouchons (${_produit!.bouchons}).',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            espace,
+          ] else ...[
+            ChampLongueur(
+              key: const ValueKey('escalier_ep_marche'),
+              label: 'Épaisseur de la marche',
+              valeur: _epaisseurMarche,
+              min: 0.25,
+              max: 4,
+              onChange: (v) => setState(() => _epaisseurMarche = v),
+            ),
+            espace,
+          ],
           ChampLongueur(
             key: const ValueKey('escalier_nez'),
             label: 'Nez de marche (saillie)',
@@ -276,14 +326,15 @@ class _EcranEscalierState extends State<EcranEscalier> {
             max: 4,
             onChange: (v) => setState(() => _nez = v),
           ),
-          SwitchListTile(
-            key: const ValueKey('escalier_fermees'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Contremarches fermées'),
-            value: _fermees,
-            onChanged: (v) => setState(() => _fermees = v),
-          ),
-          if (_fermees)
+          if (_produit == null)
+            SwitchListTile(
+              key: const ValueKey('escalier_fermees'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Contremarches fermées'),
+              value: _fermees,
+              onChanged: (v) => setState(() => _fermees = v),
+            ),
+          if (_fermees && _produit == null)
             ChampLongueur(
               key: const ValueKey('escalier_ep_contre'),
               label: 'Épaisseur de la contremarche',
@@ -297,7 +348,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
       SectionRepliable(
         cle: 'escalier_limons',
         titre: 'Limons',
-        resume: '${_section.nom} · entraxe maximal ${_l(_entraxe)}',
+        resume:
+            '${_section.nom} · entraxe maximal '
+            '${_l(_produit == null ? _entraxe : (_entraxe < _produit!.entraxeMaxLimons ? _entraxe : _produit!.entraxeMaxLimons))}'
+            '${_produit != null && _produit!.entraxeMaxLimons < _entraxe ? ' (${_produit!.marque})' : ''}',
         enfants: [
           SegmentedButton<SectionLimon>(
             key: const ValueKey('escalier_section'),

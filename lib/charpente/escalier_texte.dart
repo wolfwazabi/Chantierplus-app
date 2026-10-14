@@ -1,4 +1,5 @@
 import 'escalier.dart';
+import 'escalier_composite.dart';
 import 'unites.dart';
 
 /// Une ligne de la liste de matériaux d'un escalier.
@@ -25,18 +26,93 @@ List<LigneMaterielEscalier> materielEscalier(
       '${s.section.nom} × ${formatPlanche(r.longueurCommerciale, metrique: metrique)} (limons)',
       'Coupe : ${l(r.longueurLimon)} chacun, entraxe ${l(r.espacementReel)}',
     ),
-    LigneMaterielEscalier(
-      r.nombreMarches,
-      'Marches de ${l(s.largeur)} de long',
-      'Profondeur ${l(r.profondeurMarche)} (giron ${l(r.giron)} + nez ${l(s.nez)}), '
-          'épaisseur ${l(s.epaisseurMarche)}',
-    ),
-    if (s.contremarchesFermees)
+    if (s.composite != null)
+      ..._materielComposite(r, metrique)
+    else ...[
       LigneMaterielEscalier(
-        r.nombreContremarches,
-        'Contremarches de ${l(s.largeur)} de long',
-        'Hauteur ${l(r.contremarche)}, épaisseur ${l(s.epaisseurContremarche)}',
+        r.nombreMarches,
+        'Marches de ${l(s.largeur)} de long',
+        'Profondeur ${l(r.profondeurMarche)} (giron ${l(r.giron)} + nez ${l(s.nez)}), '
+            'épaisseur ${l(s.epaisseurMarche)}',
       ),
+      if (s.contremarchesFermees)
+        LigneMaterielEscalier(
+          r.nombreContremarches,
+          'Contremarches de ${l(s.largeur)} de long',
+          'Hauteur ${l(r.contremarche)}, épaisseur ${l(s.epaisseurContremarche)}',
+        ),
+    ],
+  ];
+}
+
+/// Marches en composite : planches des marches en cadre, fascias des contremarches, 2x de
+/// backing derrière chaque contremarche, attaches cachées, vis et bouchons des vis apparentes.
+/// Le détail est sur la première ligne de chaque article.
+List<LigneMaterielEscalier> _materielComposite(
+  ResultatEscalier r,
+  bool metrique,
+) {
+  String l(double po) => formatLongueur(po, metrique: metrique);
+  String p(double po) => formatPlanche(po, metrique: metrique);
+  final s = r.spec;
+  final c = calculerComposite(r);
+  final produit = c.produit;
+  final n = c.rangsCentre;
+  final parMarche =
+      '${l(produit.largeur)} × ${l(produit.epaisseur)} ; écart de ${l(produit.ecart)} entre '
+      'planches côte à côte, ${l(produit.ecartBout)} au bout contre le cadre. '
+      'Par marche, en cadre : nez de ${l(s.largeur)}, 2 côtés de '
+      '${l(r.profondeurMarche)} en onglet'
+      '${n == 0 ? '' : ', $n planche${n > 1 ? 's' : ''} de ${l(c.longueurCentre)} au centre'}';
+  final contremarches =
+      '${r.nombreContremarches} contremarches de ${l(s.largeur)}, refendues à '
+      '${l(r.contremarche)}';
+  List<LigneMaterielEscalier> lignes(
+    Map<double, int> parLongueur,
+    String Function(double) article,
+    String detail,
+  ) => [
+    for (final (i, e) in parLongueur.entries.indexed)
+      LigneMaterielEscalier(e.value, article(e.key), i == 0 ? detail : ''),
+  ];
+  return [
+    ...lignes(
+      c.planches.parLongueur,
+      (lg) => 'Planches ${produit.nom} × ${p(lg)} (marches)',
+      parMarche,
+    ),
+    ...lignes(
+      c.fascias.parLongueur,
+      (lg) =>
+          'Fascias ${produit.marque} ${l(c.hauteurFascia)} × ${p(lg)} (contremarches)',
+      contremarches,
+    ),
+    ...lignes(
+      c.backing.parLongueur,
+      (lg) =>
+          '${c.sectionBacking} traité × ${p(lg)} (backing des contremarches)',
+      'Derrière chaque fascia : $contremarches',
+    ),
+    if (c.attaches > 0)
+      LigneMaterielEscalier(
+        c.boitesAttaches,
+        'Boîte${c.boitesAttaches > 1 ? 's' : ''} d\'attaches cachées '
+            '${produit.attache} (${produit.attachesParBoite})',
+        '${c.attaches} attaches : une par limon intérieur à chaque joint des planches '
+            'du centre',
+      ),
+    LigneMaterielEscalier(
+      c.boitesBouchons,
+      'Boîte${c.boitesBouchons > 1 ? 's' : ''} de ${produit.bouchons} '
+          '(${produit.bouchonsParBoite})',
+      '${c.visApparentes} vis apparentes cachées par un bouchon : nez ($visNezParLimon par '
+          'limon) et côtés ($visParCote chacun) de chaque marche',
+    ),
+    LigneMaterielEscalier(
+      c.visFascia,
+      'Vis de fascia de la couleur',
+      '$visFasciaParLimon par limon dans chaque fascia, dans le backing',
+    ),
   ];
 }
 
