@@ -96,12 +96,15 @@ Option « Marches en composite » (groupe Marches et contremarches) et choix du 
   produit. Écarts du fabricant : entre planches côte à côte, et au bout des planches du centre
   contre les côtés (valeur par temps doux ; le tableau selon la température est affiché).
 - **Contremarches** en fascia (la plus basse hauteur vendue qui couvre la contremarche,
-  refendue), avec un **2x traité de backing** derrière chacune (2x8, 2x10 ou 2x12 selon la
-  hauteur). Pas de contreplaqué sous les marches.
+  refendue), vissée directement sur les limons (pas de 2x de backing derrière). Pas de
+  contreplaqué sous les marches.
 - **2x12 à plat aux côtés** (toujours, pas d'option) : à chaque marche, un morceau de 2x12
   traité de chaque côté, entre le limon de côté et le suivant (l'espace libre entre eux), le
-  dessus à égalité du siège, refendu à la profondeur du siège moins le backing ; il porte la
-  planche de côté du cadre et le bout des planches du centre. Le milieu reste ouvert.
+  dessus à égalité du siège, pleine largeur ; il porte la planche de côté du cadre et le bout
+  des planches du centre. Le milieu reste ouvert.
+- **Vue 3D** (`escalier_scene.dart`) : limons, fascias, 2x12 à plat, la marche du haut en cadre et
+  les autres ouvertes, comme la photo de référence ; affichée dans l'onglet 3D de la charpente
+  quand l'escalier est jumelé au plancher (pas sous le schéma du limon).
 - **Fixation selon le guide** : la plupart des fabricants interdisent leurs attaches cachées
   sur les marches (TimberTech, Fiberon, MoistureShield) : tout est vissé en surface, 2 vis par
   limon dans chaque planche en travers et 2 par côté, avec bouchons (ou vis de la couleur,

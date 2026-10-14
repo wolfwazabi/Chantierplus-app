@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../../charpente/composite.dart';
 import '../../charpente/escalier.dart';
 import '../../charpente/escalier_composite.dart';
-import '../../charpente/escalier_scene.dart';
 import '../../charpente/escalier_solveur.dart';
 import '../../charpente/escalier_texte.dart';
 import '../../charpente/unites.dart';
@@ -12,7 +11,6 @@ import '../../services/preferences.dart';
 import 'champs.dart';
 import 'schema_coupes.dart';
 import 'schema_limon.dart';
-import 'vue_3d.dart';
 
 /// Calcul des limons d'un escalier droit : nombre et hauteur des contremarches,
 /// giron, longueur et coupes des limons, table de traçage, vérification des
@@ -275,7 +273,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
         cle: 'escalier_marches',
         titre: 'Marches et contremarches',
         resume: _produit != null
-            ? '${_produit!.nom} en cadre · nez ${_l(_nez)} · fascia et backing 2x'
+            ? '${_produit!.nom} en cadre · nez ${_l(_nez)} · fascia'
             : 'Marche ${_l(_epaisseurMarche)} · nez ${_l(_nez)} · contremarches '
                   '${_fermees ? 'fermées (${_l(_epaisseurContremarche)})' : 'ouvertes'}',
         enfants: [
@@ -285,7 +283,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
               contentPadding: EdgeInsets.zero,
               title: const Text('Marches en composite'),
               subtitle: const Text(
-                'En cadre, contremarches en fascia avec un 2x de backing',
+                'En cadre, contremarches en fascia vissée aux limons',
               ),
               value: _composite != null,
               onChanged: (v) => setState(
@@ -537,42 +535,6 @@ class _EcranEscalierState extends State<EcranEscalier> {
 
   // ------------------------------------------------------------------ Résultats
 
-  /// Composite : la vue 3D comme la photo de référence (backing, 2x12 à plat aux côtés,
-  /// fascias, la marche du haut en cadre). Toucher l'ouvre en grand pour la tourner.
-  List<Widget> _vue3D(ResultatEscalier r, bool metrique) {
-    final scene = sceneEscalier(r, metrique: metrique);
-    if (scene.estVide) {
-      return const [];
-    }
-    return [
-      const SizedBox(height: 8),
-      Vue3D(
-        key: const ValueKey('escalier_3d'),
-        scene: scene,
-        controles: false,
-        interactif: false,
-        hauteur: 240,
-        onTap: () => Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (_) => Scaffold(
-              appBar: AppBar(title: const Text('Escalier en 3D')),
-              body: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Vue3D(scene: scene),
-              ),
-            ),
-          ),
-        ),
-      ),
-      const SizedBox(height: 4),
-      Text(
-        'La marche du haut est posée ; les autres sont laissées ouvertes pour voir le backing '
-        'et les 2x12 à plat. Touchez la vue pour la tourner.',
-        style: Theme.of(context).textTheme.bodySmall,
-      ),
-    ];
-  }
-
   List<Widget> _resultats(
     ResultatEscalier r,
     bool metrique,
@@ -684,7 +646,6 @@ class _EcranEscalierState extends State<EcranEscalier> {
       ),
       const SizedBox(height: 8),
       SchemaLimon(resultat: r, metrique: metrique),
-      if (s.composite != null) ..._vue3D(r, metrique),
       const TitreSection(
         'Coupes',
         aide: 'Repère : plancher fini du bas, face de la 1re contremarche.',

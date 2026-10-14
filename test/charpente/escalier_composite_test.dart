@@ -1,4 +1,4 @@
-// Marches en composite : marches en cadre, contremarches en fascia avec un 2x de backing,
+// Marches en composite : marches en cadre, contremarches en fascia vissée aux limons,
 // limons à l'entraxe du fabricant, écarts du fabricant (côte à côte et au bout contre le cadre),
 // fixation selon le guide : attaches cachées au centre seulement si le fabricant les permet sur
 // les marches (Trex), sinon tout vissé en surface (avec bouchons, ou vis de la couleur).
@@ -165,14 +165,18 @@ void main() {
   group('contremarches', () {
     final c = calculerComposite(r);
 
-    test('fascias de 7 1/4 en 12 pi (3 par planche) ; backing 2x8', () {
+    test('fascias de 7 1/4 en 12 pi (3 par planche), sans backing', () {
       expect(c.hauteurFascia, 7.25);
       expect(c.fascias.parLongueur, {144.0: 5});
-      expect(_longueurs(c.backing), List.filled(15, 36.0));
-      expect(c.sectionBacking, '2x8');
+      final t = materielEscalier(
+        r,
+        metrique: false,
+      ).map((l) => '${l.article} ${l.detail}').join('\n');
+      expect(t, isNot(contains('acking')));
+      expect(t, contains('2 par limon dans chaque fascia'));
     });
 
-    test('contremarche de 7 1/2 po : fascia plus haute, backing 2x10', () {
+    test('contremarche de 7 1/2 po : fascia plus haute', () {
       ResultatEscalier haute(ProduitComposite p) => calculerEscalier(
         SpecEscalier(
           hauteurTotale: 112.5,
@@ -183,7 +187,6 @@ void main() {
       );
       final g = calculerComposite(haute(produitCompositeGenerique));
       expect(g.hauteurFascia, 11.25);
-      expect(g.sectionBacking, '2x10');
       expect(
         calculerComposite(haute(_produit('trex_enhance'))).hauteurFascia,
         11.375,
@@ -239,8 +242,6 @@ void main() {
       expect(r.nombreLimons, 5);
       final c = calculerComposite(r);
       expect(c.longueurBloc, closeTo(8.625 - 1.5, 1e-9));
-      // Refendu à la profondeur du siège (giron 10 1/4) moins le backing (1 1/2).
-      expect(c.profondeurBloc, closeTo(10.25 - 1.5, 1e-9));
       expect(c.blocsParMarche, 2);
       // Le milieu reste ouvert : 2 morceaux par marche, pas 4.
       expect(_longueurs(c.blocs), List.filled(14 * 2, 7.125));
@@ -274,8 +275,7 @@ void main() {
         t,
         contains(
           '28 morceaux de 7 1/8", un de chaque côté de chaque marche, '
-          'entre le limon de côté et le suivant, sous la planche de côté ; '
-          'refendus à 8 3/4" de profond',
+          'entre le limon de côté et le suivant, sous la planche de côté',
         ),
       );
       expect(t, isNot(contains('ontreplaqué')));
@@ -296,26 +296,30 @@ void main() {
       metrique: false,
     ).map((l) => '${l.quantite} × ${l.article} — ${l.detail}').join('\n');
 
-    test('générique : planches, fascias, backing, vis et bouchons ; pas d\'attaches', () {
-      final t = texte(produitCompositeGenerique);
-      expect(t, isNot(contains('Marches de')));
-      expect(t, contains('Planches Composite courant ×'));
-      expect(
-        t,
-        contains(
-          'écart de 3/16" entre planches côte à côte, 1/8" au bout contre le cadre',
-        ),
-      );
-      expect(t, contains('5 × Fascias Composite courant 7 1/4" × 12\''));
-      expect(t, contains('2x8 traité ×'));
-      expect(t, isNot(contains('attaches cachées Hideaway')));
-      expect(
-        t,
-        contains('280 × Vis et bouchons (vis et bouchons de la couleur)'),
-      );
-      expect(t, contains('(attaches cachées interdites sur les marches)'));
-      expect(t, contains('150 × Vis de fascia de la couleur'));
-    });
+    test(
+      'générique : planches, fascias, 2x12, vis et bouchons ; pas d\'attaches',
+      () {
+        final t = texte(produitCompositeGenerique);
+        expect(t, isNot(contains('Marches de')));
+        expect(t, contains('Planches Composite courant ×'));
+        expect(
+          t,
+          contains(
+            'écart de 3/16" entre planches côte à côte, 1/8" au bout contre le cadre',
+          ),
+        );
+        expect(t, contains('5 × Fascias Composite courant 7 1/4" × 12\''));
+        expect(t, isNot(contains('2x8 traité')));
+        expect(t, contains('2x12 traité ×'));
+        expect(t, isNot(contains('attaches cachées Hideaway')));
+        expect(
+          t,
+          contains('280 × Vis et bouchons (vis et bouchons de la couleur)'),
+        );
+        expect(t, contains('(attaches cachées interdites sur les marches)'));
+        expect(t, contains('150 × Vis de fascia de la couleur'));
+      },
+    );
 
     test('Trex : la boîte d\'attaches Hideaway et les bouchons du nez et des côtés', () {
       final t = texte(_produit('trex_enhance'));

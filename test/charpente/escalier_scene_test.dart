@@ -43,7 +43,7 @@ void main() {
     );
   });
 
-  test('comme la photo : limons, backing et fascia à chaque contremarche, 2x12 aux côtés, '
+  test('comme la photo : limons, une fascia à chaque contremarche (sans backing), 2x12 aux côtés, '
       'la marche du haut en cadre', () {
     final r = _escalier();
     final c = calculerComposite(r);
@@ -53,9 +53,14 @@ void main() {
     // Un limon tranché marche par marche (14 tranches chacun).
     expect(_compte(s, 'limon'), 5);
     expect(s.solides.where((so) => so.groupe == 'limon0'), hasLength(14));
-    // Un backing et une fascia par contremarche.
-    expect(_compte(s, 'backing'), 15);
+    // Une fascia par contremarche, vissée sur les limons : pas de backing.
+    expect(_compte(s, 'backing'), 0);
     expect(_compte(s, 'fascia'), 15);
+    final fascia = _boite(s.solides.firstWhere((so) => so.groupe == 'fascia2'));
+    expect(
+      fascia.$4,
+      closeTo(r.giron, 1e-9),
+    ); // contre la coupe d'aplomb des limons
     // 2x12 à plat : 2 par marche (le milieu ouvert).
     expect(_compte(s, 'bloc'), 14 * 2);
     // La marche du haut : nez, 2 côtés en onglet, les planches du centre.
@@ -65,7 +70,7 @@ void main() {
       s.solides.where((so) => so.groupe == 'centre'),
       hasLength(c.rangsCentre),
     );
-    // Couleurs : bois (limons, backing), fascias, 2x12, composite.
+    // Couleurs : bois (limons), fascias, 2x12, composite.
     expect(
       {for (final so in s.solides) so.matiere},
       containsAll([
@@ -91,7 +96,7 @@ void main() {
     expect(x0, closeTo(1.5, 1e-9)); // contre le limon de gauche
     expect(x1, closeTo(r.espacementReel, 1e-9)); // contre le 2e limon
     expect(y0, closeTo(0, 1e-9)); // devant du siège 1
-    expect(y1, closeTo(r.giron - 1.5, 1e-9)); // contre le backing du dessus
+    expect(y1, closeTo(11.25, 1e-9)); // un 2x12 pleine largeur
     expect(z1, closeTo(r.contremarche - 0.94, 1e-9)); // siège 1
     expect(z1 - z0, closeTo(1.5, 1e-9));
     final droite = _boite(s.solides.firstWhere((so) => so.groupe == 'bloc1.1'));

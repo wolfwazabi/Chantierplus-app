@@ -45,8 +45,8 @@ List<LigneMaterielEscalier> materielEscalier(
   ];
 }
 
-/// Marches en composite : planches des marches en cadre, fascias des contremarches, 2x de
-/// backing derrière chaque contremarche, attaches cachées, vis et bouchons des vis apparentes.
+/// Marches en composite : planches des marches en cadre, fascias des contremarches (vissées sur
+/// les limons), 2x12 à plat aux côtés, attaches cachées, vis et bouchons des vis apparentes.
 /// Le détail est sur la première ligne de chaque article.
 List<LigneMaterielEscalier> _materielComposite(
   ResultatEscalier r,
@@ -88,18 +88,11 @@ List<LigneMaterielEscalier> _materielComposite(
       contremarches,
     ),
     ...lignes(
-      c.backing.parLongueur,
-      (lg) =>
-          '${c.sectionBacking} traité × ${p(lg)} (backing des contremarches)',
-      'Derrière chaque fascia : $contremarches',
-    ),
-    ...lignes(
       c.blocs.parLongueur,
       (lg) => '2x12 traité × ${p(lg)} (à plat aux côtés des marches)',
       '${r.nombreMarches * c.blocsParMarche} morceaux de ${l(c.longueurBloc)}, '
       '${c.blocsParMarche == 2 ? 'un de chaque côté de chaque marche' : 'un sous chaque marche'}, '
-      'entre le limon de côté et le suivant, sous la planche de côté ; refendus à '
-      '${l(c.profondeurBloc)} de profond',
+      'entre le limon de côté et le suivant, sous la planche de côté',
     ),
     if (c.attaches > 0)
       LigneMaterielEscalier(
@@ -123,7 +116,7 @@ List<LigneMaterielEscalier> _materielComposite(
     LigneMaterielEscalier(
       c.visFascia,
       'Vis de fascia de la couleur',
-      '$visFasciaParLimon par limon dans chaque fascia, dans le backing',
+      '$visFasciaParLimon par limon dans chaque fascia',
     ),
   ];
 }

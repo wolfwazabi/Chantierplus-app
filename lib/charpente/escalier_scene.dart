@@ -6,8 +6,8 @@ import 'geometrie.dart';
 import 'solides.dart';
 import 'unites.dart';
 
-/// Vue 3D d'un escalier en composite, comme la photo de référence de Philip : les limons, le
-/// backing 2x derrière chaque contremarche, les 2x12 à plat aux côtés des marches et les fascias.
+/// Vue 3D d'un escalier en composite, comme la photo de référence de Philip : les limons, les
+/// fascias des contremarches vissées sur les limons et les 2x12 à plat aux côtés des marches.
 /// La marche du haut est posée en cadre (nez, deux côtés en onglet, planches du centre) ; les
 /// autres sont laissées ouvertes pour qu'on voie la structure. Un bout du plancher du haut
 /// (rive et dessus) situe l'escalier.
@@ -196,47 +196,32 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
     }
   }
 
-  // Contremarches : backing 2x vissé sur la coupe d'aplomb des limons, la fascia devant ; du siège
-  // de la marche du dessous au siège de la marche du dessus (la hauteur de la contremarche).
+  // Contremarches : la fascia vissée directement sur la coupe d'aplomb des limons, du siège de la
+  // marche du dessous au siège de la marche du dessus (la hauteur de la contremarche).
   for (var k = 1; k <= n; k++) {
     final yCoupe = (k - 1) * g;
     final z0 = math.max(0.0, (k - 1) * h - t);
     final z1 = k * h - t;
-    final backing = 'backing$k';
-    p.infos[backing] = InfoPiece('Backing de la contremarche $k', [
-      'Section : ${c.sectionBacking}',
-      'Longueur à couper : ${l(largeur)}',
-      'Refendu à ${l(z1 - z0)} de haut, vissé sur la coupe d\'aplomb des limons',
-    ]);
-    p.boite(
-      backing,
-      Matiere.bois,
-      0,
-      largeur,
-      yCoupe - epaisseurBacking,
-      yCoupe,
-      z0,
-      z1,
-    );
     final fascia = 'fascia$k';
     p.infos[fascia] = InfoPiece('Fascia de la contremarche $k', [
       'Pièce : ${l(largeur)} × ${l(z1 - z0)}',
-      '${produit.marque}, vissée dans le backing',
+      '${produit.marque}, vissée sur les limons',
     ]);
     p.boite(
       fascia,
       Matiere.fascia,
       0,
       largeur,
-      yCoupe - epaisseurBacking - _epFascia,
-      yCoupe - epaisseurBacking,
+      yCoupe - _epFascia,
+      yCoupe,
       z0,
       z1,
     );
   }
 
   // 2x12 à plat aux côtés : entre le limon de côté et le suivant, le dessus à égalité du siège,
-  // du devant du siège au backing de la contremarche du dessus.
+  // pleine largeur (11 1/4) depuis le devant du siège ; il passe sous la fascia du dessus, mais
+  // s'arrête à la rive du plancher du haut.
   final travees = c.blocsParMarche == 2
       ? [(ep, e), (largeur - e, largeur - ep)]
       : [(ep, largeur - ep)];
@@ -247,7 +232,7 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
       p.infos[groupe] = InfoPiece('2x12 à plat', [
         'Section : 2x12',
         'Longueur à couper : ${l(c.longueurBloc)}',
-        'Refendu à ${l(c.profondeurBloc)} de profond, le dessus à égalité du siège',
+        'Le dessus à égalité du siège du limon',
       ]);
       p.boite(
         groupe,
@@ -255,7 +240,7 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
         x0,
         x1,
         (k - 1) * g,
-        k * g - epaisseurBacking,
+        math.min((k - 1) * g + 11.25, r.course),
         dessus - 1.5,
         dessus,
       );
@@ -267,8 +252,8 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
   if (n >= 2) {
     final k = n - 1;
     final b = produit.largeur;
-    final avant = (k - 1) * g - epaisseurBacking - _epFascia - s.nez;
-    final fond = k * g - epaisseurBacking - _epFascia;
+    final avant = (k - 1) * g - _epFascia - s.nez;
+    final fond = k * g - _epFascia;
     final z0 = k * h - t, z1 = k * h;
     p.infos['nez'] = InfoPiece('Nez de marche', [
       'Longueur à couper : ${l(largeur)}',
@@ -350,7 +335,7 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
     Matiere.composite,
     0,
     largeur,
-    course - epaisseurBacking - _epFascia - s.nez,
+    course - _epFascia - s.nez,
     course + _profondeurPlancherHaut,
     hauteur - t,
     hauteur,
@@ -359,8 +344,8 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
   // Cotes : hauteur totale, course et largeur.
   final cotes = [
     Cote(
-      P3(largeur + 4, -epaisseurBacking - _epFascia, 0),
-      P3(largeur + 4, -epaisseurBacking - _epFascia, hauteur),
+      P3(largeur + 4, -_epFascia, 0),
+      P3(largeur + 4, -_epFascia, hauteur),
       'Hauteur ${l(hauteur)}',
       Calque.escalier,
     ),
@@ -371,8 +356,8 @@ Scene sceneEscalier(ResultatEscalier r, {required bool metrique}) {
       Calque.escalier,
     ),
     Cote(
-      P3(0, -epaisseurBacking - _epFascia - 4, 0),
-      P3(largeur, -epaisseurBacking - _epFascia - 4, 0),
+      P3(0, -_epFascia - 4, 0),
+      P3(largeur, -_epFascia - 4, 0),
       'Largeur ${l(largeur)}',
       Calque.escalier,
     ),

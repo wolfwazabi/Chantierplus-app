@@ -9,8 +9,7 @@ import 'plancher.dart' show longueursPlanchesParDefaut;
 ///  - chaque marche en cadre : un nez sur toute la largeur, deux côtés en onglet (de la
 ///    profondeur de la marche) et des planches au centre entre les côtés ;
 ///  - chaque contremarche en fascia composite (la plus basse hauteur vendue qui la couvre),
-///    refendue à la hauteur de la contremarche ;
-///  - un 2x traité (« backing ») derrière chaque contremarche, pour visser la fascia ;
+///    refendue à la hauteur de la contremarche et vissée directement sur les limons ;
 ///  - un 2x12 traité à plat de chaque côté de chaque marche, entre le limon de côté et le
 ///    suivant (le dessus à égalité du siège), sous la planche de côté du cadre ;
 ///  - limons à l'entraxe du fabricant.
@@ -31,10 +30,6 @@ class MaterielComposite {
   final ResultatDecoupe fascias;
   final double hauteurFascia;
 
-  /// 2x traité derrière chaque contremarche.
-  final ResultatDecoupe backing;
-  final String sectionBacking;
-
   /// 2x12 traités à plat aux côtés de chaque marche.
   final ResultatDecoupe blocs;
 
@@ -43,10 +38,6 @@ class MaterielComposite {
 
   /// Longueur d'un morceau : l'espace libre entre le limon de côté et le suivant.
   final double longueurBloc;
-
-  /// Profondeur d'un morceau : le siège du limon moins le backing de la contremarche du dessus
-  /// (le 2x12 est refendu à cette largeur).
-  final double profondeurBloc;
 
   /// Par marche : rangs de planches au centre (entre les côtés), et leur longueur.
   final int rangsCentre;
@@ -59,7 +50,7 @@ class MaterielComposite {
   /// Attaches cachées des planches du centre.
   final int attaches;
 
-  /// Vis des fascias (dans le backing, à chaque limon).
+  /// Vis des fascias (dans chaque limon).
   final int visFascia;
 
   const MaterielComposite({
@@ -67,12 +58,9 @@ class MaterielComposite {
     required this.planches,
     required this.fascias,
     required this.hauteurFascia,
-    required this.backing,
-    required this.sectionBacking,
     required this.blocs,
     required this.blocsParMarche,
     required this.longueurBloc,
-    required this.profondeurBloc,
     required this.rangsCentre,
     required this.longueurCentre,
     required this.visApparentes,
@@ -88,10 +76,7 @@ class MaterielComposite {
 const int visParLimonParPlanche = 2;
 const int visParCote = 2;
 
-/// Épaisseur du 2x de backing derrière chaque fascia.
-const double epaisseurBacking = 1.5;
-
-/// Vis par limon dans chaque fascia (dans le backing).
+/// Vis par limon dans chaque fascia.
 const int visFasciaParLimon = 2;
 
 /// Le composite d'un escalier calculé. Lance [EscalierInvalide] si l'escalier est trop étroit
@@ -135,10 +120,6 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
       'Contremarche plus haute que la fascia la plus haute de ${produit.nom}.',
     );
   }
-  final contremarches = [
-    for (var k = 0; k < r.nombreContremarches; k++)
-      PieceCoupe('cm$k', largeur, 'contremarche'),
-  ];
   // Fascia de 12 pi : une contremarche plus large se fait en morceaux égaux (joint sur un limon).
   final fasciaMax = produit.longueursFascia.reduce(math.max);
   final morceaux = (largeur / fasciaMax - 1e-9).ceil();
@@ -147,13 +128,6 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
       for (var j = 0; j < morceaux; j++)
         PieceCoupe('f$k.$j', largeur / morceaux, 'contremarche'),
   ];
-  // Le 2x de backing : la plus petite section qui couvre la contremarche (à refendre).
-  final section = hauteur <= 7.25 + 1e-9
-      ? '2x8'
-      : hauteur <= 9.25 + 1e-9
-      ? '2x10'
-      : '2x12';
-
   // Fixation : le nez et les côtés (bords visibles) sont vissés en surface. Les planches du
   // centre posent sur les limons intérieurs : attaches cachées à chaque joint de planches
   // (devant, entre les rangs et au fond) si le fabricant les permet sur les marches, sinon
@@ -188,12 +162,9 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
     blocs: blocs,
     blocsParMarche: blocsParMarche,
     longueurBloc: longueurBloc,
-    profondeurBloc: r.giron - epaisseurBacking,
     planches: decouperPlanches(pieces, produit.longueurs),
     fascias: decouperPlanches(fascias, produit.longueursFascia),
     hauteurFascia: fascia.first,
-    backing: decouperPlanches(contremarches, longueursPlanchesParDefaut),
-    sectionBacking: section,
     rangsCentre: rangs,
     longueurCentre: longueurCentre,
     visApparentes: visApparentes,

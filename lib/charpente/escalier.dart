@@ -164,7 +164,7 @@ class SpecEscalier {
   /// Les mesures de traçage sont arrondies à ce pas (1/16 po ou 1 mm).
   final double precisionTrace;
 
-  /// Marches en composite (en cadre, fascia et 2x de backing aux contremarches), de ce
+  /// Marches en composite (en cadre, contremarches en fascia vissée aux limons), de ce
   /// produit ; null : marches en bois. La marche a l'épaisseur de la planche, les
   /// contremarches sont fermées et les limons suivent l'entraxe du fabricant.
   final ProduitComposite? composite;

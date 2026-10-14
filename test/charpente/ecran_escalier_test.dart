@@ -560,10 +560,10 @@ void main() {
         findsWidgets,
       ); // fiche et matériaux
       expect(_texte('Composite courant en cadre'), findsOneWidget);
-      // Matériaux : planches, fascias, backing, bouchons ; plus de « Marches de … ».
+      // Matériaux : planches, fascias (sans backing), bouchons ; plus de « Marches de … ».
       expect(_texte('Planches Composite courant'), findsOneWidget);
       expect(_texte('Fascias Composite courant'), findsOneWidget);
-      expect(_texte('(backing des contremarches)'), findsWidgets);
+      expect(_texte('acking'), findsNothing);
       expect(
         _texte('Vis et bouchons (vis et bouchons de la couleur)'),
         findsOneWidget,
@@ -579,9 +579,8 @@ void main() {
       expect(_texte('ontreplaqué'), findsNothing);
       expect(_texte('4 × 8'), findsNothing);
 
-      // La vue 3D comme la photo : backing, 2x12 à plat, fascias, la marche du haut en cadre.
-      expect(_cle('escalier_3d'), findsOneWidget);
-      expect(_texte('pour voir le backing'), findsOneWidget);
+      // Pas d'aperçu 3D sous le schéma du limon : l'escalier va dans l'onglet 3D de la charpente.
+      expect(_cle('escalier_3d'), findsNothing);
 
       // Une marque : sa fiche (écarts, attaches, source) et ses limons.
       await t.tap(_cle('escalier_produit_generique'));

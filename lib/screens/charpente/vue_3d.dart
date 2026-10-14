@@ -637,7 +637,7 @@ class LegendeVue3D extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const items = [
-      (Matiere.bois, 'Solives, montants, entremises, limons, backing'),
+      (Matiere.bois, 'Solives, montants, entremises, limons'),
       (Matiere.rive, 'Solives de rive'),
       (Matiere.linteau, 'Linteaux'),
       (Matiere.sousPlancher, 'Sous-plancher'),
