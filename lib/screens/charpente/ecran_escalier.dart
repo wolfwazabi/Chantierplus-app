@@ -351,7 +351,10 @@ class _EcranEscalierState extends State<EcranEscalier> {
           ChampLongueur(
             key: const ValueKey('escalier_nez'),
             label: 'Nez de marche (saillie)',
-            aide: 'Le Code limite la saillie à 25 mm.',
+            aide: _produit == null
+                ? 'Au-delà de la face de la contremarche ; le Code limite la saillie à 25 mm.'
+                : 'Au-delà de la face de la fascia ; ${_produit!.marque} : '
+                      '${_l(_produit!.debordNezMax)} au plus.',
             valeur: _nez,
             min: 0,
             max: 4,
