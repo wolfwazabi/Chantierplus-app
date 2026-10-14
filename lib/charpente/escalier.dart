@@ -169,11 +169,6 @@ class SpecEscalier {
   /// contremarches sont fermées et les limons suivent l'entraxe du fabricant.
   final ProduitComposite? composite;
 
-  /// Marches en composite : un morceau de 2x12 traité à plat de chaque côté de chaque marche,
-  /// entre le limon de côté et le suivant (le dessus à égalité du siège), sous la planche de
-  /// côté du cadre et le bout des planches du centre.
-  final bool blocs2x12;
-
   /// L'épaisseur de marche qui sert au traçage (en composite : celle de la planche).
   double get epaisseurMarcheEffective =>
       composite == null ? epaisseurMarche : composite!.epaisseur;
@@ -202,7 +197,6 @@ class SpecEscalier {
     this.gorgeMin = 3.5,
     this.precisionTrace = 1 / 16,
     this.composite,
-    this.blocs2x12 = false,
   });
 
   LimitesEscalier get limites => LimitesEscalier.de(usage);
@@ -225,7 +219,6 @@ class SpecEscalier {
     gorgeMin: gorgeMin,
     precisionTrace: precisionTrace,
     composite: composite,
-    blocs2x12: blocs2x12,
   );
 
   void valider() {

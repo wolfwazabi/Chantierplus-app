@@ -93,14 +93,14 @@ List<LigneMaterielEscalier> _materielComposite(
           '${c.sectionBacking} traité × ${p(lg)} (backing des contremarches)',
       'Derrière chaque fascia : $contremarches',
     ),
-    if (c.blocs != null)
-      ...lignes(
-        c.blocs!.parLongueur,
-        (lg) => '2x12 traité × ${p(lg)} (à plat aux côtés des marches)',
-        '${r.nombreMarches * c.blocsParMarche} morceaux de ${l(c.longueurBloc)}, '
-        '${c.blocsParMarche == 2 ? 'un de chaque côté de chaque marche' : 'un sous chaque marche'}, '
-        'entre le limon de côté et le suivant, sous la planche de côté',
-      ),
+    ...lignes(
+      c.blocs.parLongueur,
+      (lg) => '2x12 traité × ${p(lg)} (à plat aux côtés des marches)',
+      '${r.nombreMarches * c.blocsParMarche} morceaux de ${l(c.longueurBloc)}, '
+      '${c.blocsParMarche == 2 ? 'un de chaque côté de chaque marche' : 'un sous chaque marche'}, '
+      'entre le limon de côté et le suivant, sous la planche de côté ; refendus à '
+      '${l(c.profondeurBloc)} de profond',
+    ),
     if (c.attaches > 0)
       LigneMaterielEscalier(
         c.boitesAttaches,
@@ -128,8 +128,13 @@ List<LigneMaterielEscalier> _materielComposite(
   ];
 }
 
-/// Texte à copier : dimensions, coupes, traçage et matériaux.
-String texteEscalier(ResultatEscalier r, {required bool metrique}) {
+/// Texte à copier : dimensions, coupes, traçage et matériaux (sans les matériaux si
+/// [materiaux] est faux : la calculatrice ne fait que les limons).
+String texteEscalier(
+  ResultatEscalier r, {
+  required bool metrique,
+  bool materiaux = true,
+}) {
   String l(double po) => formatLongueur(po, metrique: metrique);
   final s = r.spec;
   final b = StringBuffer()
@@ -173,11 +178,13 @@ String texteEscalier(ResultatEscalier r, {required bool metrique}) {
       '${l(r.arrondi(t.hauteurSiege))} | ${l(r.arrondi(t.course))}',
     );
   }
-  b
-    ..writeln()
-    ..writeln('MATÉRIAUX');
-  for (final m in materielEscalier(r, metrique: metrique)) {
-    b.writeln('${m.quantite} × ${m.article} — ${m.detail}');
+  if (materiaux) {
+    b
+      ..writeln()
+      ..writeln('MATÉRIAUX');
+    for (final m in materielEscalier(r, metrique: metrique)) {
+      b.writeln('${m.quantite} × ${m.article} — ${m.detail}');
+    }
   }
   b
     ..writeln()

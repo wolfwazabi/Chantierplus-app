@@ -24,12 +24,14 @@ void main() {
   });
   tearDown(() => Preferences.unites.value = SystemeUnites.imperial);
 
-  Future<void> ouvrir(WidgetTester t) async {
+  Future<void> ouvrir(WidgetTester t, {bool simple = false}) async {
     t.view.physicalSize = const Size(900, 16000);
     t.view.devicePixelRatio = 2;
     addTearDown(t.view.reset);
     await t.pumpWidget(
-      const MaterialApp(home: Scaffold(body: EcranEscalier())),
+      MaterialApp(
+        home: Scaffold(body: EcranEscalier(simple: simple)),
+      ),
     );
     await t.pumpAndSettle();
   }
@@ -570,17 +572,16 @@ void main() {
       // Générique prudent : limons à 9 po au plus, 5 limons en 36 po.
       expect(_texte('5 limons'), findsOneWidget);
 
-      // 2x12 à plat aux côtés des marches : oui par défaut ; pas de contreplaqué.
+      // 2x12 à plat aux côtés des marches : toujours (pas d'interrupteur) ; pas de contreplaqué.
+      expect(_cle('escalier_blocs'), findsNothing);
       expect(_texte('(à plat aux côtés des marches)'), findsWidgets);
       expect(_texte('un de chaque côté de chaque marche'), findsOneWidget);
       expect(_texte('ontreplaqué'), findsNothing);
       expect(_texte('4 × 8'), findsNothing);
-      await t.tap(_cle('escalier_blocs'));
-      await t.pumpAndSettle();
-      expect(_texte('(à plat aux côtés des marches)'), findsNothing);
-      await t.tap(_cle('escalier_blocs'));
-      await t.pumpAndSettle();
-      expect(_texte('(à plat aux côtés des marches)'), findsWidgets);
+
+      // La vue 3D comme la photo : backing, 2x12 à plat, fascias, la marche du haut en cadre.
+      expect(_cle('escalier_3d'), findsOneWidget);
+      expect(_texte('pour voir le backing'), findsOneWidget);
 
       // Une marque : sa fiche (écarts, attaches, source) et ses limons.
       await t.tap(_cle('escalier_produit_generique'));
@@ -598,11 +599,54 @@ void main() {
         _texte('TimberTech PRO (Legacy, Reserve) en cadre'),
         findsOneWidget,
       );
-      // Retour au bois : comme avant.
+      // Retour au bois : comme avant, sans vue 3D.
       await t.tap(_cle('escalier_composite'));
       await t.pumpAndSettle();
       expect(_cle('escalier_ep_marche'), findsOneWidget);
       expect(_texte('Planches Composite courant'), findsNothing);
+      expect(_cle('escalier_3d'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'version simple (calculatrice, édition gratuite) : les limons seulement, ni composite ni matériaux',
+    (t) async {
+      await ouvrir(t, simple: true);
+      // Le calcul des limons est là.
+      expect(_texte('15 contremarches'), findsOneWidget);
+      expect(_texte('4 limons en 2×12'), findsOneWidget);
+      expect(find.byType(SchemaLimon), findsOneWidget);
+      expect(_cle('escalier_coupes'), findsOneWidget);
+      expect(_cle('escalier_verifications'), findsOneWidget);
+      // Ni composite ni matériaux pour la commande.
+      await deplierReglages(t, ['escalier_marches']);
+      expect(_cle('escalier_ep_marche'), findsOneWidget);
+      expect(_cle('escalier_composite'), findsNothing);
+      expect(_cle('escalier_materiaux'), findsNothing);
+      expect(find.text('Matériaux'), findsNothing);
+      expect(_cle('escalier_3d'), findsNothing);
+      // Le texte copié n'a pas de matériaux non plus.
+      String? copie;
+      t.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (appel) async {
+          if (appel.method == 'Clipboard.setData') {
+            copie = (appel.arguments as Map)['text'] as String;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => t.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      await t.ensureVisible(_cle('escalier_copier'));
+      await t.tap(_cle('escalier_copier'));
+      await t.pumpAndSettle();
+      expect(copie, contains('TRAÇAGE'));
+      expect(copie, isNot(contains('MATÉRIAUX')));
     },
   );
 }

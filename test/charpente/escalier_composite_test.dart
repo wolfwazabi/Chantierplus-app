@@ -220,9 +220,8 @@ void main() {
     });
   });
 
-  group('2x12 à plat aux côtés des marches', () {
+  group('2x12 à plat aux côtés des marches (toujours, sans option)', () {
     ResultatEscalier avec({
-      required bool blocs,
       String produit = 'trex_enhance',
       double largeur = 36,
     }) => calculerEscalier(
@@ -231,65 +230,63 @@ void main() {
         largeur: largeur,
         nez: 0.75,
         composite: _produit(produit),
-        blocs2x12: blocs,
       ),
     );
 
     test('un morceau de chaque côté de chaque marche, entre le limon de côté et le suivant', () {
-      final r = avec(blocs: true);
+      final r = avec();
       // 5 limons aux 9 po au plus : entraxe réel 34 1/2 / 4 = 8 5/8 ; libre : 7 1/8.
       expect(r.nombreLimons, 5);
       final c = calculerComposite(r);
       expect(c.longueurBloc, closeTo(8.625 - 1.5, 1e-9));
+      // Refendu à la profondeur du siège (giron 10 1/4) moins le backing (1 1/2).
+      expect(c.profondeurBloc, closeTo(10.25 - 1.5, 1e-9));
       expect(c.blocsParMarche, 2);
       // Le milieu reste ouvert : 2 morceaux par marche, pas 4.
-      expect(_longueurs(c.blocs!), List.filled(14 * 2, 7.125));
-      expect(c.blocs!.horsLimites, isEmpty);
+      expect(_longueurs(c.blocs), List.filled(14 * 2, 7.125));
+      expect(c.blocs.horsLimites, isEmpty);
     });
 
     test('2 limons seulement : un morceau par marche', () {
       // Fiberon aux 12 po, escalier de 12 po : 2 limons à 10 1/2 ; libre : 9.
-      final r = avec(blocs: true, produit: 'fiberon_good_life', largeur: 12);
+      final r = avec(produit: 'fiberon_good_life', largeur: 12);
       expect(r.nombreLimons, 2);
       final c = calculerComposite(r);
       expect(c.blocsParMarche, 1);
-      expect(_longueurs(c.blocs!), List.filled(14, 9.0));
+      expect(_longueurs(c.blocs), List.filled(14, 9.0));
     });
 
     test(
       'la marche garde l\'épaisseur de la planche (pas de contreplaqué)',
       () {
-        expect(
-          avec(blocs: true).hauteurDepart,
-          closeTo(avec(blocs: false).hauteurDepart, 1e-9),
-        );
-        expect(avec(blocs: true).hauteurDepart, closeTo(7.2 - 0.94, 1e-9));
+        expect(avec().hauteurDepart, closeTo(7.2 - 0.94, 1e-9));
       },
     );
 
-    test('dans la liste de matériaux ; sans : rien', () {
-      final lignes = materielEscalier(avec(blocs: true), metrique: false);
-      final t = lignes
-          .map((l) => '${l.quantite} × ${l.article} — ${l.detail}')
-          .join('\n');
+    test('dans la liste de matériaux', () {
+      final t = materielEscalier(
+        avec(),
+        metrique: false,
+      ).map((l) => '${l.quantite} × ${l.article} — ${l.detail}').join('\n');
       expect(t, contains('2x12 traité ×'));
       expect(t, contains('(à plat aux côtés des marches)'));
       expect(
         t,
         contains(
           '28 morceaux de 7 1/8", un de chaque côté de chaque marche, '
-          'entre le limon de côté et le suivant, sous la planche de côté',
+          'entre le limon de côté et le suivant, sous la planche de côté ; '
+          'refendus à 8 3/4" de profond',
         ),
       );
       expect(t, isNot(contains('ontreplaqué')));
-      expect(calculerComposite(avec(blocs: false)).blocs, isNull);
-      expect(
-        materielEscalier(
-          avec(blocs: false),
-          metrique: false,
-        ).map((l) => l.article).join(),
-        isNot(contains('2x12 traité')),
-      );
+    });
+
+    test('escalier en bois : pas de 2x12 à plat', () {
+      final bois = materielEscalier(
+        calculerEscalier(const SpecEscalier(hauteurTotale: 108)),
+        metrique: false,
+      ).map((l) => l.article).join();
+      expect(bois, isNot(contains('2x12 traité')));
     });
   });
 

@@ -98,10 +98,10 @@ Option « Marches en composite » (groupe Marches et contremarches) et choix du 
 - **Contremarches** en fascia (la plus basse hauteur vendue qui couvre la contremarche,
   refendue), avec un **2x traité de backing** derrière chacune (2x8, 2x10 ou 2x12 selon la
   hauteur). Pas de contreplaqué sous les marches.
-- **2x12 à plat aux côtés** (au choix, oui par défaut) : à chaque marche, un morceau de 2x12
+- **2x12 à plat aux côtés** (toujours, pas d'option) : à chaque marche, un morceau de 2x12
   traité de chaque côté, entre le limon de côté et le suivant (l'espace libre entre eux), le
-  dessus à égalité du siège ; il porte la planche de côté du cadre et le bout des planches du
-  centre. Le milieu reste ouvert.
+  dessus à égalité du siège, refendu à la profondeur du siège moins le backing ; il porte la
+  planche de côté du cadre et le bout des planches du centre. Le milieu reste ouvert.
 - **Fixation selon le guide** : la plupart des fabricants interdisent leurs attaches cachées
   sur les marches (TimberTech, Fiberon, MoistureShield) : tout est vissé en surface, 2 vis par
   limon dans chaque planche en travers et 2 par côté, avec bouchons (ou vis de la couleur,

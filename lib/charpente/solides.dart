@@ -28,7 +28,7 @@ class P3 {
 }
 
 /// Couches de la vue : le plancher (solives, puis sous-plancher) et les murs
-/// (ossature, feuilles, membrane, fourrures, revêtement).
+/// (ossature, feuilles, membrane, fourrures, revêtement) ; l'escalier est toujours affiché.
 enum Calque {
   solives,
   sousPlancher,
@@ -37,6 +37,7 @@ enum Calque {
   membrane,
   fourrures,
   revetement,
+  escalier,
 }
 
 /// Matière, pour la couleur.
@@ -50,6 +51,15 @@ enum Matiere {
   membrane,
   fourrure,
   revetement,
+
+  /// Planches de composite (marches, plancher du haut).
+  composite,
+
+  /// Fascias de composite des contremarches.
+  fascia,
+
+  /// 2x12 à plat aux côtés des marches composite.
+  bloc,
 }
 
 class Face {

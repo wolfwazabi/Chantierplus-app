@@ -11,8 +11,8 @@ import 'plancher.dart' show longueursPlanchesParDefaut;
 ///  - chaque contremarche en fascia composite (la plus basse hauteur vendue qui la couvre),
 ///    refendue à la hauteur de la contremarche ;
 ///  - un 2x traité (« backing ») derrière chaque contremarche, pour visser la fascia ;
-///  - au choix, un 2x12 traité à plat de chaque côté de chaque marche, entre le limon de côté et
-///    le suivant, sous la planche de côté du cadre ;
+///  - un 2x12 traité à plat de chaque côté de chaque marche, entre le limon de côté et le
+///    suivant (le dessus à égalité du siège), sous la planche de côté du cadre ;
 ///  - limons à l'entraxe du fabricant.
 /// Les dimensions (largeur et épaisseur des planches, écart des attaches cachées, longueurs,
 /// fascias) viennent du produit choisi ([ProduitComposite]). Tout est en POUCES.
@@ -35,14 +35,18 @@ class MaterielComposite {
   final ResultatDecoupe backing;
   final String sectionBacking;
 
-  /// 2x12 traités à plat aux côtés de chaque marche (null : sans).
-  final ResultatDecoupe? blocs;
+  /// 2x12 traités à plat aux côtés de chaque marche.
+  final ResultatDecoupe blocs;
 
   /// Morceaux de 2x12 par marche (un de chaque côté ; un seul s'il n'y a que 2 limons).
   final int blocsParMarche;
 
   /// Longueur d'un morceau : l'espace libre entre le limon de côté et le suivant.
   final double longueurBloc;
+
+  /// Profondeur d'un morceau : le siège du limon moins le backing de la contremarche du dessus
+  /// (le 2x12 est refendu à cette largeur).
+  final double profondeurBloc;
 
   /// Par marche : rangs de planches au centre (entre les côtés), et leur longueur.
   final int rangsCentre;
@@ -65,9 +69,10 @@ class MaterielComposite {
     required this.hauteurFascia,
     required this.backing,
     required this.sectionBacking,
-    this.blocs,
-    this.blocsParMarche = 0,
-    this.longueurBloc = 0,
+    required this.blocs,
+    required this.blocsParMarche,
+    required this.longueurBloc,
+    required this.profondeurBloc,
     required this.rangsCentre,
     required this.longueurCentre,
     required this.visApparentes,
@@ -82,6 +87,9 @@ class MaterielComposite {
 /// côté de marche (dans le limon extérieur).
 const int visParLimonParPlanche = 2;
 const int visParCote = 2;
+
+/// Épaisseur du 2x de backing derrière chaque fascia.
+const double epaisseurBacking = 1.5;
 
 /// Vis par limon dans chaque fascia (dans le backing).
 const int visFasciaParLimon = 2;
@@ -169,19 +177,18 @@ MaterielComposite calculerComposite(ResultatEscalier r) {
   // chaque côté (le milieu reste ouvert), de l'espace libre entre eux.
   final longueurBloc = r.espacementReel - r.spec.section.epaisseur;
   final blocsParMarche = math.min(2, limons - 1);
-  final blocs = !r.spec.blocs2x12
-      ? null
-      : decouperPlanches([
-          for (var k = 0; k < r.nombreMarches; k++)
-            for (var j = 0; j < blocsParMarche; j++)
-              PieceCoupe('bloc$k.$j', longueurBloc, 'bloc'),
-        ], longueursPlanchesParDefaut);
+  final blocs = decouperPlanches([
+    for (var k = 0; k < r.nombreMarches; k++)
+      for (var j = 0; j < blocsParMarche; j++)
+        PieceCoupe('bloc$k.$j', longueurBloc, 'bloc'),
+  ], longueursPlanchesParDefaut);
 
   return MaterielComposite(
     produit: produit,
     blocs: blocs,
-    blocsParMarche: blocs == null ? 0 : blocsParMarche,
+    blocsParMarche: blocsParMarche,
     longueurBloc: longueurBloc,
+    profondeurBloc: r.giron - epaisseurBacking,
     planches: decouperPlanches(pieces, produit.longueurs),
     fascias: decouperPlanches(fascias, produit.longueursFascia),
     hauteurFascia: fascia.first,

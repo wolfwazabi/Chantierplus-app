@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 
 import '../../charpente/composite.dart';
 import '../../charpente/escalier.dart';
+import '../../charpente/escalier_composite.dart';
+import '../../charpente/escalier_scene.dart';
 import '../../charpente/escalier_solveur.dart';
 import '../../charpente/escalier_texte.dart';
 import '../../charpente/unites.dart';
@@ -10,12 +12,17 @@ import '../../services/preferences.dart';
 import 'champs.dart';
 import 'schema_coupes.dart';
 import 'schema_limon.dart';
+import 'vue_3d.dart';
 
 /// Calcul des limons d'un escalier droit : nombre et hauteur des contremarches,
 /// giron, longueur et coupes des limons, table de traçage, vérification des
 /// dimensions du Code (CNB 2015, section 9.8) et liste de matériaux.
+///
+/// [simple] (la calculatrice, édition gratuite) : les limons seulement, en bois — ni composite,
+/// ni matériaux pour la commande ; ça reste propre à la section Chantier.
 class EcranEscalier extends StatefulWidget {
-  const EcranEscalier({super.key});
+  final bool simple;
+  const EcranEscalier({super.key, this.simple = false});
 
   @override
   State<EcranEscalier> createState() => _EcranEscalierState();
@@ -41,10 +48,8 @@ class _EcranEscalierState extends State<EcranEscalier> {
   /// Marches en composite : le produit choisi (null : marches en bois).
   String? _composite;
 
-  /// 2x12 à plat aux côtés des marches composite.
-  bool _blocs2x12 = true;
   ProduitComposite? get _produit =>
-      _composite == null ? null : produitComposite(_composite);
+      _composite == null || widget.simple ? null : produitComposite(_composite);
 
   // Mode « à partir de ce que je connais » : 2 données ou plus, le calcul trouve le
   // reste avec les girons et contremarches idéals du Code.
@@ -96,7 +101,6 @@ class _EcranEscalierState extends State<EcranEscalier> {
     section: _section,
     espacementMax: _entraxe,
     composite: _produit,
-    blocs2x12: _produit != null && _blocs2x12,
     // Traçage au 1/16 po ou au millimètre, selon le système d'unités.
     precisionTrace: metrique ? 1 / mmParPouce : 1 / 16,
   );
@@ -119,6 +123,11 @@ class _EcranEscalierState extends State<EcranEscalier> {
             );
           }
           res = calculerEscalier(_spec(metrique, sol), metrique: metrique);
+          // Composite : la fascia doit couvrir la contremarche ; le message plutôt qu'un plantage
+          // dans la liste de matériaux.
+          if (res.spec.composite != null) {
+            calculerComposite(res);
+          }
         } on EscalierInvalide catch (e) {
           erreur = e.message;
         }
@@ -270,18 +279,19 @@ class _EcranEscalierState extends State<EcranEscalier> {
             : 'Marche ${_l(_epaisseurMarche)} · nez ${_l(_nez)} · contremarches '
                   '${_fermees ? 'fermées (${_l(_epaisseurContremarche)})' : 'ouvertes'}',
         enfants: [
-          SwitchListTile(
-            key: const ValueKey('escalier_composite'),
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Marches en composite'),
-            subtitle: const Text(
-              'En cadre, contremarches en fascia avec un 2x de backing',
+          if (!widget.simple)
+            SwitchListTile(
+              key: const ValueKey('escalier_composite'),
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Marches en composite'),
+              subtitle: const Text(
+                'En cadre, contremarches en fascia avec un 2x de backing',
+              ),
+              value: _composite != null,
+              onChanged: (v) => setState(
+                () => _composite = v ? produitCompositeGenerique.id : null,
+              ),
             ),
-            value: _composite != null,
-            onChanged: (v) => setState(
-              () => _composite = v ? produitCompositeGenerique.id : null,
-            ),
-          ),
           if (_produit != null) ...[
             DropdownButtonFormField<String>(
               key: ValueKey('escalier_produit_$_composite'),
@@ -298,16 +308,6 @@ class _EcranEscalierState extends State<EcranEscalier> {
               ],
               onChanged: (id) =>
                   id == null ? null : setState(() => _composite = id),
-            ),
-            SwitchListTile(
-              key: const ValueKey('escalier_blocs'),
-              contentPadding: EdgeInsets.zero,
-              title: const Text('2x12 à plat aux côtés des marches'),
-              subtitle: const Text(
-                'Entre le limon de côté et le suivant, sous la planche de côté du cadre',
-              ),
-              value: _blocs2x12,
-              onChanged: (v) => setState(() => _blocs2x12 = v),
             ),
             const SizedBox(height: 4),
             Text(
@@ -537,6 +537,42 @@ class _EcranEscalierState extends State<EcranEscalier> {
 
   // ------------------------------------------------------------------ Résultats
 
+  /// Composite : la vue 3D comme la photo de référence (backing, 2x12 à plat aux côtés,
+  /// fascias, la marche du haut en cadre). Toucher l'ouvre en grand pour la tourner.
+  List<Widget> _vue3D(ResultatEscalier r, bool metrique) {
+    final scene = sceneEscalier(r, metrique: metrique);
+    if (scene.estVide) {
+      return const [];
+    }
+    return [
+      const SizedBox(height: 8),
+      Vue3D(
+        key: const ValueKey('escalier_3d'),
+        scene: scene,
+        controles: false,
+        interactif: false,
+        hauteur: 240,
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => Scaffold(
+              appBar: AppBar(title: const Text('Escalier en 3D')),
+              body: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Vue3D(scene: scene),
+              ),
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 4),
+      Text(
+        'La marche du haut est posée ; les autres sont laissées ouvertes pour voir le backing '
+        'et les 2x12 à plat. Touchez la vue pour la tourner.',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+    ];
+  }
+
   List<Widget> _resultats(
     ResultatEscalier r,
     bool metrique,
@@ -648,6 +684,7 @@ class _EcranEscalierState extends State<EcranEscalier> {
       ),
       const SizedBox(height: 8),
       SchemaLimon(resultat: r, metrique: metrique),
+      if (s.composite != null) ..._vue3D(r, metrique),
       const TitreSection(
         'Coupes',
         aide: 'Repère : plancher fini du bas, face de la 1re contremarche.',
@@ -731,14 +768,16 @@ class _EcranEscalierState extends State<EcranEscalier> {
           ),
         ],
       ),
-      const TitreSection('Matériaux'),
-      _Carte(
-        cle: 'escalier_materiaux',
-        lignes: [
-          for (final m in materielEscalier(r, metrique: metrique))
-            _Ligne('${m.quantite} × ${m.article}', m.detail),
-        ],
-      ),
+      if (!widget.simple) ...[
+        const TitreSection('Matériaux'),
+        _Carte(
+          cle: 'escalier_materiaux',
+          lignes: [
+            for (final m in materielEscalier(r, metrique: metrique))
+              _Ligne('${m.quantite} × ${m.article}', m.detail),
+          ],
+        ),
+      ],
       Align(
         alignment: Alignment.centerRight,
         child: TextButton.icon(
@@ -748,7 +787,13 @@ class _EcranEscalierState extends State<EcranEscalier> {
           onPressed: () async {
             final messager = ScaffoldMessenger.of(context);
             await Clipboard.setData(
-              ClipboardData(text: texteEscalier(r, metrique: metrique)),
+              ClipboardData(
+                text: texteEscalier(
+                  r,
+                  metrique: metrique,
+                  materiaux: !widget.simple,
+                ),
+              ),
             );
             messager.showSnackBar(
               const SnackBar(content: Text('Calcul copié.')),

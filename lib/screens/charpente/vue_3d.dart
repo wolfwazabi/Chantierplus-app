@@ -40,6 +40,9 @@ Color _couleurDe(Matiere m) => switch (m) {
   Matiere.membrane => const Color(0xFFF1F3F5),
   Matiere.fourrure => const Color(0xFFE2C79B),
   Matiere.revetement => const Color(0xFF8099AD),
+  Matiere.composite => const Color(0xFF8A5536),
+  Matiere.fascia => const Color(0xFF7FBFC2),
+  Matiere.bloc => const Color(0xFFC4B08C),
 };
 
 Color _ombre(Color base, double intensite) => Color.fromARGB(
@@ -151,7 +154,8 @@ class _Vue3DState extends State<Vue3D> {
       return p < _etapePlancher;
     }
     final m = _calquesMurs.indexOf(c);
-    return m >= 0 && m < _etapeMurs;
+    // Ni plancher ni murs (l'escalier) : toujours affiché.
+    return m < 0 || m < _etapeMurs;
   }
 
   void _recalculerVisibles() {
@@ -564,7 +568,9 @@ class _Vue3DState extends State<Vue3D> {
                 context: context,
                 builder: (ctx) => AlertDialog(
                   title: const Text('Légende'),
-                  content: const LegendeVue3D(),
+                  content: LegendeVue3D(
+                    matieres: {for (final s in scene.solides) s.matiere},
+                  ),
                   actions: [
                     TextButton(
                       onPressed: () => Navigator.pop(ctx),
@@ -623,14 +629,15 @@ class _Vue3DState extends State<Vue3D> {
   }
 }
 
-/// Couleurs de la vue 3D.
+/// Couleurs de la vue 3D ([matieres] : seulement celles de la scène ; null : toutes).
 class LegendeVue3D extends StatelessWidget {
-  const LegendeVue3D({super.key});
+  final Set<Matiere>? matieres;
+  const LegendeVue3D({super.key, this.matieres});
 
   @override
   Widget build(BuildContext context) {
     const items = [
-      (Matiere.bois, 'Solives, montants, entremises'),
+      (Matiere.bois, 'Solives, montants, entremises, limons, backing'),
       (Matiere.rive, 'Solives de rive'),
       (Matiere.linteau, 'Linteaux'),
       (Matiere.sousPlancher, 'Sous-plancher'),
@@ -639,30 +646,34 @@ class LegendeVue3D extends StatelessWidget {
       (Matiere.membrane, 'Membrane'),
       (Matiere.fourrure, 'Fourrures'),
       (Matiere.revetement, 'Revêtement'),
+      (Matiere.composite, 'Planches de composite'),
+      (Matiere.fascia, 'Fascias des contremarches'),
+      (Matiere.bloc, '2x12 à plat aux côtés des marches'),
     ];
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         for (final (m, t) in items)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Row(
-              children: [
-                Container(
-                  width: 16,
-                  height: 16,
-                  decoration: BoxDecoration(
-                    color: _couleurDe(m),
-                    border: Border.all(color: Colors.black26),
-                    borderRadius: BorderRadius.circular(3),
+          if (matieres == null || matieres!.contains(m))
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Row(
+                children: [
+                  Container(
+                    width: 16,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: _couleurDe(m),
+                      border: Border.all(color: Colors.black26),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(child: Text(t)),
-              ],
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(t)),
+                ],
+              ),
             ),
-          ),
       ],
     );
   }

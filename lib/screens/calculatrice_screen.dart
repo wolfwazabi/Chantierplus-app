@@ -1226,7 +1226,11 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                     ],
                   ),
                   // Surface Material : les lignes à toucher de l'escalier y dessinent leur effet.
-                  const Material(color: _casing, child: EcranEscalier()),
+                  // Version simple : les limons seulement (ni composite ni matériaux).
+                  const Material(
+                    color: _casing,
+                    child: EcranEscalier(simple: true),
+                  ),
                 ],
               ),
             ),

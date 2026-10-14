@@ -2,6 +2,7 @@
 // Pi, Po, / en métrique), au-dessus de celles du système choisi. Utile pour Conv : on tape la
 // mesure dans ses unités et la calculatrice la ramène à son unité de base.
 import 'package:construction_app/screens/calculatrice_screen.dart';
+import 'package:construction_app/screens/charpente/ecran_escalier.dart';
 import 'package:construction_app/services/preferences.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -209,6 +210,11 @@ void main() {
         await t.pumpAndSettle();
         expect(find.byKey(const ValueKey('escalier_hauteur')), findsOneWidget);
         expect(find.byKey(const ValueKey('touche_7')), findsNothing);
+        // La version simple : les limons seulement (ni composite ni matériaux).
+        expect(
+          t.widget<EcranEscalier>(find.byType(EcranEscalier)).simple,
+          isTrue,
+        );
         expect(t.takeException(), isNull);
 
         // Une hauteur changée reste après un passage par la charpente.
