@@ -122,25 +122,30 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
 
   double? _resultat;
 
-  /// Le résultat affiché. Le changer quitte la vue DIAG (longueur, pente, angle).
+  /// Le résultat affiché. Le changer quitte le rappel de DIAG ou de PITCH.
   double? get _resultatFinal => _resultat;
   set _resultatFinal(double? v) {
     _resultat = v;
-    _vueDiag = null;
+    _rappelDiag = false;
+    _vuePitch = null;
   }
 
-  /// DIAG rappelé (rien de tapé) : 0 = longueur, 1 = pente, 2 = angle ; null = pas de rappel.
-  /// Chaque appui sur DIAG passe à la vue suivante.
-  int? _vueDiag;
+  /// DIAG rappelé (rien de tapé) : la longueur de la diagonale.
+  bool _rappelDiag = false;
+
+  /// PITCH rappelé (rien de tapé), comme le Construction Master : 0 = pouces de montée sur
+  /// 12 po, 1 = pente (montée ÷ course), 2 = % de pente, 3 = degrés ; chaque appui passe à la
+  /// vue suivante. Null : pas de rappel.
+  int? _vuePitch;
 
   double? _rise;
   double? _run;
   double? _diag;
 
-  /// Angle de la pente en degrés (saisi avec la touche ANGLE, ou déduit).
+  /// La pente, gardée en degrés (entrée avec PITCH, ou déduite de deux autres valeurs).
   double? _angle;
 
-  /// Valeurs du triangle saisies (run, rise, diag, angle), la plus récente à la fin : les deux
+  /// Valeurs du triangle saisies (run, rise, diag, pitch), la plus récente à la fin : les deux
   /// dernières décident des deux autres.
   final List<String> _saisiesTriangle = [];
   bool _afficherEnPieds = true;
@@ -150,12 +155,8 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
 
   List<String>? _conversionExtra;
 
-  double? get _pitch {
-    if (_rise != null && _run != null && _run != 0) {
-      return (_rise! / _run!) * 12;
-    }
-    return null;
-  }
+  /// La pente en pouces de montée sur 12 po de course.
+  double? get _pitch => _angle == null ? null : tan(_angle! * pi / 180) * 12;
 
   bool get _operandeVide =>
       _feet == null &&
@@ -875,12 +876,18 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     _finaliserFraction();
     final double? valeurBrute = _valeurActuelle();
     if (valeurBrute == null) return;
-    final double valeur = valeurBrute;
-    if (role == 'angle' && !(valeur > 0 && valeur < 90)) {
-      setState(() => _erreur = 'Angle entre 0 et 90°');
-      return;
+    var valeur = valeurBrute;
+    if (!(valeur > 0)) return;
+    if (role == 'pitch') {
+      // Avec une unité : la montée sur 12 po (6 Po PITCH = 6/12), en métrique sur 1 m.
+      // Un nombre seul : des degrés (17,2 PITCH), comme le Construction Master.
+      if (_uniteUtiliseeDansFormule) {
+        valeur = atan(valeur / (_metrique ? 1000 : 12)) * 180 / pi;
+      } else if (valeur >= 90) {
+        setState(() => _erreur = 'Pitch en degrés : moins de 90°');
+        return;
+      }
     }
-    if (role != 'angle' && !(valeur > 0)) return;
 
     setState(() {
       switch (role) {
@@ -893,7 +900,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         case 'diag':
           _diag = valeur;
           break;
-        case 'angle':
+        case 'pitch':
           _angle = valeur;
           break;
       }
@@ -908,49 +915,84 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       _textes.clear();
       _resultatFinal = null;
       _conversionExtra = null;
+      // La prochaine saisie dit elle-même si elle a une unité.
+      _uniteUtiliseeDansFormule = false;
       _recalculerCharpente();
     });
   }
 
-  /// DIAG : avec une valeur tapée (ou un résultat), la garde comme diagonale. Rien de tapé :
-  /// montre la diagonale, puis à chaque appui la pente, puis l'angle, puis de nouveau la longueur.
+  /// Rien de tapé (et pas de résultat à garder, sauf un rappel affiché) : la touche rappelle.
+  bool get _peutRappeler =>
+      _operandeVide &&
+      _jetons.isEmpty &&
+      (_resultatFinal == null || _rappelDiag || _vuePitch != null);
+
+  void _afficherRappel(double valeur, {required bool longueur}) {
+    _resultatFinal = valeur; // on peut calculer avec la valeur rappelée
+    _uniteUtiliseeDansFormule = longueur;
+    _vueResultat = 0;
+    _textes.clear();
+    _jetons.clear();
+    _erreur = null;
+    _conversionExtra = null;
+  }
+
+  /// DIAG : avec une valeur tapée (ou un résultat), la garde comme diagonale ; rien de tapé :
+  /// montre la longueur de la diagonale.
   void _toucheDiag() {
-    final rienDeTape = _operandeVide && _jetons.isEmpty;
-    final rappel = rienDeTape && (_resultatFinal == null || _vueDiag != null);
-    if (!rappel || _diag == null) {
+    if (!_peutRappeler || _diag == null) {
       _stocker('diag');
       return;
     }
-    final vues = [0, if (_pitch != null) 1, if (_angle != null) 2];
-    final suivante = _vueDiag == null
-        ? vues.first
-        : vues[(vues.indexOf(_vueDiag!) + 1) % vues.length];
     setState(() {
-      _resultatFinal = _diag; // la diagonale devient le résultat : on peut calculer avec elle
-      _vueDiag = suivante;
-      _uniteUtiliseeDansFormule = true;
-      _vueResultat = 0;
-      _textes.clear();
-      _jetons.clear();
-      _erreur = null;
-      _conversionExtra = null;
+      _afficherRappel(_diag!, longueur: true);
+      _rappelDiag = true;
     });
   }
 
-  /// Ce que montre la vue DIAG : (titre, valeur).
-  (String, String) _texteVueDiag() => switch (_vueDiag) {
-    // La pente sur 12, comme sur le chantier (en métrique, le % en plus).
-    1 => (
-      _metrique
-          ? 'PITCH (${(_pitch! / 12 * 100).toStringAsFixed(1)} %)'
-          : 'PITCH',
-      '${_pitch!.toStringAsFixed(2)}/12',
-    ),
-    2 => ('ANGLE', '${_angle!.toStringAsFixed(1)}°'),
-    _ => ('DIAG', _texteResultatVue(_diag!)),
-  };
+  /// PITCH : avec une valeur tapée, la garde comme pente ; rien de tapé : la montre en pouces
+  /// sur 12, puis à chaque appui en pente, en % de pente et en degrés (comme le Construction
+  /// Master).
+  void _touchePitch() {
+    if (!_peutRappeler || _angle == null) {
+      _stocker('pitch');
+      return;
+    }
+    final suivante = _vuePitch == null ? 0 : (_vuePitch! + 1) % 4;
+    setState(() {
+      _afficherRappel(_valeurVuePitch(suivante), longueur: false);
+      _vuePitch = suivante;
+    });
+  }
 
-  /// Triangle de la pente : les deux dernières valeurs saisies (RUN, RISE, DIAG ou ANGLE)
+  double _valeurVuePitch(int vue) {
+    final pente = tan(_angle! * pi / 180);
+    return switch (vue) {
+      0 => pente * 12,
+      1 => pente,
+      2 => pente * 100,
+      _ => _angle!,
+    };
+  }
+
+  /// Ce que montre le rappel : (titre, valeur).
+  (String, String) _texteRappel() {
+    if (_rappelDiag) return ('DIAG', _texteResultatVue(_diag!));
+    final v = _valeurVuePitch(_vuePitch!);
+    return switch (_vuePitch!) {
+      0 => (
+        'PITCH',
+        _metrique
+            ? '${v.toStringAsFixed(2)} / 12'
+            : '${_formatPoucesFraction(v)} / 12',
+      ),
+      1 => ('PENTE', v.toStringAsFixed(6)),
+      2 => ('% PENTE', v.toStringAsFixed(6)),
+      _ => ('PITCH', '${v.toStringAsFixed(2)}°'),
+    };
+  }
+
+  /// Triangle de la pente : les deux dernières valeurs saisies (RUN, RISE, DIAG ou PITCH)
   /// donnent les deux autres. Une seule saisie : rien à déduire.
   void _recalculerCharpente() {
     final s = _saisiesTriangle.toSet();
@@ -958,7 +1000,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
       if (!gardees.contains('run')) _run = null;
       if (!gardees.contains('rise')) _rise = null;
       if (!gardees.contains('diag')) _diag = null;
-      if (!gardees.contains('angle')) _angle = null;
+      if (!gardees.contains('pitch')) _angle = null;
     }
 
     if (s.length < 2) {
@@ -1240,8 +1282,9 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                 children: [
                   if (_pitch != null)
                     Text(
-                      '${_metrique ? 'PENTE ${(_pitch! / 12 * 100).toStringAsFixed(1)} %' : 'PITCH ${_pitch!.toStringAsFixed(2)}/12'}'
-                      '${_angle == null ? '' : ' · ${_angle!.toStringAsFixed(1)}°'}',
+                      _metrique
+                          ? 'PENTE ${(_pitch! / 12 * 100).toStringAsFixed(1)} %'
+                          : 'PITCH ${_pitch!.toStringAsFixed(2)}/12',
                       style: TextStyle(
                         color: _texteLcd,
                         fontSize: 13,
@@ -1287,18 +1330,16 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               ),
             ),
           const SizedBox(height: 4),
-          if (_vueDiag != null && _diag != null)
+          if (_rappelDiag || _vuePitch != null)
             GestureDetector(
-              key: const ValueKey('lcd_vue_diag'),
-              onTap: _vueDiag == 0
-                  ? () => setState(() => _vueResultat++)
-                  : null,
+              key: const ValueKey('lcd_rappel'),
+              onTap: _rappelDiag ? () => setState(() => _vueResultat++) : null,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.baseline,
                 textBaseline: TextBaseline.alphabetic,
                 children: [
                   Text(
-                    _texteVueDiag().$1,
+                    _texteRappel().$1,
                     style: TextStyle(
                       color: _texteLcdSecondaire,
                       fontSize: 15,
@@ -1312,7 +1353,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
                       fit: BoxFit.scaleDown,
                       alignment: Alignment.centerRight,
                       child: Text(
-                        _texteVueDiag().$2,
+                        _texteRappel().$2,
                         style: TextStyle(
                           color: _texteLcd,
                           fontSize: 42,
@@ -1429,7 +1470,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             _toucheMemoireGrande('RUN', _run, () => _stocker('run')),
             _toucheMemoireGrande('RISE', _rise, () => _stocker('rise')),
             _toucheMemoireDiagGrande(),
-            _toucheAngleGrande(),
+            _touchePitchGrande(),
             _toucheFonctionGrande('Conv', _appliquerConversion, fonction: true),
           ]),
           rangee(
@@ -1622,15 +1663,15 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     );
   }
 
-  /// ANGLE : la pente en degrés (entrer 30 puis ANGLE ; avec RUN, RISE ou DIAG, le reste se
-  /// calcule).
-  Widget _toucheAngleGrande() {
+  /// PITCH : la pente (6 Po PITCH = 6/12 ; 30 PITCH = 30°) ; avec RUN, RISE ou DIAG, le reste
+  /// se calcule. Sa valeur : la montée sur 12 po.
+  Widget _touchePitchGrande() {
     return Expanded(
       child: Padding(
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
-          key: const ValueKey('touche_ANGLE'),
-          onPressed: () => _stocker('angle'),
+          key: const ValueKey('touche_PITCH'),
+          onPressed: _touchePitch,
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonFonction,
             foregroundColor: _texteSur(_boutonFonction),
@@ -1645,12 +1686,16 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 const Text(
-                  'ANGLE',
+                  'PITCH',
                   style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  _angle == null ? '—' : '${_angle!.toStringAsFixed(1)}°',
+                  _pitch == null
+                      ? '—'
+                      : _metrique
+                      ? '${_pitch!.toStringAsFixed(2)}/12'
+                      : '${_formatPoucesFraction(_pitch!)}/12',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
