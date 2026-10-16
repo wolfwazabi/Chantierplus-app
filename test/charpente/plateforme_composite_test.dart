@@ -149,6 +149,9 @@ void main() {
       expect(find.textContaining('Feuilles de sous-plancher'), findsNothing);
       expect(find.text('Composite Composite courant'), findsOneWidget);
       expect(find.textContaining('planches de cadre'), findsOneWidget);
+      // La largeur de la première et de la dernière planche (jamais une lisière).
+      expect(find.text('Première et dernière planche'), findsOneWidget);
+      expect(find.textContaining('refendues à'), findsOneWidget);
       // Retour aux feuilles.
       await t.tap(find.text('Feuilles'));
       await t.pumpAndSettle();

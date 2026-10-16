@@ -33,6 +33,29 @@ const double espacementBlocageCadre = 16;
 /// Vissage en surface : 2 vis par appui (solive ou bloc).
 const int visParAppui = 2;
 
+/// Reste plus petit que ceci : pris par les écarts aux bords du cadre (aucune planche refendue).
+const double resteAbsorbe = 1 / 8;
+
+/// Planche à refendre de moins que ceci : seule la dernière l'est (elle reste presque entière).
+const double refenteLegere = 0.5;
+
+/// Largeurs des rangées du centre sur [largeur] (d'un bord du cadre à l'autre, écarts compris),
+/// planches de [b] et écart [e] (celui de l'attache cachée) : des planches entières, et le reste
+/// réparti pour ne jamais finir avec une lisière difficile à visser et laide : la première et la
+/// dernière rangée refendues à la même largeur, (b + reste) / 2, donc au moins une demi-planche.
+/// Un reste minuscule est pris par les écarts aux bords ; une planche presque entière est seule
+/// refendue (la dernière).
+List<double> largeursRangees(double largeur, double b, double e) {
+  final pas = b + e;
+  final entieres = math.max(1, ((largeur + e) / pas + 1e-9).floor());
+  // La place d'une planche de plus, son écart compris.
+  final reste = largeur - entieres * pas;
+  if (reste <= resteAbsorbe) return List.filled(entieres, b);
+  if (reste >= b - refenteLegere) return [...List.filled(entieres, b), reste];
+  final refendue = (b + reste) / 2;
+  return [refendue, ...List.filled(entieres - 1, b), refendue];
+}
+
 /// Une planche du cadre, le long d'un côté du contour.
 class PlancheCadre {
   final int cote;
@@ -69,7 +92,9 @@ class PlancheCentre {
   final List<Pt> contour;
   final double longueur;
 
-  /// Planche refendue (la dernière rangée, plus étroite).
+  /// Largeur de la planche ; refendue si elle est plus étroite qu'une planche entière (la
+  /// première et la dernière rangée, voir [largeursRangees]).
+  final double largeur;
   final bool refendue;
 
   /// Solives croisées : une attache cachée à chacune.
@@ -79,6 +104,7 @@ class PlancheCentre {
     required this.rangee,
     required this.contour,
     required this.longueur,
+    required this.largeur,
     required this.refendue,
     required this.appuis,
   });
@@ -104,8 +130,9 @@ class ResultatTerrasse {
   final List<PlancheCentre> centre;
   final List<FasciaCote> fascias;
 
-  /// Rangées de planches au centre.
+  /// Rangées de planches au centre, et leur largeur (de la première à la dernière).
   final int rangees;
+  final List<double> largeurs;
 
   /// Planches à commander : rive carrée (cadre), rainurées (centre), fascias.
   final ResultatDecoupe planchesCadre;
@@ -133,6 +160,7 @@ class ResultatTerrasse {
     required this.centre,
     required this.fascias,
     required this.rangees,
+    required this.largeurs,
     required this.planchesCadre,
     required this.planchesCentre,
     required this.planchesFascia,
@@ -147,6 +175,12 @@ class ResultatTerrasse {
     required this.aire,
     required this.avertissements,
   });
+
+  /// Les rangées refendues : largeur de la première et de la dernière (null : entière).
+  double? get premiereRefendue =>
+      largeurs.first < produit.largeur - 1e-6 ? largeurs.first : null;
+  double? get derniereRefendue =>
+      largeurs.last < produit.largeur - 1e-6 ? largeurs.last : null;
 
   int get boitesAttaches => (attaches / produit.attachesParBoite - 1e-9).ceil();
 
@@ -272,12 +306,16 @@ ResultatTerrasse calculerTerrasse(
       'Plateforme trop petite pour un cadre en composite.',
     );
   }
-  final pasRangee = b + produit.ecartPlancher;
+  final largeurs = largeursRangees(boite.largeur, b, produit.ecartPlancher);
+  final occupe =
+      largeurs.fold(0.0, (a, w) => a + w) +
+      (largeurs.length - 1) * produit.ecartPlancher;
   final centre = <PlancheCentre>[];
   var joints = 0;
-  var rangee = 0;
-  for (var x0 = boite.xMin; x0 < boite.xMax - 0.5; x0 += pasRangee) {
-    final x1 = math.min(x0 + b, boite.xMax);
+  // Un reste pris par les écarts : partagé entre les deux bords.
+  var x0 = boite.xMin + (boite.largeur - occupe) / 2;
+  for (final (rangee, w) in largeurs.indexed) {
+    final x1 = x0 + w;
     final xc = (x0 + x1) / 2;
     final bords = [
       ...centreForme.cordes(horizontale: false, c: x0 + 1e-4),
@@ -310,14 +348,16 @@ ResultatTerrasse calculerTerrasse(
             rangee: rangee,
             contour: contour,
             longueur: pas,
-            refendue: x1 - x0 < b - 1e-6,
+            largeur: w,
+            refendue: w < b - 1e-6,
             appuis: appuis(xc, ya - 0.01, yb + 0.01),
           ),
         );
       }
     }
-    rangee++;
+    x0 = x1 + produit.ecartPlancher;
   }
+  final rangee = largeurs.length;
   if (centre.isEmpty) {
     throw const SpecInvalide(
       'Plateforme trop petite pour un cadre en composite.',
@@ -388,6 +428,7 @@ ResultatTerrasse calculerTerrasse(
     centre: centre,
     fascias: fascias,
     rangees: rangee,
+    largeurs: largeurs,
     planchesCadre: decouperPlanches([
       for (final p in cadre)
         for (var k = 0; k < p.morceaux; k++)

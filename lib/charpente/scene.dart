@@ -586,7 +586,9 @@ void _ajouterTerrasse(
     planche(groupe, Matiere.composite, pl.contour, zDessous, 0);
     c.info(groupe, 'Planche du centre', [
       'Longueur à couper : ${c.l(pl.longueur)}',
-      '${p.nom} rainurée${pl.refendue ? ', refendue' : ''}',
+      pl.refendue
+          ? '${p.nom} rainurée, refendue à ${c.l(pl.largeur)}'
+          : '${p.nom} rainurée',
       'Rangée ${pl.rangee + 1} de ${t.rangees}',
       'Attaches ${p.attache} : ${pl.appuis} (une par solive)',
     ]);

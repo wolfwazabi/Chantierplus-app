@@ -66,22 +66,29 @@ void main() {
       },
     );
 
-    test(
-      'le centre : planches perpendiculaires aux solives, la dernière refendue',
-      () {
-        // Centre : x de 4 7/16 à 139 9/16 (écart côte à côte 3/16 contre le cadre), y de 4 3/8 à
-        // 115 5/8 (écart de bout 1/8 contre le cadre).
-        expect(t.rangees, 24);
-        expect(t.centre, hasLength(24));
-        for (final pl in t.centre) {
-          expect(pl.longueur, closeTo(111.25, 1e-9));
-        }
-        expect(t.centre.where((pl) => pl.refendue), hasLength(1));
-        expect(t.centre.last.refendue, isTrue);
-        expect(t.joints, 0);
-        expect(t.planchesCentre.horsLimites, isEmpty);
-      },
-    );
+    test('le centre : planches perpendiculaires aux solives, la première et la dernière refendues '
+        'à la même largeur', () {
+      // Centre : x de 4 7/16 à 139 9/16 (écart côte à côte 3/16 contre le cadre), y de 4 3/8 à
+      // 115 5/8 (écart de bout 1/8 contre le cadre).
+      expect(t.rangees, 24);
+      expect(t.centre, hasLength(24));
+      for (final pl in t.centre) {
+        expect(pl.longueur, closeTo(111.25, 1e-9));
+      }
+      // 135 1/8 de large : 23 planches au pas de 5 11/16 laissent 4 5/16 ; plutôt qu'une
+      // dernière planche de 4 5/16, la première et la dernière font (5 1/2 + 4 5/16) / 2.
+      expect(t.centre.where((pl) => pl.refendue), hasLength(2));
+      expect(t.centre.first.largeur, closeTo((5.5 + 4.3125) / 2, 1e-9));
+      expect(t.centre.last.largeur, closeTo((5.5 + 4.3125) / 2, 1e-9));
+      expect(t.premiereRefendue, closeTo(4.90625, 1e-9));
+      expect(t.derniereRefendue, closeTo(4.90625, 1e-9));
+      // Les rangées remplissent le centre d'un bord à l'autre.
+      final xs = t.centre.expand((pl) => pl.contour).map((q) => q.x);
+      expect(xs.reduce((a, b) => a < b ? a : b), closeTo(4.4375, 1e-9));
+      expect(xs.reduce((a, b) => a > b ? a : b), closeTo(139.5625, 1e-9));
+      expect(t.joints, 0);
+      expect(t.planchesCentre.horsLimites, isEmpty);
+    });
 
     test('une attache par solive par planche ; vis en surface du cadre et des rangées de rive', () {
       final parRangee = _solivesEntre(p, 4.375, 115.625);
@@ -169,6 +176,45 @@ void main() {
     final sansCentre = f.visSurface - 2 * f.centre.length;
     expect(sansCentre, greaterThan(0));
     expect(g.visSurface, isNot(f.visSurface));
+  });
+
+  group('première et dernière planche : jamais de lisière', () {
+    const b = 5.5, e = 3 / 16, pas = b + e;
+    double total(List<double> l) =>
+        l.fold(0.0, (a, w) => a + w) + (l.length - 1) * e;
+
+    test('un reste de 1 po : partagé, chaque planche fait 3 1/4 po', () {
+      final l = largeursRangees(10 * pas + 1, b, e);
+      expect(l, hasLength(11));
+      expect(l.first, closeTo(3.25, 1e-9));
+      expect(l.last, closeTo(3.25, 1e-9));
+      expect(l.sublist(1, 10), everyElement(b));
+      expect(total(l), closeTo(10 * pas + 1, 1e-9));
+    });
+
+    test('toujours au moins une demi-planche', () {
+      for (var reste = 0.2; reste < b - 0.5; reste += 0.1) {
+        final l = largeursRangees(8 * pas + reste, b, e);
+        expect(l.first, greaterThanOrEqualTo(b / 2), reason: 'reste $reste');
+        expect(l.last, greaterThanOrEqualTo(b / 2), reason: 'reste $reste');
+        expect(total(l), closeTo(8 * pas + reste, 1e-9));
+      }
+    });
+
+    test('un reste de 1/8 po ou moins : toutes entières (pris par les écarts aux bords)', () {
+      expect(largeursRangees(8 * pas + 0.1, b, e), List.filled(8, b));
+      expect(largeursRangees(8 * pas - e, b, e), List.filled(8, b));
+    });
+
+    test(
+      'presque une planche de plus : seule la dernière, à peine refendue',
+      () {
+        final l = largeursRangees(8 * pas + 5.2, b, e);
+        expect(l, hasLength(9));
+        expect(l.sublist(0, 8), everyElement(b));
+        expect(l.last, closeTo(5.2, 1e-9));
+      },
+    );
   });
 
   test('plateforme trop petite pour un cadre : message clair', () {

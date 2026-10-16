@@ -1163,6 +1163,17 @@ class _Resultats extends StatelessWidget {
           'Attaches ${t.produit.attache}',
           '${t.attaches} (${t.boitesAttaches} boîte${t.boitesAttaches > 1 ? 's' : ''})',
         ),
+        (
+          'Première et dernière planche',
+          switch ((t.premiereRefendue, t.derniereRefendue)) {
+            (final a?, final b?) =>
+              'refendues à ${formatLongueur(a, metrique: metrique)}'
+                  '${(a - b).abs() < 1e-6 ? ' chacune' : ' et ${formatLongueur(b, metrique: metrique)}'}',
+            (null, final b?) =>
+              'entière ; la dernière refendue à ${formatLongueur(b, metrique: metrique)}',
+            _ => 'entières, aucune à refendre',
+          },
+        ),
         if (t.blocs > 0)
           (
             'Blocage du cadre',

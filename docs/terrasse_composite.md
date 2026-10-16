@@ -13,7 +13,11 @@ ou **Composite** (une plateforme, une terrasse) avec le produit choisi
   ArmorGuard 1/2, MoistureShield Elevate 1/4).
 - **Centre** : planches **rainurées perpendiculaires aux solives**, une attache cachée du
   fabricant **par solive par planche** ; écart côte à côte du produit (3/16 po), écart au bout
-  contre le cadre (temps doux), 1/4 po contre la maison. La dernière rangée est refendue. La
+  contre le cadre (temps doux). **Première et dernière planche** : des planches entières, et le
+  reste réparti entre la première et la dernière rangée, refendues à la même largeur
+  ((planche + reste) / 2, donc au moins une demi-planche) : jamais de lisière de 1 po difficile
+  à visser (demande de Philip, 16 octobre 2026). Un reste de 1/8 po ou moins est pris par les
+  écarts aux bords ; une planche à refendre de moins de 1/2 po est seule (la dernière). La
   première et la dernière rangée sont vissées en surface (2 vis par solive) le long du cadre.
   Rangée plus longue que la plus longue planche : morceaux égaux et joints bout à bout, signalés
   (solive doublée ou bloc selon le guide).
