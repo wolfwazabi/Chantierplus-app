@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Le « + » du logo Chantier+ (crème), dans la zone sûre de l'icône adaptative : 40 dp sur
+     108, centré (même proportion que sur le site : 36/64 de l'icône visible). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#EAE2D0"
+        android:pathData="M47.889,34L60.111,34L60.111,47.889L74,47.889L74,60.111L60.111,60.111L60.111,74L47.889,74L47.889,60.111L34,60.111L34,47.889L47.889,47.889Z" />
+</vector>
