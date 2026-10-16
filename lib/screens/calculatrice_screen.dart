@@ -491,6 +491,34 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
     });
   }
 
+  /// AC vient d'être appuyé (rien d'autre depuis) : un 2e appui efface aussi le triangle.
+  bool _acArme = false;
+
+  /// AC, comme le On/C du Construction Master : un appui efface l'affichage et garde RUN,
+  /// RISE, DIAG et PITCH (on peut entrer une nouvelle valeur et retrouver la diagonale) ; deux
+  /// appuis de suite effacent aussi ces valeurs.
+  void _toucheAC() {
+    if (_acArme) {
+      _acArme = false;
+      _toutEffacerCharpente();
+    } else {
+      _effacerAffichageCharpente();
+      _acArme = true;
+    }
+  }
+
+  void _effacerAffichageCharpente() {
+    setState(() {
+      _viderOperande();
+      _jetons.clear();
+      _erreur = null;
+      _textes.clear();
+      _resultatFinal = null;
+      _uniteUtiliseeDansFormule = false;
+      _conversionExtra = null;
+    });
+  }
+
   void _toutEffacerCharpente() {
     setState(() {
       _viderOperande();
@@ -1521,7 +1549,7 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
             unite('Po', _committerPouces),
             unite('/', _committerSeizieme),
             unite('⌫', _effacerDernierCharpente),
-            _toucheFonctionGrande('AC', _toutEffacerCharpente, effacer: true),
+            _toucheFonctionGrande('AC', _toucheAC, effacer: true),
           ]),
           rangee([
             fonction('(', _ouvrirParenthese),
@@ -1566,7 +1594,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
           key: ValueKey('touche_$label'),
-          onPressed: onTap,
+          onPressed: () {
+            if (label != 'AC') _acArme = false;
+            onTap();
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonFonction,
             foregroundColor: _texteSur(_boutonFonction),
@@ -1695,7 +1726,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
           key: ValueKey('touche_$label'),
-          onPressed: onTap,
+          onPressed: () {
+            if (label != 'AC') _acArme = false;
+            onTap();
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: fonction ? _boutonFonction : _boutonOperateur,
             foregroundColor: _texteSur(
@@ -1721,7 +1755,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
           key: ValueKey('touche_$chiffre'),
-          onPressed: () => _appuyerChiffreCharpente(chiffre),
+          onPressed: () {
+            _acArme = false;
+            _appuyerChiffreCharpente(chiffre);
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: _boutonChiffreBg,
             foregroundColor: _boutonChiffreTexte,
@@ -1770,7 +1807,10 @@ class _CalculatriceScreenState extends State<CalculatriceScreen> {
         padding: const EdgeInsets.all(3),
         child: ElevatedButton(
           key: ValueKey('touche_$label'),
-          onPressed: onTap,
+          onPressed: () {
+            if (label != 'AC') _acArme = false;
+            onTap();
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: bg,
             foregroundColor: fg,

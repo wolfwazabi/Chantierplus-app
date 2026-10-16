@@ -209,9 +209,27 @@ void main() {
       expect(t.widget<Text>(resultat).data, '1');
     });
 
-    testWidgets('AC efface aussi la pente', (t) async {
+    testWidgets(
+      'un AC efface l\'affichage et garde RUN et RISE : un nouveau RISE refait la DIAG',
+      (t) async {
+        await ouvrir(t);
+        await taper(t, ['1', '2', 'Pi', 'RUN', '5', 'Pi', 'RISE', 'DIAG']);
+        expect(touche(t, 'DIAG'), ['DIAG', '156"']);
+        // Le cas de l'entrepreneur : AC, puis un nouveau RISE, RUN inchangé.
+        await taper(t, ['AC', '6', 'Pi', 'RISE']);
+        expect(touche(t, 'RUN'), ['RUN', '144"']);
+        expect(touche(t, 'DIAG'), ['DIAG', '161"']);
+        await taper(t, ['DIAG']);
+        expect(rappel(t), ['DIAG', '13\' 5"']);
+      },
+    );
+
+    testWidgets('AC deux fois de suite efface aussi la pente', (t) async {
       await ouvrir(t);
       await taper(t, ['1', '4', '4', 'RUN', '6', 'Po', 'PITCH', 'AC']);
+      // Un seul appui : les valeurs restent.
+      expect(touche(t, 'RUN'), ['RUN', '144"']);
+      await taper(t, ['AC']);
       expect(touche(t, 'PITCH'), ['PITCH', '—']);
       expect(touche(t, 'RUN'), ['RUN', '—']);
       await taper(t, ['1', '2', 'RUN']);
