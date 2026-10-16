@@ -298,6 +298,12 @@ class _TuileChantier extends StatelessWidget {
                   docId: c.id,
                   donnees: {'nom': c.nom, 'adresse': c.adresse},
                 );
+              } else if (v == 'supprimer') {
+                supprimerChantierDefinitivement(
+                  context,
+                  docId: c.id,
+                  nom: c.nom,
+                );
               } else {
                 archiverOuRestaurerChantier(
                   context,
@@ -313,6 +319,15 @@ class _TuileChantier extends StatelessWidget {
                 value: c.archive ? 'restaurer' : 'archiver',
                 child: Text(c.archive ? 'Restaurer' : 'Archiver'),
               ),
+              // Seul un chantier archivé se supprime (définitivement).
+              if (c.archive)
+                const PopupMenuItem(
+                  value: 'supprimer',
+                  child: Text(
+                    'Supprimer définitivement',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
             ],
           ),
         ],

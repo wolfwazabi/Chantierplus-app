@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/app_session.dart';
 import '../../services/erreurs_firebase.dart';
+import '../../services/fonctions.dart';
 import '../../services/stockage.dart';
 import '../../services/theme_compagnie.dart';
 import '../../widgets/actualiser.dart';
@@ -62,6 +63,57 @@ const Set<String> archivesRefusees = {'zip', 'rar', '7z'};
 const String messageArchives =
     'Fichiers .zip : extrayez le dossier d’abord, puis importez les fichiers qu’il contient.';
 
+/// Un devis : « devis » dans le nom du fichier (majuscules et accents ignorés), comme le
+/// serveur (functions/src/devis.js) et les règles.
+bool estDevis(String nom) => RegExp(r'd[eéèêë]vis').hasMatch(nom.toLowerCase());
+
+/// Ce que la personne connectée voit d'un document.
+enum VueDocument {
+  /// Le document tel quel (tout document pour un admin ; un document qui n'est pas un devis).
+  original,
+
+  /// Contremaître : la copie du devis sans montants.
+  copieSansMontants,
+
+  /// Contremaître : la copie du devis est en préparation (quelques secondes).
+  preparation,
+
+  /// Contremaître : devis caché (pas un PDF, PDF numérisé, copie pas encore faite).
+  cache,
+}
+
+/// La vue d'un document : un devis montre sa copie sans montants aux contremaîtres ; les
+/// admins voient l'original.
+VueDocument vueDocument(Map<String, dynamic> data, {required bool admin}) {
+  final devis = data['devis'] == true || estDevis(data['nom'] as String? ?? '');
+  if (!devis || admin) return VueDocument.original;
+  return switch ((data['copieContremaitre'] as Map?)?['etat']) {
+    'prete' => VueDocument.copieSansMontants,
+    'en_cours' => VueDocument.preparation,
+    _ => VueDocument.cache,
+  };
+}
+
+/// Les données de la copie sans montants d'un devis, au format d'un document (chemin, nom,
+/// type, taille) ; null si elle n'est pas prête.
+Map<String, dynamic>? copieSansMontants(Map<String, dynamic> data) {
+  final copie = data['copieContremaitre'];
+  if (copie is! Map || copie['etat'] != 'prete' || copie['chemin'] is! String) {
+    return null;
+  }
+  final nom = data['nom'] as String? ?? 'devis';
+  final i = nom.lastIndexOf('.');
+  final base = i > 0 ? nom.substring(0, i) : nom;
+  return {
+    ...data,
+    'cheminStorage': copie['chemin'],
+    'nom': '$base (sans montants).pdf',
+    'typeMime': 'application/pdf',
+    'taille': copie['taille'],
+    'url': null,
+  };
+}
+
 /// Liste des documents d'un chantier. [peutGerer] (admins) permet le dépôt
 /// et la suppression ; sinon, consultation seulement (contremaîtres).
 /// Les règles de sécurité appliquent ces mêmes droits côté serveur.
@@ -86,6 +138,10 @@ class DocumentsChantier extends StatefulWidget {
   final Future<String?> Function(String docId, Map<String, dynamic> data)?
   enregistrerDocument;
 
+  /// Tests : remplace la demande au serveur de (re)faire la copie sans montants d'un devis.
+  @visibleForTesting
+  final Future<void> Function(String docId)? preparerCopieDevis;
+
   const DocumentsChantier({
     super.key,
     required this.companyId,
@@ -94,6 +150,7 @@ class DocumentsChantier extends StatefulWidget {
     this.fluxDocuments,
     this.ouvrirDocument,
     this.enregistrerDocument,
+    this.preparerCopieDevis,
   });
 
   @override
@@ -102,6 +159,8 @@ class DocumentsChantier extends StatefulWidget {
 
 class _DocumentsChantierState extends State<DocumentsChantier> {
   String? _envoiEnCours; // nom du fichier en cours d'envoi
+  // Devis déposés avant la copie sans montants : demandés une fois au serveur (admins).
+  final Set<String> _copiesDemandees = {};
   String? _ouvertureEnCours; // document en cours de téléchargement
   int _envoisRestants = 0;
 
@@ -123,7 +182,8 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
     return i < 0 ? '' : nom.substring(i + 1).toLowerCase();
   }
 
-  /// Nom de stockage sûr : horodatage + caractères simples seulement.
+  /// Nom de stockage sûr : horodatage + caractères simples seulement. Un devis garde « devis »
+  /// dans le nom du fichier : les règles réservent alors l'original aux admins.
   static String _nomStockage(String nom) {
     final propre = nom
         .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
@@ -131,7 +191,10 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
     final tronque = propre.length > 180
         ? propre.substring(propre.length - 180)
         : propre;
-    return '${DateTime.now().millisecondsSinceEpoch}_$tronque';
+    final marque = estDevis(nom) && !tronque.toLowerCase().contains('devis')
+        ? 'devis_'
+        : '';
+    return '${DateTime.now().millisecondsSinceEpoch}_$marque$tronque';
   }
 
   static String formaterTaille(num octets) {
@@ -217,7 +280,10 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
     try {
       final octets = await fichier.readAsBytes();
       await ref.putData(octets, SettableMetadata(contentType: typeMime));
-      final url = await ref.getDownloadURL();
+      // Un devis n'a pas de lien à jeton : il contournerait les règles (original réservé aux
+      // admins). Le serveur en fait la copie sans montants des contremaîtres.
+      final devis = estDevis(fichier.name);
+      final url = devis ? null : await ref.getDownloadURL();
       final nom = fichier.name.length > 200
           ? fichier.name.substring(0, 200)
           : fichier.name;
@@ -227,7 +293,7 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
           'chantierId': widget.chantierId,
           'nom': nom,
           'cheminStorage': chemin,
-          'url': url,
+          'url': ?url,
           'taille': octets.length,
           'typeMime': typeMime,
           'ajoutePar': employe.id,
@@ -261,7 +327,19 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
     if (_ouvertureEnCours != null) return;
     final remplace = widget.ouvrirDocument;
     if (kIsWeb && remplace == null) {
-      final url = Uri.tryParse(data['url'] as String? ?? '');
+      var lien = data['url'] as String?;
+      if (lien == null) {
+        // Devis : pas de lien gardé ; les règles décident qui peut l'obtenir.
+        try {
+          lien = await Stockage.instance
+              .ref(data['cheminStorage'] as String? ?? '')
+              .getDownloadURL();
+        } catch (_) {
+          _message('Ce document n\'est pas accessible.', erreur: true);
+          return;
+        }
+      }
+      final url = Uri.tryParse(lien);
       if (url == null || url.scheme != 'https') {
         _message('Lien du document invalide.', erreur: true);
         return;
@@ -374,6 +452,55 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
     } catch (_) {
       return 'Enregistrement impossible. Réessayez.';
     }
+  }
+
+  /// Demande au serveur la copie sans montants d'un devis (déposé avant cette fonction, ou
+  /// dont la copie a échoué).
+  Future<void> _demanderCopie(String docId, {bool manuelle = false}) async {
+    if (!manuelle && !_copiesDemandees.add(docId)) return;
+    try {
+      await (widget.preparerCopieDevis ??
+          (id) => Fonctions.appeler('preparerCopieDevis', {'documentId': id}))(
+        docId,
+      );
+    } catch (e) {
+      if (manuelle) {
+        _message(
+          Fonctions.message(e, 'Copie impossible. Réessayez.'),
+          erreur: true,
+        );
+      }
+    }
+  }
+
+  /// Ancien devis (déposé avec un lien, sans copie) : la copie est demandée une fois.
+  bool _devisSansCopie(Map<String, dynamic> data) {
+    if (data['copieContremaitre'] != null) return false;
+    if (!estDevis(data['nom'] as String? ?? '')) return false;
+    // Un devis qui vient d'être déposé : le serveur s'en occupe déjà.
+    final date = (data['dateAjout'] as Timestamp?)?.toDate();
+    return date != null &&
+        DateTime.now().difference(date) > const Duration(minutes: 2);
+  }
+
+  /// Ce que l'admin voit de la copie des contremaîtres, sous le nom d'un devis.
+  static String? _etatCopie(Map<String, dynamic> data) {
+    if (!(data['devis'] == true || estDevis(data['nom'] as String? ?? ''))) {
+      return null;
+    }
+    final copie = data['copieContremaitre'] as Map?;
+    return switch (copie?['etat']) {
+      'prete' =>
+        'Contremaîtres : copie sans montants (${copie?['montants'] ?? 0} masqués)',
+      'cachee' => switch (copie?['raison']) {
+        'sans_texte' =>
+          'Caché aux contremaîtres : PDF numérisé, montants introuvables',
+        'trop_long' => 'Caché aux contremaîtres : plus de 30 pages',
+        _ => 'Caché aux contremaîtres : pas un PDF',
+      },
+      'erreur' => 'Copie sans montants non faite : caché aux contremaîtres',
+      _ => 'Copie sans montants en préparation…',
+    };
   }
 
   Future<void> _supprimer(String docId, Map<String, dynamic> data) async {
@@ -524,7 +651,21 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
               if (!snapshot.hasData) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final docs = snapshot.data!;
+              final admin = AppSession.estAdmin;
+              final docs = [
+                for (final d in snapshot.data!)
+                  if (vueDocument(d.value, admin: admin) != VueDocument.cache)
+                    d,
+              ];
+              if (admin) {
+                for (final d in docs) {
+                  if (_devisSansCopie(d.value)) {
+                    WidgetsBinding.instance.addPostFrameCallback(
+                      (_) => _demanderCopie(d.key),
+                    );
+                  }
+                }
+              }
               if (docs.isEmpty) {
                 return Center(
                   child: Padding(
@@ -543,8 +684,25 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                 separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, i) {
                   final doc = docs[i];
-                  final data = doc.value;
+                  final vue = vueDocument(doc.value, admin: admin);
+                  // Contremaître et devis : la copie sans montants (même nom, « sans montants »).
+                  final data = vue == VueDocument.copieSansMontants
+                      ? copieSansMontants(doc.value)!
+                      : doc.value;
                   final nom = data['nom'] as String? ?? '';
+                  if (vue == VueDocument.preparation) {
+                    return ListTile(
+                      key: ValueKey('document_${doc.key}'),
+                      enabled: false,
+                      leading: const Icon(Icons.hourglass_top),
+                      title: Text(nom, overflow: TextOverflow.ellipsis),
+                      subtitle: const Text(
+                        'Devis : copie sans montants en préparation…',
+                      ),
+                    );
+                  }
+                  final etatCopie = admin ? _etatCopie(data) : null;
+                  final copieAdmin = admin ? copieSansMontants(data) : null;
                   return ListTile(
                     key: ValueKey('document_${doc.key}'),
                     leading: _ouvertureEnCours == doc.key
@@ -559,12 +717,40 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                           ),
                     title: Text(nom, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
-                      '${formaterTaille((data['taille'] as num?) ?? 0)} • ${_date(data['dateAjout'] as Timestamp?)}',
+                      [
+                        if (vue == VueDocument.copieSansMontants)
+                          'Devis, montants masqués',
+                        '${formaterTaille((data['taille'] as num?) ?? 0)} • ${_date(data['dateAjout'] as Timestamp?)}',
+                        ?etatCopie,
+                      ].join('\n'),
+                      key: ValueKey('sous_titre_${doc.key}'),
                     ),
+                    isThreeLine:
+                        etatCopie != null ||
+                        vue == VueDocument.copieSansMontants,
                     onTap: () => _ouvrir(doc.key, data),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Admin : voir ce que les contremaîtres voient d'un devis.
+                        if (copieAdmin != null)
+                          IconButton(
+                            key: ValueKey('copie_${doc.key}'),
+                            icon: const Icon(Icons.visibility_outlined),
+                            tooltip: 'Voir la copie des contremaîtres',
+                            onPressed: () =>
+                                _ouvrir('${doc.key}_copie', copieAdmin),
+                          ),
+                        if (admin &&
+                            (data['copieContremaitre'] as Map?)?['etat'] ==
+                                'erreur')
+                          IconButton(
+                            key: ValueKey('refaire_copie_${doc.key}'),
+                            icon: const Icon(Icons.refresh),
+                            tooltip: 'Refaire la copie sans montants',
+                            onPressed: () =>
+                                _demanderCopie(doc.key, manuelle: true),
+                          ),
                         // Au choix : garder le document dans le téléphone.
                         if (!kIsWeb)
                           IconButton(

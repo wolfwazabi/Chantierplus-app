@@ -4,7 +4,7 @@ initializeApp();
 const {setGlobalOptions} = require("firebase-functions/v2");
 const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
-const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {onDocumentCreated, onDocumentDeleted} = require("firebase-functions/v2/firestore");
 const {getMessaging} = require("firebase-admin/messaging");
 const {
   db, FieldValue, Timestamp,
@@ -32,6 +32,8 @@ const suppression = require("./src/suppression_compagnie");
 const archivage = require("./src/anciens_employes");
 const nipPrive = require("./src/nip_prive");
 const notifications = require("./src/notifications");
+const devis = require("./src/devis");
+const suppressionChantier = require("./src/suppression_chantier");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
@@ -1787,3 +1789,75 @@ exports.notifierTravail = onDocumentCreated("chantier_travaux/{id}", notifierEnt
 exports.notifierMateriel = onDocumentCreated("chantier_materiel/{id}", notifierEntree("materiel"));
 exports.notifierPhoto = onDocumentCreated("chantier_photos/{id}", notifierEntree("photos"));
 exports.notifierDocument = onDocumentCreated("chantier_documents/{id}", notifierEntree("documents"));
+
+// =============================================================================
+// Devis : copie sans montants pour les contremaîtres (voir src/devis.js)
+// =============================================================================
+
+/** Un document « devis » déposé : lien retiré, original réservé aux admins, copie préparée. */
+exports.copieDevis = onDocumentCreated(
+    {document: "chantier_documents/{id}", memory: "1GiB", timeoutSeconds: 300},
+    async (event) => {
+      const data = event.data?.data();
+      if (!data || !devis.estDevis(data.nom)) return;
+      await devis.preparer({
+        db, bucket: getStorage().bucket(BUCKET_STOCKAGE), FieldValue, ref: event.data.ref, data,
+        documentId: event.params.id, crypto, logger,
+      });
+    });
+
+/**
+ * À la demande d'un admin : prépare (ou refait) la copie d'un devis déposé avant cette fonction,
+ * ou dont la copie a échoué.
+ */
+exports.preparerCopieDevis = onCall({memory: "1GiB", timeoutSeconds: 300}, async (request) => {
+  verifierAppCheck(request, "preparerCopieDevis");
+  const ctx = await contexteAdmin(request);
+  const documentId = texte(request.data?.documentId, "documentId", {max: 128});
+  const limite = limiteur(`devis_${ctx.employeeId}`, 60, HEURE);
+  await limite.verifier();
+  await limite.compter();
+  const ref = db.collection("chantier_documents").doc(documentId);
+  const snap = await ref.get();
+  if (!snap.exists || snap.data().companyId !== ctx.companyId) {
+    throw new HttpsError("not-found", "Document introuvable.");
+  }
+  if (!devis.estDevis(snap.data().nom)) {
+    throw new HttpsError("failed-precondition", "Ce document n'est pas un devis.");
+  }
+  if (snap.data().copieContremaitre?.etat === "en_cours") return {etat: "en_cours"};
+  const etat = await devis.preparer({
+    db, bucket: getStorage().bucket(BUCKET_STOCKAGE), FieldValue, ref, data: snap.data(),
+    documentId, crypto, logger,
+  });
+  return {etat};
+});
+
+/** Document supprimé : son fichier et sa copie sans montants partent aussi (aucun orphelin). */
+exports.effacerFichiersDocument = onDocumentDeleted("chantier_documents/{id}", async (event) => {
+  const data = event.data?.data();
+  if (!data || typeof data.companyId !== "string" || typeof data.chantierId !== "string") return;
+  const dossierChantier = `chantiers/${data.companyId}/${data.chantierId}/`;
+  const bucket = getStorage().bucket(BUCKET_STOCKAGE);
+  for (const chemin of [data.cheminStorage, data.copieContremaitre?.chemin]) {
+    if (typeof chemin === "string" && chemin.startsWith(dossierChantier)) {
+      await bucket.file(chemin).delete({ignoreNotFound: true}).catch(() => null);
+    }
+  }
+});
+
+// =============================================================================
+// Suppression définitive d'un chantier archivé (admins ; voir src/suppression_chantier.js)
+// =============================================================================
+
+exports.supprimerChantier = onCall({timeoutSeconds: 540, memory: "512MiB"}, async (request) => {
+  verifierAppCheck(request, "supprimerChantier");
+  const ctx = await contexteAdmin(request);
+  const chantierId = texte(request.data?.chantierId, "chantierId", {max: 128});
+  const confirmationNom = texte(request.data?.confirmationNom, "nom du chantier", {max: 200});
+  const compteurs = await suppressionChantier.supprimerChantier({
+    db, bucket: getStorage().bucket(BUCKET_STOCKAGE), FieldValue, ctx, chantierId, confirmationNom,
+  });
+  logger.warn("Chantier supprimé", {companyId: ctx.companyId, chantierId, par: ctx.employeeId, compteurs});
+  return {ok: true, compteurs};
+});

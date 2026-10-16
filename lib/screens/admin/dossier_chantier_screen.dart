@@ -175,6 +175,18 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
     }
   }
 
+  /// Suppression définitive (chantier archivé) ; « Exporter d'abord » lance l'export ZIP.
+  /// Supprimé : on revient à la liste des chantiers.
+  Future<void> _supprimer(Chantier c) async {
+    final supprime = await supprimerChantierDefinitivement(
+      context,
+      docId: c.id,
+      nom: c.nom,
+      exporterDAbord: _exporter,
+    );
+    if (supprime && mounted) Navigator.of(context).pop();
+  }
+
   /// Onglet Résumé : état du chantier, export, heures (les extras, le matériel et les travaux
   /// ont leurs onglets, où on les gère).
   Widget _ongletResume(Chantier c, String companyId) {
@@ -309,6 +321,8 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                         docId: c.id,
                         donnees: {'nom': c.nom, 'adresse': c.adresse},
                       );
+                    } else if (v == 'supprimer') {
+                      _supprimer(c);
                     } else {
                       archiverOuRestaurerChantier(
                         context,
@@ -331,6 +345,15 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                             : 'Archiver le chantier',
                       ),
                     ),
+                    // Seul un chantier archivé se supprime (définitivement).
+                    if (c.archive)
+                      const PopupMenuItem(
+                        value: 'supprimer',
+                        child: Text(
+                          'Supprimer définitivement',
+                          style: TextStyle(color: Colors.red),
+                        ),
+                      ),
                   ],
                 ),
               ],

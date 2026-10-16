@@ -10,7 +10,7 @@ import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
 import {
-  collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, serverTimestamp, setDoc,
+  collection, connectFirestoreEmulator, deleteDoc, doc, getDoc, getDocs, getFirestore, query, serverTimestamp, setDoc,
   updateDoc, where,
 } from 'firebase/firestore';
 import { lundi } from './helpers.mjs';
@@ -21,6 +21,7 @@ import nipPrive from '../../functions/src/nip_prive.js';
 import { getStorage as getAdminStorage } from 'firebase-admin/storage';
 import yauzl from 'yauzl';
 import ExcelJS from 'exceljs';
+import { pdf, fluxDevis } from './pdf_fabrique.mjs';
 
 const PROJET = 'demo-construction-rules';
 const REGION = 'northamerica-northeast1';
@@ -3562,5 +3563,159 @@ describe('Notifications sur le téléphone des admins', () => {
     const e = await attendre('extras');
     assert.deepEqual(e[0].jetons, ['jeton-adm']);
     assert.equal((await adminDb.collection('appareils_notifications').doc(uid2).get()).exists, false);
+  });
+});
+
+// =============================================================================
+describe("Devis (copie sans montants) et suppression d'un chantier archivé", () => {
+  const NUM = '880031';
+  const cid = 'dv-compagnie'; const autreCid = 'dv-autre';
+  const PIN = '593816'; const BUCKET = 'chantierplus-mtl';
+  const bucket = () => getAdminStorage(adminApp).bucket(BUCKET);
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  let adm; let plus; let admB;
+  const fiche = (nom, role, courriel, companyId = cid) => ({
+    companyId, nom, role, estProprietaire: false, courriel, pinHash: hacher(companyId, PIN),
+  });
+
+  /** Un document déposé (comme une ancienne version de l'app : avec son lien à jeton). */
+  async function deposerDocument(chantierId, nom, contenu, typeMime) {
+    const chemin = `chantiers/${cid}/${chantierId}/documents/${Date.now()}_${nom.replace(/[^A-Za-z0-9._-]/g, '_')}`;
+    await bucket().file(chemin).save(contenu, {
+      contentType: typeMime, metadata: { metadata: { firebaseStorageDownloadTokens: 'ancien-jeton' } },
+    });
+    const ref = await adminDb.collection('chantier_documents').add({
+      companyId: cid, chantierId, nom, cheminStorage: chemin, typeMime, taille: contenu.length,
+      url: `https://firebasestorage.googleapis.com/v0/b/${BUCKET}/o/x?alt=media&token=ancien-jeton`,
+      ajoutePar: 'dv-adm', ajouteParNom: 'Alex Admin', dateAjout: FieldValue.serverTimestamp(),
+    });
+    return { ref, chemin };
+  }
+
+  /** Attend la fin de la copie (le déclencheur du serveur). */
+  async function copieFinie(ref) {
+    for (let i = 0; i < 100; i++) {
+      const c = (await ref.get()).data()?.copieContremaitre;
+      if (c && c.etat !== 'en_cours') return (await ref.get()).data();
+      await pause(200);
+    }
+    return (await ref.get()).data();
+  }
+
+  before(async () => {
+    await adminDb.collection('companies').doc(cid).set({ numero: NUM, nomEntreprise: 'Devis inc.', statut: 'approuvee' });
+    await adminDb.collection('companies').doc(autreCid).set({ numero: '880032', nomEntreprise: 'Autre inc.', statut: 'approuvee' });
+    await adminDb.collection('employees').doc('dv-adm').set(fiche('Alex Admin', 'admin', 'dv-adm@exemple.ca'));
+    await adminDb.collection('employees').doc('dv-plus').set(fiche('Paul Contremaître', 'plus', 'dv-plus@exemple.ca'));
+    await adminDb.collection('employees').doc('dv-admB').set(fiche('Admin B', 'admin', 'dv-admb@exemple.ca', autreCid));
+    await adminDb.collection('chantiers').doc('dv-ch').set({ companyId: cid, nom: 'Chalet Nord', adresse: '1 rue des Pins' });
+    await adminDb.collection('chantiers').doc('dv-garder').set({ companyId: cid, nom: 'Garage Sud', adresse: '' });
+    adm = await connecter(NUM, 'dv-adm@exemple.ca', PIN);
+    plus = await connecter(NUM, 'dv-plus@exemple.ca', PIN);
+    admB = await connecter('880032', 'dv-admb@exemple.ca', PIN);
+  });
+
+  test('devis PDF déposé : lien retiré et révoqué, copie sans montants prête', async () => {
+    const { ref, chemin } = await deposerDocument('dv-ch', 'Devis cuisine.pdf', pdf({ dessin: fluxDevis }), 'application/pdf');
+    const d = await copieFinie(ref);
+    assert.equal(d.devis, true);
+    assert.equal('url' in d, false);
+    assert.equal(d.copieContremaitre.etat, 'prete');
+    assert.equal(d.copieContremaitre.montants, 4);
+    assert.equal(d.copieContremaitre.chemin, `chantiers/${cid}/dv-ch/devis_sans_montants/${ref.id}.pdf`);
+    const [meta] = await bucket().file(chemin).getMetadata();
+    assert.notEqual(meta.metadata?.firebaseStorageDownloadTokens, 'ancien-jeton');
+    const [copie] = await bucket().file(d.copieContremaitre.chemin).download();
+    assert.equal(copie.subarray(0, 5).toString('latin1'), '%PDF-');
+    assert.equal(copie.length, d.copieContremaitre.taille);
+    // Le contremaître lit la fiche (sans lien) ; il ne peut pas la modifier.
+    const vue = await getDoc(doc(plus.db, 'chantier_documents', ref.id));
+    assert.equal(vue.data().copieContremaitre.etat, 'prete');
+    await assert.rejects(updateDoc(doc(plus.db, 'chantier_documents', ref.id), { copieContremaitre: { etat: 'cachee' } }));
+  });
+
+  test('devis Excel : caché aux contremaîtres ; autre document : rien ne change', async () => {
+    const x = await deposerDocument('dv-ch', 'DEVIS électricité.xlsx', Buffer.from('xlsx'),
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    assert.deepEqual((await copieFinie(x.ref)).copieContremaitre, { etat: 'cachee', raison: 'format' });
+    const p = await deposerDocument('dv-ch', 'Plan étage.pdf', pdf({ dessin: fluxDevis }), 'application/pdf');
+    await pause(1500);
+    const d = (await p.ref.get()).data();
+    assert.equal('copieContremaitre' in d, false);
+    assert.ok(d.url);
+  });
+
+  test('refaire la copie : admin de la compagnie seulement', async () => {
+    const { ref } = await deposerDocument('dv-ch', 'devis-2.pdf', pdf({ dessin: fluxDevis }), 'application/pdf');
+    await copieFinie(ref);
+    assert.deepEqual(await adm.appeler('preparerCopieDevis', { documentId: ref.id }), { etat: 'prete' });
+    await rejette(plus.appeler('preparerCopieDevis', { documentId: ref.id }), 'permission-denied');
+    await rejette(admB.appeler('preparerCopieDevis', { documentId: ref.id }), 'not-found');
+    const p = await deposerDocument('dv-ch', 'Plan.pdf', pdf({ dessin: fluxDevis }), 'application/pdf');
+    await rejette(adm.appeler('preparerCopieDevis', { documentId: p.ref.id }), 'failed-precondition');
+  });
+
+  test('document supprimé : son fichier et sa copie disparaissent', async () => {
+    const { ref, chemin } = await deposerDocument('dv-ch', 'Devis toit.pdf', pdf({ dessin: fluxDevis }), 'application/pdf');
+    const d = await copieFinie(ref);
+    await ref.delete();
+    let restants = 2;
+    for (let i = 0; i < 50 && restants > 0; i++) {
+      await pause(200);
+      restants = (await Promise.all([chemin, d.copieContremaitre.chemin]
+        .map((c) => bucket().file(c).exists().then(([e]) => e)))).filter(Boolean).length;
+    }
+    assert.equal(restants, 0);
+  });
+
+  test('supprimer un chantier : archivé, nom tapé, admin de la compagnie', async () => {
+    // Données du chantier, et d'un autre chantier qui doit rester.
+    for (const ch of ['dv-ch', 'dv-garder']) {
+      for (const c of ['chantier_photos', 'chantier_travaux', 'chantier_materiel', 'chantier_extras', 'chantier_commandes']) {
+        await adminDb.collection(c).add({ companyId: cid, chantierId: ch, texte: 'x' });
+      }
+      await bucket().file(`chantiers/${cid}/${ch}/photos/1.jpg`).save(Buffer.from('x'), { contentType: 'image/jpeg' });
+    }
+    await bucket().file(`exports/${cid}/2026-10-16_dv-ch.zip`).save(Buffer.from('zip'));
+    await bucket().file(`exports/${cid}/2026-10-16_dv-garder.zip`).save(Buffer.from('zip'));
+    await adminDb.collection('feuilles_temps').doc('dv-plus_2026-10-12').set({
+      companyId: cid, employeeId: 'dv-plus', lundiDate: '2026-10-12',
+      jours: [{ chantierId: 'dv-ch', chantierNom: 'Chalet Nord', heuresTravaillees: 8 }],
+    });
+
+    await rejette(adm.appeler('supprimerChantier', { chantierId: 'dv-ch', confirmationNom: 'Chalet Nord' }), 'failed-precondition');
+    await adminDb.collection('chantiers').doc('dv-ch').update({ archive: true });
+    await rejette(adm.appeler('supprimerChantier', { chantierId: 'dv-ch', confirmationNom: 'Chalet Sud' }), 'invalid-argument');
+    await rejette(plus.appeler('supprimerChantier', { chantierId: 'dv-ch', confirmationNom: 'Chalet Nord' }), 'permission-denied');
+    await rejette(admB.appeler('supprimerChantier', { chantierId: 'dv-ch', confirmationNom: 'Chalet Nord' }), 'not-found');
+    await rejette(adm.appeler('supprimerChantier', { chantierId: '_general', confirmationNom: 'Général' }), 'invalid-argument');
+    // L'admin ne peut pas effacer la fiche lui-même : le serveur seul.
+    await assert.rejects(deleteDoc(doc(adm.db, 'chantiers', 'dv-ch')));
+
+    const r = await adm.appeler('supprimerChantier', { chantierId: 'dv-ch', confirmationNom: '  chalet   NORD ' });
+    assert.equal(r.ok, true);
+    assert.ok(r.compteurs.fichiers >= 2);
+    assert.equal((await adminDb.collection('chantiers').doc('dv-ch').get()).exists, false);
+    for (const c of ['chantier_photos', 'chantier_travaux', 'chantier_materiel', 'chantier_extras', 'chantier_commandes', 'chantier_documents']) {
+      const n = async (ch) => (await adminDb.collection(c).where('companyId', '==', cid).where('chantierId', '==', ch).get()).size;
+      assert.equal(await n('dv-ch'), 0, c);
+      if (c !== 'chantier_documents') assert.equal(await n('dv-garder'), 1, c);
+    }
+    assert.equal((await bucket().getFiles({ prefix: `chantiers/${cid}/dv-ch/` }))[0].length, 0);
+    assert.equal((await bucket().getFiles({ prefix: `chantiers/${cid}/dv-garder/` }))[0].length, 1);
+    assert.equal((await bucket().file(`exports/${cid}/2026-10-16_dv-ch.zip`).exists())[0], false);
+    assert.equal((await bucket().file(`exports/${cid}/2026-10-16_dv-garder.zip`).exists())[0], true);
+    // Les heures restent, avec le nom du chantier.
+    const f = (await adminDb.collection('feuilles_temps').doc('dv-plus_2026-10-12').get()).data();
+    assert.equal(f.jours[0].chantierNom, 'Chalet Nord');
+    assert.equal(f.jours[0].heuresTravaillees, 8);
+    // Un journal (serveur seulement).
+    const j = (await adminDb.collection('journal_chantiers_supprimes').where('chantierId', '==', 'dv-ch').get()).docs;
+    assert.equal(j.length, 1);
+    assert.equal(j[0].data().nom, 'Chalet Nord');
+    assert.equal(j[0].data().parEmployeeId, 'dv-adm');
+    await assert.rejects(getDoc(doc(adm.db, 'journal_chantiers_supprimes', j[0].id)));
+    // Déjà supprimé : introuvable.
+    await rejette(adm.appeler('supprimerChantier', { chantierId: 'dv-ch', confirmationNom: 'Chalet Nord' }), 'not-found');
   });
 });

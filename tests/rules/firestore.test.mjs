@@ -1384,6 +1384,21 @@ describe('Documents de chantier (dépôt : admin ; consultation : admin et contr
     await assertFails(addDoc(col, document({ public: true })));
     await assertFails(updateDoc(doc(ctxDe('uid-adminA'), 'chantier_documents/dA'), { nom: 'Renommé.pdf' }));
   });
+
+  test('devis : déposé sans lien à jeton ; un autre document en exige un ; champs du serveur refusés', async () => {
+    const col = collection(ctxDe('uid-adminA'), 'chantier_documents');
+    const sansLien = (over) => {
+      const d = document(over);
+      delete d.url;
+      return d;
+    };
+    await assertSucceeds(addDoc(col, sansLien({ nom: 'DEVIS 2026-112.pdf', typeMime: 'application/pdf' })));
+    await assertSucceeds(addDoc(col, sansLien({ nom: 'Dévis cuisine.pdf' })));
+    await assertSucceeds(addDoc(col, document({ nom: 'Devis cuisine.pdf' }))); // ancienne app : le serveur le retire
+    await assertFails(addDoc(col, sansLien({ nom: 'Plan étage.pdf' })));
+    await assertFails(addDoc(col, document({ devis: true })));
+    await assertFails(addDoc(col, document({ copieContremaitre: { etat: 'prete', chemin: 'x' } })));
+  });
 });
 
 // =============================================================================

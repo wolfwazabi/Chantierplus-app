@@ -165,6 +165,6 @@ async function effacerDonnees({db, bucket, FieldValue, compagnie, ctx}) {
 }
 
 module.exports = {
-  verrouiller, effacerDonnees, idValide, supprimerRefs,
+  verrouiller, effacerDonnees, idValide, supprimerRefs, supprimerRequete, supprimerFichiers,
   COLLECTIONS_PAR_COMPAGNIE, LIMITES_PAR_EMPLOYE, LIMITES_PAR_COMPAGNIE,
 };

@@ -48,7 +48,7 @@ List<MapEntry<String, Map<String, dynamic>>> _docs() => [
     'url': 'https://exemple.test/plan.pdf',
   }),
   MapEntry('d2', {
-    'nom': 'Devis.xlsx',
+    'nom': 'Soumission.xlsx',
     'taille': 40 * 1024,
     'dateAjout': Timestamp.fromDate(DateTime(2026, 9, 28)),
     'url': 'https://exemple.test/devis.xlsx',
@@ -60,6 +60,7 @@ Widget _documents({
   List<MapEntry<String, Map<String, dynamic>>>? docs,
   Future<String?> Function(String, Map<String, dynamic>)? ouvrir,
   Future<String?> Function(String, Map<String, dynamic>)? enregistrer,
+  Future<void> Function(String)? preparer,
 }) => MaterialApp(
   home: Scaffold(
     body: DocumentsChantier(
@@ -69,6 +70,7 @@ Widget _documents({
       fluxDocuments: Stream.value(docs ?? _docs()),
       ouvrirDocument: ouvrir,
       enregistrerDocument: enregistrer,
+      preparerCopieDevis: preparer,
     ),
   ),
 );
@@ -86,7 +88,7 @@ void main() {
       expect(find.text('Déposer des documents'), findsOneWidget);
       expect(find.byIcon(Icons.upload_file), findsOneWidget);
       expect(find.text('Plan etage.pdf'), findsOneWidget);
-      expect(find.text('Devis.xlsx'), findsOneWidget);
+      expect(find.text('Soumission.xlsx'), findsOneWidget);
       expect(find.text('2.0 Mo • 03/10/2026'), findsOneWidget);
       expect(find.text('40 Ko • 28/09/2026'), findsOneWidget);
       expect(find.byTooltip('Supprimer'), findsNWidgets(2));
@@ -152,7 +154,7 @@ void main() {
           findsOneWidget,
         );
         // Un 2e toucher pendant le téléchargement ne relance rien.
-        await tester.tap(find.text('Devis.xlsx'));
+        await tester.tap(find.text('Soumission.xlsx'));
         await tester.pump();
         expect(ouverts, hasLength(1));
         fin.complete(null);
@@ -202,13 +204,209 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Devis.xlsx'));
+      await tester.tap(find.text('Soumission.xlsx'));
       await tester.pumpAndSettle();
       expect(
         find.textContaining('Aucune application du téléphone'),
         findsOneWidget,
       );
     });
+  });
+
+  group('Devis : copie sans montants pour les contremaîtres', () {
+    test('le mot « devis » dans le nom, majuscules et accents ignorés', () {
+      for (final n in [
+        'Devis cuisine.pdf',
+        'DEVIS_2026.pdf',
+        'Dévis.pdf',
+        'x-devis.xlsx',
+      ]) {
+        expect(estDevis(n), isTrue, reason: n);
+      }
+      for (final n in ['Plan.pdf', 'Soumission.xlsx', 'facture.pdf']) {
+        expect(estDevis(n), isFalse, reason: n);
+      }
+    });
+
+    final copiePrete = {
+      'etat': 'prete',
+      'chemin': 'chantiers/A/c1/devis_sans_montants/v1.pdf',
+      'taille': 5000,
+      'montants': 4,
+    };
+    Map<String, dynamic> devis(
+      Map<String, dynamic>? copie, {
+      String nom = 'Devis cuisine.pdf',
+    }) => {
+      'nom': nom,
+      'devis': true,
+      'cheminStorage': 'chantiers/A/c1/documents/1_Devis_cuisine.pdf',
+      'typeMime': 'application/pdf',
+      'taille': 9000,
+      'dateAjout': Timestamp.fromDate(DateTime(2026, 10, 16)),
+      'copieContremaitre': ?copie,
+    };
+
+    test(
+      'vue : admin l\'original ; contremaître la copie, l\'attente ou rien',
+      () {
+        expect(
+          vueDocument(devis(copiePrete), admin: true),
+          VueDocument.original,
+        );
+        expect(
+          vueDocument(devis(copiePrete), admin: false),
+          VueDocument.copieSansMontants,
+        );
+        expect(
+          vueDocument(devis({'etat': 'en_cours'}), admin: false),
+          VueDocument.preparation,
+        );
+        for (final c in [
+          null,
+          {'etat': 'cachee', 'raison': 'format'},
+          {'etat': 'erreur'},
+        ]) {
+          expect(
+            vueDocument(devis(c), admin: false),
+            VueDocument.cache,
+            reason: '$c',
+          );
+        }
+        expect(
+          vueDocument(_docs().first.value, admin: false),
+          VueDocument.original,
+        );
+        final c = copieSansMontants(devis(copiePrete))!;
+        expect(c['cheminStorage'], 'chantiers/A/c1/devis_sans_montants/v1.pdf');
+        expect(c['nom'], 'Devis cuisine (sans montants).pdf');
+        expect(c['typeMime'], 'application/pdf');
+        expect(copieSansMontants(devis({'etat': 'en_cours'})), isNull);
+      },
+    );
+
+    testWidgets(
+      'contremaître : la copie s\'ouvre ; en préparation, grisé ; caché, absent',
+      (tester) async {
+        AppSession.notifier.value = _employe(EmployeeRole.plus);
+        final ouverts = <String>[];
+        await tester.pumpWidget(
+          _documents(
+            peutGerer: false,
+            docs: [
+              MapEntry('v1', devis(copiePrete)),
+              MapEntry(
+                'v2',
+                devis({'etat': 'en_cours'}, nom: 'DEVIS toit.pdf'),
+              ),
+              MapEntry(
+                'v3',
+                devis({
+                  'etat': 'cachee',
+                  'raison': 'format',
+                }, nom: 'Devis.xlsx'),
+              ),
+              MapEntry('v4', devis(null, nom: 'Vieux devis.pdf')),
+              ..._docs(),
+            ],
+            ouvrir: (id, data) async {
+              ouverts.add('$id:${data['cheminStorage']}');
+              return null;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Devis cuisine (sans montants).pdf'), findsOneWidget);
+        expect(find.text('Devis cuisine.pdf'), findsNothing);
+        expect(find.textContaining('Devis, montants masqués'), findsOneWidget);
+        expect(find.textContaining('en préparation'), findsOneWidget);
+        expect(find.text('Devis.xlsx'), findsNothing);
+        expect(find.text('Vieux devis.pdf'), findsNothing);
+        expect(find.text('Plan etage.pdf'), findsOneWidget);
+        await tester.tap(find.text('Devis cuisine (sans montants).pdf'));
+        await tester.pumpAndSettle();
+        expect(ouverts, ['v1:chantiers/A/c1/devis_sans_montants/v1.pdf']);
+        // En préparation : ne s'ouvre pas.
+        await tester.tap(find.text('DEVIS toit.pdf'));
+        await tester.pumpAndSettle();
+        expect(ouverts, hasLength(1));
+      },
+    );
+
+    testWidgets(
+      'admin : l\'original, l\'état de la copie et « voir la copie des contremaîtres »',
+      (tester) async {
+        AppSession.notifier.value = _employe(EmployeeRole.admin);
+        final ouverts = <String>[];
+        final demandes = <String>[];
+        await tester.pumpWidget(
+          _documents(
+            peutGerer: true,
+            docs: [
+              MapEntry('v1', devis(copiePrete)),
+              MapEntry(
+                'v2',
+                devis({
+                  'etat': 'cachee',
+                  'raison': 'sans_texte',
+                }, nom: 'Devis scanné.pdf'),
+              ),
+              MapEntry('v3', devis({'etat': 'erreur'}, nom: 'Devis abimé.pdf')),
+            ],
+            ouvrir: (id, data) async {
+              ouverts.add('$id:${data['cheminStorage']}');
+              return null;
+            },
+            preparer: (id) async => demandes.add(id),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('Devis cuisine.pdf'), findsOneWidget);
+        expect(
+          find.textContaining('copie sans montants (4 masqués)'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('PDF numérisé'), findsOneWidget);
+        expect(find.textContaining('non faite'), findsOneWidget);
+        await tester.tap(find.text('Devis cuisine.pdf'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('copie_v1')));
+        await tester.pumpAndSettle();
+        expect(ouverts, [
+          'v1:chantiers/A/c1/documents/1_Devis_cuisine.pdf',
+          'v1_copie:chantiers/A/c1/devis_sans_montants/v1.pdf',
+        ]);
+        expect(find.byKey(const ValueKey('copie_v2')), findsNothing);
+        // Copie ratée : l'admin la redemande.
+        await tester.tap(find.byKey(const ValueKey('refaire_copie_v3')));
+        await tester.pumpAndSettle();
+        expect(demandes, ['v3']);
+      },
+    );
+
+    testWidgets(
+      'admin : un ancien devis sans copie est envoyé une fois au serveur',
+      (tester) async {
+        AppSession.notifier.value = _employe(EmployeeRole.admin);
+        final demandes = <String>[];
+        final ancien = devis(null, nom: 'Devis 2025.pdf')
+          ..remove('devis')
+          ..['url'] = 'https://exemple.test/devis.pdf';
+        final recent = devis(null, nom: 'Devis neuf.pdf')
+          ..['dateAjout'] = Timestamp.now();
+        await tester.pumpWidget(
+          _documents(
+            peutGerer: true,
+            docs: [MapEntry('a1', ancien), MapEntry('r1', recent)],
+            preparer: (id) async => demandes.add(id),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.pump();
+        expect(demandes, ['a1']);
+        expect(find.textContaining('en préparation'), findsNWidgets(2));
+      },
+    );
   });
 
   group('page du chantier : onglet Documents et lisibilité des onglets', () {

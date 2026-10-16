@@ -679,7 +679,12 @@ service cloud.firestore {
         && request.resource.data.cheminStorage.matches(
              'chantiers/' + request.resource.data.companyId + '/'
              + request.resource.data.chantierId + '/documents/[^/]{1,250}')
-        && urlStorage(request.resource.data.url)
+        // Un devis (« devis » dans le nom) n'a pas de lien à jeton : il contournerait les
+        // règles Storage (original réservé aux admins). Une ancienne version de l'app en
+        // envoie un : le serveur le retire et le révoque (fonction copieDevis).
+        && (urlStorage(request.resource.data.get('url', null))
+            || (!request.resource.data.keys().hasAny(['url'])
+                && request.resource.data.nom.lower().matches('.*d[eéèêë]vis.*')))
         && request.resource.data.taille is int
         && request.resource.data.taille > 0
         && request.resource.data.taille <= 50 * 1024 * 1024

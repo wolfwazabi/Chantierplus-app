@@ -15,6 +15,8 @@ beforeEach(async () => {
     await uploadBytes(ref(ctx.storage(), 'chantiers/A/chA/photos/existante.jpg'), IMAGE, JPEG);
     await uploadBytes(ref(ctx.storage(), 'chantiers/B/chB/photos/secrete.jpg'), IMAGE, JPEG);
     await uploadBytes(ref(ctx.storage(), 'chantiers/A/chA/documents/plan.pdf'), IMAGE, PDF);
+    await uploadBytes(ref(ctx.storage(), 'chantiers/A/chA/documents/111_Devis_cuisine.pdf'), IMAGE, PDF);
+    await uploadBytes(ref(ctx.storage(), 'chantiers/A/chA/devis_sans_montants/d1.pdf'), IMAGE, PDF);
   });
 });
 
@@ -58,6 +60,24 @@ describe('Storage — documents de chantier', () => {
     await assertSucceeds(getBytes(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
     await assertFails(uploadBytes(ref(s, 'chantiers/A/chA/documents/x.pdf'), IMAGE, PDF));
     await assertFails(deleteObject(ref(s, 'chantiers/A/chA/documents/plan.pdf')));
+  });
+
+  test("devis : l'original aux admins seulement, la copie sans montants aux contremaîtres", async () => {
+    const plus = st(employe(env, 'uid-plusA'));
+    const admin = st(employe(env, 'uid-adminA'));
+    await assertFails(getBytes(ref(plus, 'chantiers/A/chA/documents/111_Devis_cuisine.pdf')));
+    await assertSucceeds(getBytes(ref(admin, 'chantiers/A/chA/documents/111_Devis_cuisine.pdf')));
+    await assertSucceeds(getBytes(ref(st(employe(env, 'uid-superA')), 'chantiers/A/chA/documents/111_Devis_cuisine.pdf')));
+    await assertSucceeds(getBytes(ref(plus, 'chantiers/A/chA/devis_sans_montants/d1.pdf')));
+    await assertSucceeds(getBytes(ref(admin, 'chantiers/A/chA/devis_sans_montants/d1.pdf')));
+    // La copie : écrite et effacée par le serveur seulement ; jamais lue par un employé ou une autre compagnie.
+    await assertFails(uploadBytes(ref(admin, 'chantiers/A/chA/devis_sans_montants/d2.pdf'), IMAGE, PDF));
+    await assertFails(deleteObject(ref(admin, 'chantiers/A/chA/devis_sans_montants/d1.pdf')));
+    await assertFails(getBytes(ref(st(employe(env, 'uid-empA')), 'chantiers/A/chA/devis_sans_montants/d1.pdf')));
+    await assertFails(getBytes(ref(st(employe(env, 'uid-adminB')), 'chantiers/A/chA/devis_sans_montants/d1.pdf')));
+    // L'admin dépose un devis (nom marqué « devis ») ; le contremaître ne peut pas le lire.
+    await assertSucceeds(uploadBytes(ref(admin, 'chantiers/A/chA/documents/222_devis_DEVIS-2026.pdf'), IMAGE, PDF));
+    await assertFails(getBytes(ref(plus, 'chantiers/A/chA/documents/222_devis_DEVIS-2026.pdf')));
   });
 
   test('employé et autre compagnie : aucun accès', async () => {

@@ -105,7 +105,10 @@ service firebase.storage {
     }
 
     match /chantiers/{companyId}/{chantierId}/documents/{fichier} {
-      allow read: if gestionnaireDe(companyId);
+      // Un devis (« devis » dans le nom du fichier) : l'original est réservé aux admins ; les
+      // contremaîtres lisent la copie sans montants (devis_sans_montants, faite par le serveur).
+      allow read: if (!fichier.lower().matches('.*d[eéèêë]vis.*') && gestionnaireDe(companyId))
+        || adminDe(companyId);
 
       allow create: if resource == null
         && adminDe(companyId)
@@ -116,6 +119,13 @@ service firebase.storage {
 
       allow update: if false;
       allow delete: if adminDe(companyId);
+    }
+
+    // Copies sans montants des devis : lues par les admins et les contremaîtres, écrites et
+    // effacées par le serveur seulement (fonctions copieDevis et effacerFichiersDocument).
+    match /chantiers/{companyId}/{chantierId}/devis_sans_montants/{fichier} {
+      allow read: if gestionnaireDe(companyId);
+      allow write: if false;
     }
 
     // Tout le reste est refusé.
