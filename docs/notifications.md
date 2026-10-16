@@ -26,6 +26,13 @@ les **admins seulement**, chaque catégorie **activable ou fermée** (Admin > No
   l'enregistrement.
 - App : `lib/services/notifications_push.dart` (permission, jeton, bandeau quand l'app est
   ouverte), écran `lib/screens/admin/notifications_admin_screen.dart`.
+- Permission : le téléphone la demande tout seul (« Autoriser les notifications ? ») la
+  première fois qu'un admin ouvre l'app connecté ou se connecte ; les employés ne reçoivent
+  rien, on ne leur demande rien. Refusée, seule l'app Réglages peut la rouvrir : Admin >
+  Notifications affiche alors « bloquées » avec « Ouvrir les réglages » (module
+  `app_settings`, page des notifications de Chantier+ ; iOS 15.4 et plus), et activer une
+  catégorie le propose aussi. Au retour dans l'app, l'écran relit la permission et
+  enregistre le jeton du téléphone.
 
 ## À faire une fois (Philip) avant le build
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io' show Platform;
 
+import 'package:app_settings/app_settings.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -57,6 +58,21 @@ const categoriesNotification = [
     Icons.description_outlined,
   ),
 ];
+
+/// La permission des notifications sur ce téléphone.
+enum PermissionNotifications {
+  /// Permises (ou provisoires sur iPhone).
+  permises,
+
+  /// Refusées : seuls les réglages du téléphone peuvent les rouvrir.
+  bloquees,
+
+  /// Jamais demandées : le téléphone posera la question.
+  aDemander,
+
+  /// Pas un téléphone d'admin (web, particulier) ou état illisible.
+  sansObjet,
+}
 
 /// Notifications sur le téléphone des admins (Firebase Cloud Messaging). Le serveur les envoie
 /// (voir functions/src/notifications.js) ; ici :
@@ -137,6 +153,26 @@ class NotificationsPush {
           'majLe': FieldValue.serverTimestamp(),
         });
   }
+
+  /// La permission actuelle (sans rien demander).
+  static Future<PermissionNotifications> etatPermission() async {
+    if (!_disponible) return PermissionNotifications.sansObjet;
+    try {
+      final s = await FirebaseMessaging.instance.getNotificationSettings();
+      return switch (s.authorizationStatus) {
+        AuthorizationStatus.denied => PermissionNotifications.bloquees,
+        AuthorizationStatus.notDetermined => PermissionNotifications.aDemander,
+        _ => PermissionNotifications.permises,
+      };
+    } catch (_) {
+      return PermissionNotifications.sansObjet;
+    }
+  }
+
+  /// Ouvre les réglages des notifications de Chantier+ dans le téléphone (iPhone : iOS 15.4
+  /// et plus ; avant, les réglages de l'app).
+  static Future<void> ouvrirReglages() =>
+      AppSettings.openAppSettings(type: AppSettingsType.notification);
 
   /// Avant la déconnexion : ce téléphone ne reçoit plus rien.
   static Future<void> desactiver() async {
