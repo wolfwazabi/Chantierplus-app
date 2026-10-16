@@ -82,28 +82,44 @@ class _Pieces {
   }
 
   /// Plaque verticale de [x0] à [x1] (épaisseur en travers de l'escalier) sur le contour
-  /// [profil], en (y, z).
+  /// [profil], en (y, z). [internes] : arêtes du profil (i : du point i au suivant) partagées avec
+  /// la tranche voisine de la même pièce — ni trait ni chant : la pièce paraît pleine.
   void plaqueX(
     String groupe,
     Matiere matiere,
     double x0,
     double x1,
-    List<Pt> profil,
-  ) {
+    List<Pt> profil, {
+    Set<int> internes = const {},
+  }) {
     final aire = aireSignee(profil);
     if (aire.abs() < 1e-6) {
       return;
     }
+    final m = profil.length;
+    // Contour retourné : l'arête i devient l'arête m − 2 − i.
+    Set<int> retourne(Set<int> s) => {for (final i in s) (m - 2 - i) % m};
     final p = aire > 0 ? profil : profil.reversed.toList();
+    final cachees = aire > 0 ? internes : retourne(internes);
     final faces = <Face>[
-      Face([
-        [for (final q in p) P3(x1, q.x, q.y)],
-      ], const P3(1, 0, 0)),
-      Face([
-        [for (final q in p.reversed) P3(x0, q.x, q.y)],
-      ], const P3(-1, 0, 0)),
+      Face(
+        [
+          [for (final q in p) P3(x1, q.x, q.y)],
+        ],
+        const P3(1, 0, 0),
+        aretesSansTrait: cachees,
+      ),
+      Face(
+        [
+          [for (final q in p.reversed) P3(x0, q.x, q.y)],
+        ],
+        const P3(-1, 0, 0),
+        aretesSansTrait: retourne(cachees),
+      ),
     ];
     for (var i = 0; i < p.length; i++) {
+      // Chant intérieur, caché par la tranche voisine.
+      if (cachees.contains(i)) continue;
       final a = p[i], b = p[(i + 1) % p.length];
       final d = b - a;
       final lg = d.longueur;
@@ -185,15 +201,31 @@ Scene sceneEscalier(
     for (var k = 1; k < n; k++) {
       final y0 = (k - 1) * g, y1 = k * g;
       final dessus = k * h - t;
-      final profil = <Pt>[
-        Pt(y0, dessous(y0)),
-        if (finDessous.x > y0 && finDessous.x < y1) Pt(finDessous.x, 0),
-        Pt(y1, dessous(y1)),
-        Pt(y1, dessus),
-        Pt(y0, dessus),
-      ];
+      // Joints avec les tranches voisines : à droite toute la coupe (la tranche suivante est plus
+      // haute), à gauche sous le siège de la marche d'avant (au-dessus, c'est la vraie coupe
+      // d'aplomb).
+      final profil = <Pt>[];
+      final internes = <int>{};
+      void point(Pt q, {bool jointVersSuivant = false}) {
+        if (jointVersSuivant) internes.add(profil.length);
+        profil.add(q);
+      }
+
+      point(Pt(y0, dessous(y0)));
+      if (finDessous.x > y0 && finDessous.x < y1) point(Pt(finDessous.x, 0));
+      point(Pt(y1, dessous(y1)), jointVersSuivant: k < n - 1);
+      point(Pt(y1, dessus));
+      point(Pt(y0, dessus));
+      if (k > 1) point(Pt(y0, (k - 1) * h - t), jointVersSuivant: true);
       if (dessus - math.max(dessous(y0), dessous(y1)) > 0.05) {
-        p.plaqueX(groupe, Matiere.bois, x0, x0 + ep, profil);
+        p.plaqueX(
+          groupe,
+          Matiere.bois,
+          x0,
+          x0 + ep,
+          profil,
+          internes: internes,
+        );
       }
     }
   }
@@ -513,6 +545,7 @@ Scene placerEscalier(
                 ],
                 direction(f.normale),
                 laterale: f.laterale,
+                aretesSansTrait: f.aretesSansTrait,
               ),
           ],
         ),

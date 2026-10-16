@@ -968,7 +968,30 @@ class _Peintre extends CustomPainter {
         // Même couleur en trait fin : pas de fente entre deux faces voisines.
         joint.color = couleur;
         canvas.drawPath(chemin, joint);
-        canvas.drawPath(chemin, trait);
+        if (f.aretesSansTrait.isEmpty) {
+          canvas.drawPath(chemin, trait);
+        } else {
+          // Joint entre deux tranches d'une même pièce : pas de trait.
+          final b = f.boucles.first;
+          for (var k = 0; k < b.length; k++) {
+            if (f.aretesSansTrait.contains(k)) continue;
+            final p = camera.projeter(b[k], size.width, size.height);
+            final q = camera.projeter(
+              b[(k + 1) % b.length],
+              size.width,
+              size.height,
+            );
+            canvas.drawLine(Offset(p.x, p.y), Offset(q.x, q.y), trait);
+          }
+          for (final autre in f.boucles.skip(1)) {
+            final contour = Path();
+            for (var k = 0; k < autre.length; k++) {
+              final p = camera.projeter(autre[k], size.width, size.height);
+              k == 0 ? contour.moveTo(p.x, p.y) : contour.lineTo(p.x, p.y);
+            }
+            canvas.drawPath(contour..close(), trait);
+          }
+        }
         if (estChoisi) {
           canvas.drawPath(chemin, voile);
           canvas.drawPath(chemin, choisi);

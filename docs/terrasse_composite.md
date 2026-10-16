@@ -7,9 +7,9 @@ ou **Composite** (une plateforme, une terrasse) avec le produit choisi
 
 ## Comment c'est posé (choix de Philip, 13 octobre 2026)
 
-- **Cadre** (« picture frame ») de planches à **rive carrée** sur tout le pourtour, en onglet
-  aux coins, **sauf contre la maison** (côté de la maison du plancher). Il dépasse la fascia de
-  1/2 po (moins si le fabricant le limite : Trex et TimberTech 3/4, Fiberon Good Life et
+- **Cadre** (« picture frame ») de planches à **rive carrée** sur **les 4 côtés**, en onglet
+  aux coins, aussi contre la maison (à 1/4 po du mur ; Philip, 16 octobre 2026). Ailleurs, il
+  dépasse la fascia de 1/2 po (moins si le fabricant le limite : Trex et TimberTech 3/4, Fiberon Good Life et
   ArmorGuard 1/2, MoistureShield Elevate 1/4).
 - **Centre** : planches **rainurées perpendiculaires aux solives**, une attache cachée du
   fabricant **par solive par planche** ; écart côte à côte du produit (3/16 po), écart au bout

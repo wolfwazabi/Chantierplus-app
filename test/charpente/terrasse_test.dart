@@ -124,19 +124,23 @@ void main() {
     });
   });
 
-  test('contre la maison : ni cadre ni fascia de ce côté, 1/4 po d\'écart', () {
+  test('contre la maison : le cadre aussi (4 côtés), à 1/4 po du mur ; pas de fascia', () {
     final t = _terrasse(_plancher(144, 120, coteMaison: 3));
-    expect(t.cadre.map((c) => c.cote), isNot(contains(3)));
+    expect(t.cadre.map((c) => c.cote), unorderedEquals([0, 1, 2, 3]));
     expect(t.fascias.map((f) => f.cote), isNot(contains(3)));
-    // Les cadres voisins finissent à 1/4 po de la maison.
+    // Le cadre de la maison et les cadres voisins partent à 1/4 po du mur (onglet au coin).
+    final maison = t.cadre.firstWhere((c) => c.cote == 3);
+    for (final q in maison.contour.take(2)) {
+      expect(q.x, closeTo(0.25, 1e-9));
+    }
     final c0 = t.cadre.firstWhere((c) => c.cote == 0);
     expect(c0.contour.first.x, closeTo(0.25, 1e-9));
-    // Le centre commence à 1/4 po de la maison.
+    // Le centre commence après le cadre : 1/4 + 5 1/2 + 3/16 (écart côte à côte).
     final xMin = t.centre
         .expand((pl) => pl.contour)
         .map((q) => q.x)
         .reduce((a, b) => a < b ? a : b);
-    expect(xMin, closeTo(0.25, 1e-9));
+    expect(xMin, closeTo(0.25 + 5.5 + 3 / 16, 1e-9));
   });
 
   test('Trex Enhance : solives aux 300 mm au Canada, l\'entraxe de 16 po est signalé', () {

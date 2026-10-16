@@ -170,6 +170,43 @@ void main() {
     }
   });
 
+  test(
+    'le limon paraît plein : pas de trait ni de chant aux joints des tranches',
+    () {
+      final r = _escalier();
+      final s = sceneEscalier(r, metrique: false);
+      final tranches = s.solides.where((so) => so.groupe == 'limon0').toList();
+      expect(tranches, hasLength(14));
+      Face cote(Solide so) =>
+          so.faces.firstWhere((f) => f.normale.x > 0.99 && !f.laterale);
+      // 1re tranche : joint à droite seulement ; dernière : joint à gauche (sous le siège d'avant)
+      // seulement ; les autres : les deux.
+      expect(cote(tranches.first).aretesSansTrait, hasLength(1));
+      expect(cote(tranches.last).aretesSansTrait, hasLength(1));
+      for (final so in tranches.skip(1).take(12)) {
+        expect(cote(so).aretesSansTrait, hasLength(2));
+      }
+      // Aucun chant debout en travers du limon sous le siège de la marche d'avant (les joints) :
+      // seuls restent la coupe de pied et les coupes d'aplomb au-dessus des sièges.
+      for (final (k, so) in tranches.indexed) {
+        final y0 = k * r.giron;
+        for (final f in so.faces.where(
+          (f) => f.laterale && f.normale.y < -0.99,
+        )) {
+          final zMin = f.boucles.first.map((q) => q.z).reduce(math.min);
+          if (k > 0) {
+            expect(
+              zMin,
+              closeTo(k * r.contremarche - 0.94, 1e-9),
+              reason: 'tranche $k',
+            );
+          }
+          expect(f.boucles.first.first.y, closeTo(y0, 1e-9));
+        }
+      }
+    },
+  );
+
   test('l\'ordre d\'affichage se calcule pour la vue de départ', () {
     final s = sceneEscalier(_escalier(), metrique: false);
     final ordre = ordreAffichage(s.solides, Camera.pourScene(s, 400, 240));

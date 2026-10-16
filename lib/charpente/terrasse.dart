@@ -9,8 +9,9 @@ import 'unites.dart';
 
 /// Dessus d'un plancher en composite (une plateforme, une terrasse), comme Philip le pose et
 /// comme les guides des fabricants le demandent :
-///  - un cadre (« picture frame ») de planches à rive carrée sur le pourtour, en onglet aux
-///    coins, sauf contre la maison ; il dépasse un peu la fascia ;
+///  - un cadre (« picture frame ») de planches à rive carrée sur tout le pourtour, en onglet aux
+///    coins, aussi contre la maison (à [ecartMaisonComposite] du mur) ; ailleurs il dépasse un
+///    peu la fascia ;
 ///  - au centre, des planches rainurées perpendiculaires aux solives, retenues par les attaches
 ///    cachées du fabricant (une par solive par planche) ; la première et la dernière rangée
 ///    vissées en surface ;
@@ -203,12 +204,10 @@ ResultatTerrasse calculerTerrasse(
   ];
 
   double exterieur(int i) => estMaison(i) ? -ecartMaisonComposite : ef + debord;
-  double interieurCadre(int i) =>
-      estMaison(i) ? exterieur(i) : exterieur(i) - b;
-  double bordCentre(int i) => estMaison(i)
-      ? exterieur(i)
-      : interieurCadre(i) -
-            (longe(i) ? produit.ecartBout : produit.ecartPlancher);
+  double interieurCadre(int i) => exterieur(i) - b;
+  double bordCentre(int i) =>
+      interieurCadre(i) -
+      (longe(i) ? produit.ecartBout : produit.ecartPlancher);
 
   final ext = decale(exterieur);
   final intCadre = decale(interieurCadre);
@@ -218,7 +217,6 @@ ResultatTerrasse calculerTerrasse(
   final maxCarre = produit.longueurs.reduce(math.max);
   final cadre = <PlancheCadre>[];
   for (var i = 0; i < n; i++) {
-    if (estMaison(i)) continue;
     final j = (i + 1) % n;
     final contour = [ext[i], ext[j], intCadre[j], intCadre[i]];
     final longueur = math.max(
@@ -353,13 +351,13 @@ ResultatTerrasse calculerTerrasse(
   final longueurBloc = spec.espacement - section.epaisseur;
   var blocs = 0;
   for (var i = 0; i < n; i++) {
-    if (estMaison(i) || !longe(i)) continue;
+    if (!longe(i)) continue;
     blocs += (f.longueurCote(i) / espacementBlocageCadre - 1e-9).ceil() + 1;
   }
 
   // --- Quincaillerie --------------------------------------------------------------------------
   final attaches = centre.fold(0, (a, p) => a + p.appuis);
-  // Première et dernière rangée : vissées en surface le long du cadre (ou de la maison).
+  // Première et dernière rangée : vissées en surface le long du cadre.
   final derniere = rangee - 1;
   final visRives = centre
       .where((p) => p.rangee == 0 || p.rangee == derniere)

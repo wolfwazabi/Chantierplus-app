@@ -71,7 +71,16 @@ class Face {
 
   /// Face de chant (épaisseur) plutôt que grande face.
   final bool laterale;
-  const Face(this.boucles, this.normale, {this.laterale = false});
+
+  /// Arêtes du premier contour (i : du point i au suivant) dessinées sans trait : le joint entre
+  /// deux tranches d'une même pièce (un limon tranché marche par marche paraît plein).
+  final Set<int> aretesSansTrait;
+  const Face(
+    this.boucles,
+    this.normale, {
+    this.laterale = false,
+    this.aretesSansTrait = const {},
+  });
 
   P3 get point => boucles.first.first;
 }

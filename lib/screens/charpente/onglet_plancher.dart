@@ -374,7 +374,8 @@ class OngletPlancher extends StatelessWidget {
       const SizedBox(height: 6),
       Text(
         key: const ValueKey('plancher_produit_fiche'),
-        'Cadre de planches à rive carrée en onglet sur le pourtour (sauf contre la maison), '
+        'Cadre de planches à rive carrée en onglet sur les 4 côtés (à ${_l(ecartMaisonComposite)} '
+        'de la maison), '
         'planches rainurées au centre en travers des solives avec les attaches ${p.attache}, '
         'fascia sur les rives, blocage sous le cadre qui longe les solives.\n'
         'Planches de ${_l(p.largeur)} × ${_l(p.epaisseur)} ; écart de ${_l(p.ecartPlancher)} '
