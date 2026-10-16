@@ -298,13 +298,47 @@ class _FormulaireJourState extends State<FormulaireJour> {
     if (_saisie.estVide) {
       // Le serveur n'efface jamais une journée déjà soumise sur une saisie vide.
       setState(
-        () => _erreur = _origine.estAucun
-            ? 'Indiquez un chantier et les heures, ou gardez « Jour non travaillé ».'
-            : 'Rien à enregistrer. Pour retirer les heures de cette journée, '
-                  'cochez « Jour non travaillé ».',
+        () => _erreur = _origine.estAucun || _origine.estFerie
+            ? 'Indiquez un chantier et les heures, ou supprimez la journée.'
+            : 'Rien à enregistrer. Pour retirer cette journée, touchez '
+                  '« Supprimer la journée ».',
       );
       return;
     }
+    await _envoyer(_saisie);
+  }
+
+  /// La journée entrée par erreur (ex. jeudi au lieu de mercredi) : supprimée, ses heures
+  /// retirées de la semaine ; la suppression reste dans l'historique des corrections.
+  Future<void> _supprimer() async {
+    final nomJour = widget.index < nomsJoursFeuille.length
+        ? nomsJoursFeuille[widget.index].toLowerCase()
+        : 'ce jour';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Supprimer la journée de $nomJour ?'),
+        content: const Text(
+          'Ses heures sont retirées de la semaine. La suppression reste dans '
+          'l\'historique des corrections.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            key: const ValueKey('jour_supprimer_confirmer'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) await _envoyer(SaisieJour.effacee);
+  }
+
+  Future<void> _envoyer(SaisieJour saisie) async {
     setState(() {
       _enCours = true;
       _erreur = null;
@@ -317,7 +351,7 @@ class _FormulaireJourState extends State<FormulaireJour> {
         'jours': joursPourCorrection(
           existants: widget.jours,
           index: widget.index,
-          saisie: _saisie,
+          saisie: saisie,
         ),
       });
       if (!mounted) return;
@@ -373,12 +407,31 @@ class _FormulaireJourState extends State<FormulaireJour> {
                         _erreur = null;
                         _saisie = v
                             ? const SaisieJour(estAucun: true)
-                            : _origine.estAucun
+                            : _origine.estAucun || _origine.estFerie
                             ? SaisieJour.vide
                             : _origine;
                       }),
               ),
-              if (!_saisie.estAucun) ...[
+              SwitchListTile(
+                key: const ValueKey('jour_ferie'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Férié'),
+                subtitle: Text(
+                  '${formatHeuresFerie()} payées, comptées dans la semaine (aucun chantier).',
+                ),
+                value: _saisie.estFerie,
+                onChanged: _enCours
+                    ? null
+                    : (v) => setState(() {
+                        _erreur = null;
+                        _saisie = v
+                            ? const SaisieJour(estFerie: true)
+                            : _origine.estAucun || _origine.estFerie
+                            ? SaisieJour.vide
+                            : _origine;
+                      }),
+              ),
+              if (!_saisie.estAucun && !_saisie.estFerie) ...[
                 if (_chargement)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),
@@ -456,8 +509,7 @@ class _FormulaireJourState extends State<FormulaireJour> {
               const Text(
                 'Les heures payées sont calculées par le serveur avec les règles de '
                 'la compagnie ; pour une semaine passée, avec les règles de cette '
-                'semaine-là. Pour retirer les heures d\'une journée, cochez « Jour '
-                'non travaillé ».',
+                'semaine-là. Une journée entrée par erreur : « Supprimer la journée ».',
                 key: ValueKey('jour_explication'),
                 style: TextStyle(fontSize: 12),
               ),
@@ -469,6 +521,20 @@ class _FormulaireJourState extends State<FormulaireJour> {
                   style: const TextStyle(color: Colors.red),
                 ),
               ],
+              // Journée déjà enregistrée : on peut la supprimer (entrée par erreur).
+              if (!_origine.estVide)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const ValueKey('jour_supprimer'),
+                    onPressed: _enCours ? null : _supprimer,
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    label: const Text(
+                      'Supprimer la journée',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                  ),
+                ),
               const SizedBox(height: 12),
               Row(
                 children: [

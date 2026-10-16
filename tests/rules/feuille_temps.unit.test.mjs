@@ -525,3 +525,124 @@ describe('recalculerFeuille : semaine courante après un changement de règles',
     assert.deepEqual(JSON.parse(JSON.stringify(f)), copie);
   });
 });
+
+describe('Journée fériée : 8 h payées, hors chantier', () => {
+  test('un férié vaut 8 h dans le total de la semaine, pas dans les heures travaillées', () => {
+    const r = calcul([jour({ estFerie: true }), jour()]);
+    const f = r.jours[0];
+    assert.equal(f.estFerie, true);
+    assert.equal(f.chantierId, null);
+    assert.equal(f.chantierNom, 'Férié');
+    assert.equal(f.heuresTravaillees, null);
+    assert.equal(f.heuresFeriees, 8);
+    assert.equal(f.verrouille, true);
+    assert.equal(r.totalHeuresFeriees, 8);
+    assert.equal(r.totalHeuresTravaillees, 7.75);
+    assert.equal(r.totalHeures, 15.75);
+  });
+
+  test('les autres journées ne changent pas de forme (pas de champ férié)', () => {
+    const r = calcul([jour(), jour({ estAucun: true })]);
+    assert.equal('estFerie' in r.jours[0], false);
+    assert.equal('heuresFeriees' in r.jours[1], false);
+    assert.equal(r.totalHeuresFeriees, 0);
+  });
+
+  test('non travaillé et férié à la fois : refusé', () => {
+    rejette(() => ft.lireJours([{ estAucun: true, estFerie: true }]));
+    rejette(() => ft.lireJours([{ estFerie: 'oui' }]));
+  });
+
+  test('un férié déjà soumis est conservé quand le jour arrive vide', () => {
+    const avant = calcul([jour({ estFerie: true })]);
+    const r = calcul([{ estAucun: false }], defaut, { jours: avant.jours });
+    assert.equal(r.jours[0].estFerie, true);
+    assert.equal(r.totalHeures, 8);
+  });
+
+  test('journée de chantier devenue fériée : dans l\'historique, avec les heures payées', () => {
+    const avant = { jours: calcul([jour()]).jours };
+    const r = ft.calculerFeuille({
+      jours: ft.lireJours([{ estFerie: true }]), nomsChantiers: NOMS, regles: defaut,
+      existante: avant, maintenantIso: '2026-01-06T12:00:00.000Z', acteur: { id: 'adm-1', role: 'admin' },
+    });
+    const c = r.corrections[0];
+    assert.deepEqual(c.changements.find((x) => x.champ === 'chantierNom'),
+      { champ: 'chantierNom', avant: 'Chantier 1', apres: 'Férié' });
+    assert.equal(c.heuresAvant, 7.75);
+    assert.equal(c.heuresApres, 8);
+  });
+
+  test('recalcul de la semaine courante : le férié garde ses 8 h', () => {
+    const f = calcul([jour({ estFerie: true }), jour()]);
+    const maj = ft.recalculerFeuille({ ...f, reglesPaie: defaut },
+      ft.reglesPaieDepuis({ dinerPaye: false }), '2026-01-07T09:00:00.000Z');
+    assert.equal(maj.jours[0].heuresFeriees, 8);
+    assert.equal(maj.totalHeuresTravaillees, 7.25);
+    assert.equal(maj.totalHeures, 15.25);
+    // Seulement des fériés : rien à recalculer.
+    const seul = calcul([jour({ estFerie: true })]);
+    assert.equal(ft.recalculerFeuille({ ...seul, reglesPaie: defaut },
+      ft.reglesPaieDepuis({ dinerPaye: false }), '2026-01-07T09:00:00.000Z'), null);
+  });
+});
+
+describe('Supprimer une journée entrée par erreur', () => {
+  const ADMIN = { id: 'adm-1', role: 'admin' };
+  const EMPLOYE = { id: 'emp-1', role: 'employe' };
+  const avecActeur = (jours, existante, acteur = ADMIN) => ft.calculerFeuille({
+    jours: ft.lireJours(jours), nomsChantiers: NOMS, regles: defaut, existante,
+    maintenantIso: '2026-01-06T12:00:00.000Z', acteur,
+  });
+
+  test('jeudi entré au lieu de mercredi : le jeudi est vidé, les totaux suivent', () => {
+    const avant = calcul([jour(), jour(), { estAucun: false }, jour()]);
+    assert.equal(avant.totalHeures, 23.25);
+    const r = avecActeur(
+      [{ estAucun: false }, { estAucun: false }, jour(), { effacer: true }],
+      { jours: avant.jours }, EMPLOYE,
+    );
+    // Lundi et mardi conservés, mercredi ajouté, jeudi vidé.
+    assert.equal(r.jours[0].heuresTravaillees, 7.75);
+    assert.equal(r.jours[2].heuresTravaillees, 7.75);
+    const jeudi = r.jours[3];
+    assert.equal(jeudi.chantierId, null);
+    assert.equal(jeudi.chantierNom, null);
+    assert.equal(jeudi.heuresTravaillees, null);
+    assert.equal(jeudi.verrouille, false);
+    assert.equal(r.totalHeures, 23.25);
+  });
+
+  test('la suppression est gardée dans l\'historique : les valeurs avant, rien après', () => {
+    const avant = { jours: calcul([jour()]).jours };
+    const r = avecActeur([{ effacer: true }], avant);
+    assert.equal(r.corrections.length, 1);
+    const c = r.corrections[0];
+    assert.equal(c.jour, 0);
+    assert.equal(c.par, 'adm-1');
+    assert.equal(c.heuresAvant, 7.75);
+    assert.equal(c.heuresApres, null);
+    assert.deepEqual(c.changements.find((x) => x.champ === 'chantierNom'),
+      { champ: 'chantierNom', avant: 'Chantier 1', apres: null });
+    assert.equal(r.totalHeures, 0);
+  });
+
+  test('un férié ou un jour non travaillé se suppriment aussi', () => {
+    const avant = { jours: calcul([jour({ estFerie: true }), jour({ estAucun: true })]).jours };
+    const r = avecActeur([{ effacer: true }, { effacer: true }], avant);
+    assert.equal(r.jours[0].estFerie, undefined);
+    assert.equal(r.jours[1].estAucun, false);
+    assert.equal(r.totalHeures, 0);
+    assert.equal(r.corrections.length, 2);
+  });
+
+  test('supprimer une journée jamais remplie : rien dans l\'historique', () => {
+    const r = avecActeur([{ effacer: true }], undefined);
+    assert.equal(r.corrections, undefined);
+    assert.equal(r.jours[0].verrouille, false);
+  });
+
+  test('effacer doit être un booléen', () => {
+    rejette(() => ft.lireJours([{ effacer: 'oui' }]));
+  });
+});

@@ -8,6 +8,9 @@ library;
 /// Durée maximale d'un voyagement par jour, comme sur le serveur.
 const int voyagementMaxMinutes = 12 * 60;
 
+/// Journée fériée : 8 h payées d'office, hors chantier (calculées par le serveur).
+const double heuresFerie = 8;
+
 /// Nombre de jours d'une feuille de temps (lundi à vendredi).
 const int joursParFeuille = 5;
 
@@ -25,6 +28,12 @@ int? _entier(Object? v) => v is num ? v.toInt() : null;
 class SaisieJour {
   /// « Jour non travaillé » : aucune heure, rien d'autre à saisir.
   final bool estAucun;
+
+  /// « Férié » : 8 h payées, aucun chantier, rien d'autre à saisir.
+  final bool estFerie;
+
+  /// La journée entrée par erreur est supprimée (gardée dans l'historique des corrections).
+  final bool effacer;
   final String? chantierId;
   final int? debutMinutes;
   final int? finMinutes;
@@ -34,6 +43,8 @@ class SaisieJour {
 
   const SaisieJour({
     this.estAucun = false,
+    this.estFerie = false,
+    this.effacer = false,
     this.chantierId,
     this.debutMinutes,
     this.finMinutes,
@@ -45,10 +56,14 @@ class SaisieJour {
   /// Une journée sans rien de saisi.
   static const SaisieJour vide = SaisieJour();
 
+  /// Une journée à supprimer.
+  static const SaisieJour effacee = SaisieJour(effacer: true);
+
   /// La saisie d'une journée de la feuille enregistrée (absente ou vide : journée vide).
   factory SaisieJour.depuisJour(Map<String, dynamic>? jour) {
     if (jour == null) return vide;
     if (jour['estAucun'] == true) return const SaisieJour(estAucun: true);
+    if (jour['estFerie'] == true) return const SaisieJour(estFerie: true);
     final chantier = jour['chantierId'];
     return SaisieJour(
       chantierId: chantier is String && chantier.isNotEmpty ? chantier : null,
@@ -64,6 +79,8 @@ class SaisieJour {
 
   bool get estVide =>
       !estAucun &&
+      !estFerie &&
+      !effacer &&
       chantierId == null &&
       debutMinutes == null &&
       finMinutes == null &&
@@ -71,6 +88,7 @@ class SaisieJour {
 
   SaisieJour copieAvec({
     bool? estAucun,
+    bool? estFerie,
     Object? chantierId = _inchange,
     Object? debutMinutes = _inchange,
     Object? finMinutes = _inchange,
@@ -79,6 +97,7 @@ class SaisieJour {
     Object? voyagementMinutes = _inchange,
   }) => SaisieJour(
     estAucun: estAucun ?? this.estAucun,
+    estFerie: estFerie ?? this.estFerie,
     chantierId: identical(chantierId, _inchange)
         ? this.chantierId
         : chantierId as String?,
@@ -97,7 +116,9 @@ class SaisieJour {
 
   /// Ce qu'on envoie au serveur : seulement la saisie (jamais d'heures calculées).
   Map<String, dynamic> versDonnees() {
+    if (effacer) return {'effacer': true};
     if (estAucun) return {'estAucun': true};
+    if (estFerie) return {'estFerie': true};
     return {
       'estAucun': false,
       'chantierId': chantierId,
@@ -115,7 +136,7 @@ class SaisieJour {
   /// Message à montrer si la saisie ne peut pas être enregistrée, sinon null. Le serveur
   /// revérifie tout : ceci évite seulement un aller-retour.
   String? get erreur {
-    if (estAucun || estVide) return null;
+    if (estAucun || estFerie || effacer || estVide) return null;
     if (chantierId == null) return 'Choisissez un chantier.';
     if (debutMinutes == null || finMinutes == null) {
       return 'Indiquez l\'heure de début et l\'heure de fin.';
@@ -134,6 +155,8 @@ class SaisieJour {
   bool operator ==(Object other) =>
       other is SaisieJour &&
       other.estAucun == estAucun &&
+      other.estFerie == estFerie &&
+      other.effacer == effacer &&
       other.chantierId == chantierId &&
       other.debutMinutes == debutMinutes &&
       other.finMinutes == finMinutes &&
@@ -144,6 +167,8 @@ class SaisieJour {
   @override
   int get hashCode => Object.hash(
     estAucun,
+    estFerie,
+    effacer,
     chantierId,
     debutMinutes,
     finMinutes,
@@ -174,6 +199,9 @@ List<Map<String, dynamic>> joursPourCorrection({
           .versDonnees(),
   ];
 }
+
+/// « 8 h » : les heures payées d'un férié.
+String formatHeuresFerie() => '${heuresFerie.toStringAsFixed(0)} h';
 
 /// « 7:00 » ← 420 ; « --:-- » si absent.
 String heureAffichee(int? minutes) {

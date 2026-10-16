@@ -99,4 +99,43 @@ void main() {
     expect(j.heuresTravaillees, isNull);
     expect(j.heuresVoyagementPayees, 0);
   });
+
+  test('férié : 8 h payées, aucune heure travaillée ni voyagement, journée remplie', () {
+    final j = _jour()..chantier = chantierFerie;
+    expect(j.estFerie, isTrue);
+    expect(j.estAucun, isFalse);
+    expect(j.heuresTravaillees, isNull);
+    expect(j.heuresVoyagementPayees, 0);
+    expect(j.heuresFeriees, 8);
+    expect(j.estRempli, isTrue);
+    expect(_jour().heuresFeriees, 0);
+  });
+
+  test('vider : la journée supprimée redevient vide (et modifiable)', () {
+    final j = _jour()
+      ..verrouilleLocalement = true
+      ..pauseMatin = false;
+    j.vider();
+    expect(j.chantier, isNull);
+    expect(j.heureDebut, isNull);
+    expect(j.heureFin, isNull);
+    expect(j.tempsVoyagement, isNull);
+    expect(j.pauseMatin, isTrue);
+    expect(j.verrouilleLocalement, isFalse);
+    expect(j.aDesDonnees, isFalse);
+    expect(j.estRempli, isFalse);
+  });
+
+  test(
+    'supprimer le jeudi : seul le jeudi est effacé, les autres partent vides',
+    () {
+      expect(joursPourSuppression(5, 3), [
+        {'estAucun': false},
+        {'estAucun': false},
+        {'estAucun': false},
+        {'effacer': true},
+        {'estAucun': false},
+      ]);
+    },
+  );
 }

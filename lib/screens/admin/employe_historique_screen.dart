@@ -249,7 +249,12 @@ class SemaineEmployeScreen extends StatelessWidget {
     Map<String, dynamic> j,
     List<Map<String, dynamic>> jours,
   ) {
-    final heures = (j['heuresTravaillees'] as num?)?.toDouble();
+    // Férié : 8 h payées, sans chantier.
+    final heures =
+        (j['heuresTravaillees'] as num?)?.toDouble() ??
+        (j['estFerie'] == true
+            ? (j['heuresFeriees'] as num?)?.toDouble() ?? heuresFerie
+            : null);
     final voyPaye = (j['voyagementPayeHeures'] as num?)?.toDouble();
     final estAucun = j['estAucun'] == true;
     void ouvrir() => _modifier(context, jours, i);

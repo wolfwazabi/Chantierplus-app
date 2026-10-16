@@ -35,6 +35,21 @@ pourcentage.
 - La saisie de l'employé (heures, pauses, voyagement) est toujours conservée : seuls les
   montants calculés changent.
 
+## Férié et journée supprimée (16 octobre 2026)
+
+- **Férié** (choix « Férié (8 h payées) » dans le chantier de la journée ; interrupteur
+  « Férié » dans le formulaire de l'admin) : **8 h payées d'office**, jamais dans un chantier.
+  Le serveur écrit , , ,
+   ; la feuille a  (seulement s'il y en a) et
+   = travaillées + voyagement payé + fériés. Les heures par chantier
+  () l'ignorent (pas de chantier). Un recalcul des règles ne touche pas un férié.
+- **Supprimer une journée** entrée par erreur (ex. jeudi au lieu de mercredi) : bouton
+  « Supprimer la journée » (corbeille sur la journée soumise ; dans le formulaire de l'admin).
+  Le client envoie  pour ce jour (les autres partent vides et sont gardés) ;
+  le serveur vide la journée et l'ajoute à l'historique  (avant → rien, heures
+  avant → null). L'employé : tant que la semaine n'est pas verrouillée (mardi 18 h) ; l'admin :
+  toujours. Une journée envoyée vide, elle, n'efface toujours rien.
+
 ## Historique de la formule
 
 Avant octobre 2026, le voyagement dès le seuil était payé en entier au pourcentage (90 min

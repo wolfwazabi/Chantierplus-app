@@ -152,6 +152,28 @@ void main() {
       expect(SaisieJour.depuisJour(const {'estAucun': false}).estVide, isTrue);
     });
 
+    test('férié : seul estFerie est envoyé ; supprimer : seul effacer', () {
+      final s = SaisieJour.depuisJour(const {
+        'estFerie': true,
+        'chantierNom': 'Férié',
+        'heuresFeriees': 8,
+      });
+      expect(s.estFerie, isTrue);
+      expect(s.estVide, isFalse);
+      expect(s.erreur, isNull);
+      expect(s.versDonnees(), {'estFerie': true});
+      expect(SaisieJour.effacee.versDonnees(), {'effacer': true});
+      expect(SaisieJour.effacee == SaisieJour.vide, isFalse);
+      expect(
+        joursPourCorrection(
+          existants: _jours(),
+          index: 0,
+          saisie: SaisieJour.effacee,
+        )[0],
+        {'effacer': true},
+      );
+    });
+
     test('jour non travaillé', () {
       final s = SaisieJour.depuisJour(const {
         'estAucun': true,
@@ -492,6 +514,92 @@ void main() {
     );
 
     testWidgets(
+      '« Férié » : les champs disparaissent, seul estFerie est envoyé',
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrirSemaine(tester, appels);
+        await _toucherJour(tester, 0);
+        expect(find.text('Férié'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('jour_ferie')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('jour_chantier')), findsNothing);
+        expect(find.byKey(const ValueKey('jour_debut')), findsNothing);
+        await tester.tap(find.byKey(const ValueKey('jour_enregistrer')));
+        await tester.pumpAndSettle();
+        final jours = appels.faits.single.value['jours'] as List;
+        expect(jours[0], {'estFerie': true});
+        // Les autres journées : leur saisie telle quelle.
+        expect((jours[1] as Map)['chantierId'], 'c2');
+      },
+    );
+
+    testWidgets(
+      'supprimer une journée entrée par erreur : confirmation, puis effacer est envoyé',
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrirSemaine(tester, appels);
+        await _toucherJour(tester, 1); // mardi
+        await tester.tap(find.byKey(const ValueKey('jour_supprimer')));
+        await tester.pumpAndSettle();
+        expect(find.text('Supprimer la journée de mardi ?'), findsOneWidget);
+        await tester.tap(
+          find.byKey(const ValueKey('jour_supprimer_confirmer')),
+        );
+        await tester.pumpAndSettle();
+        expect(appels.faits.single.key, 'corrigerFeuilleTemps');
+        final jours = appels.faits.single.value['jours'] as List;
+        expect(jours[1], {'effacer': true});
+        expect((jours[0] as Map)['chantierId'], 'c1'); // lundi inchangé
+        // Le formulaire se ferme.
+        expect(find.text('Modifier les heures'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'supprimer : annuler ne change rien ; jour vide : pas de bouton',
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrirSemaine(tester, appels);
+        await _toucherJour(tester, 0);
+        await tester.tap(find.byKey(const ValueKey('jour_supprimer')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Annuler').last);
+        await tester.pumpAndSettle();
+        expect(appels.faits, isEmpty);
+        expect(find.text('Modifier les heures'), findsOneWidget);
+        await tester.tap(find.byKey(const ValueKey('jour_annuler')));
+        await tester.pumpAndSettle();
+        await _toucherJour(tester, 2); // mercredi : rien de saisi
+        expect(find.byKey(const ValueKey('jour_supprimer')), findsNothing);
+      },
+    );
+
+    testWidgets('un férié se montre « Férié » dans le tableau', (tester) async {
+      final fiche = _fiche()
+        ..['jours'] = [
+          {
+            'nomJour': 'Lundi',
+            'estAucun': false,
+            'estFerie': true,
+            'chantierId': null,
+            'chantierNom': 'Férié',
+            'heuresTravaillees': null,
+            'heuresFeriees': 8,
+            'verrouille': true,
+          },
+        ]
+        ..['totalHeures'] = 8;
+      await _ouvrirSemaine(tester, _Appels(), fiches: [fiche]);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('jour_emp1_2026-10-12_0')))
+            .data,
+        'Férié',
+      );
+      expect(find.text('8.00'), findsOneWidget); // le total de la semaine
+    });
+
+    testWidgets(
       'décocher « Jour non travaillé » sans rien changer : aucun changement',
       (tester) async {
         final appels = _Appels();
@@ -573,7 +681,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           find.text(
-            'Indiquez un chantier et les heures, ou gardez « Jour non travaillé ».',
+            'Indiquez un chantier et les heures, ou supprimez la journée.',
           ),
           findsOneWidget,
         );

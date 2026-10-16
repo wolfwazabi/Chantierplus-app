@@ -139,11 +139,15 @@ class SemaineDetailScreen extends StatelessWidget {
                                   0;
 
                               final heuresParJour = <String, double?>{};
+                              final feries = <String>{};
                               for (final j in jours) {
                                 final nomJour = j['nomJour'] as String?;
                                 final h = (j['heuresTravaillees'] as num?)
                                     ?.toDouble();
                                 if (nomJour != null) heuresParJour[nomJour] = h;
+                                if (nomJour != null && j['estFerie'] == true) {
+                                  feries.add(nomJour);
+                                }
                               }
 
                               return DataRow(
@@ -178,8 +182,10 @@ class SemaineDetailScreen extends StatelessWidget {
                                   )
                                     DataCell(
                                       Text(
-                                        heuresParJour[nomsJoursFeuille[i]] !=
-                                                null
+                                        feries.contains(nomsJoursFeuille[i])
+                                            ? 'Férié'
+                                            : heuresParJour[nomsJoursFeuille[i]] !=
+                                                  null
                                             ? heuresParJour[nomsJoursFeuille[i]]!
                                                   .toStringAsFixed(2)
                                             : '-',

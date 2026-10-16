@@ -700,6 +700,35 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
   // un test qui compare des totaux exacts ne doit pas hériter du précédent.
   const vider = (lundiDate = SEMAINE) => adminDb.collection('feuilles_temps').doc(`ft-emp_${lundiDate}`).delete();
 
+  test('férié (8 h hors chantier), puis la journée supprimée par l\'employé', async () => {
+    await vider();
+    const r = await envoyer(emp, [jour(), { estFerie: true }]);
+    assert.equal(r.totalHeures, 15.75);
+    assert.equal(r.totalHeuresFeriees, 8);
+    assert.deepEqual(r.jours[1], { heuresTravaillees: null, voyagementPayeHeures: 0, heuresFeriees: 8 });
+    let f = await feuilleDe('ft-emp');
+    assert.equal(f.jours[1].chantierNom, 'Férié');
+    assert.equal(f.jours[1].chantierId, null);
+    assert.equal(f.totalHeuresFeriees, 8);
+    assert.equal(f.totalHeuresTravaillees, 7.75);
+
+    // Entrée par erreur : le mardi est supprimé, le lundi (envoyé vide) est gardé.
+    const s = await envoyer(emp, [{ estAucun: false }, { effacer: true }]);
+    assert.equal(s.totalHeures, 7.75);
+    assert.equal('totalHeuresFeriees' in s, false);
+    f = await feuilleDe('ft-emp');
+    assert.equal(f.jours[0].chantierNom, 'Chantier Alpha');
+    assert.equal(f.jours[1].chantierNom, null);
+    assert.equal(f.jours[1].verrouille, false);
+    assert.equal('totalHeuresFeriees' in f, false);
+    // Dans l'historique : l'employé, la journée, les heures avant (8) et rien après.
+    const c = f.corrections.at(-1);
+    assert.equal(c.jour, 1);
+    assert.equal(c.par, 'ft-emp');
+    assert.equal(c.heuresAvant, 8);
+    assert.equal(c.heuresApres, null);
+  });
+
   test('valeurs calculées, nom et identité envoyés par le client : ignorés', async () => {
     await vider();
     await envoyer(emp, [jour({ heuresTravaillees: 99, voyagementPayeHeures: 40, chantierNom: 'Faux' })], SEMAINE, {

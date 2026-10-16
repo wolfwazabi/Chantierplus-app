@@ -15,6 +15,10 @@ const NOMS_JOURS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi",
 
 const MAX_VOYAGEMENT_MINUTES = 12 * 60;
 
+/** Journée fériée : 8 h payées d'office, jamais dans un chantier (demande de l'entrepreneur). */
+const HEURES_FERIE = 8;
+const NOM_FERIE = "Férié";
+
 // Mêmes bornes que firestore.rules (reglesPaieValides) et ReglesPaie (Dart).
 const REGLES_DEFAUT = Object.freeze({
   pauseMatinMinutes: 15,
@@ -155,15 +159,27 @@ function booleen(valeur, etiquette) {
 /**
  * Lit et valide la saisie brute d'un jour. Aucune valeur calculée n'est
  * acceptée : les champs inconnus (heuresTravaillees, verrouille…) sont ignorés.
+ *
+ * `estFerie` : journée fériée (8 h payées, hors chantier). `effacer` : la journée entrée par
+ * erreur est supprimée (seule façon de vider une journée déjà soumise ; voir calculerFeuille).
  */
 function lireJour(entree, index) {
   const nomJour = NOMS_JOURS[index];
   if (!entree || typeof entree !== "object" || Array.isArray(entree)) {
     throw new HttpsError("invalid-argument", `${nomJour} : saisie invalide.`);
   }
+  const effacer = booleen(entree.effacer ?? false, nomJour);
+  if (effacer) {
+    return {nomJour, estAucun: false, estFerie: false, effacer: true, chantierId: null,
+      debut: null, fin: null, pauseMatin: true, diner: true, voyagement: null, vide: true};
+  }
   const estAucun = booleen(entree.estAucun ?? false, nomJour);
-  if (estAucun) {
-    return {nomJour, estAucun: true, chantierId: null, debut: null, fin: null,
+  const estFerie = booleen(entree.estFerie ?? false, nomJour);
+  if (estAucun && estFerie) {
+    throw new HttpsError("invalid-argument", `${nomJour} : non travaillé ou férié, pas les deux.`);
+  }
+  if (estAucun || estFerie) {
+    return {nomJour, estAucun, estFerie, effacer: false, chantierId: null, debut: null, fin: null,
       pauseMatin: false, diner: false, voyagement: null, vide: false};
   }
   const chantierId = entree.chantierId ?? null;
@@ -194,7 +210,8 @@ function lireJour(entree, index) {
       throw new HttpsError("invalid-argument", `${nomJour} : l'heure de fin doit suivre l'heure de début.`);
     }
   }
-  return {nomJour, estAucun: false, chantierId, debut, fin, pauseMatin, diner, voyagement, vide};
+  return {nomJour, estAucun: false, estFerie: false, effacer: false, chantierId, debut, fin,
+    pauseMatin, diner, voyagement, vide};
 }
 
 /** Lit les jours (1 à 7, dans l'ordre lundi → dimanche). */
@@ -219,6 +236,10 @@ function lireJours(jours) {
  * `acteur` ({id, role}) : qui enregistre. Chaque journée déjà soumise puis modifiée ajoute
  * une entrée à l'historique `corrections` de la feuille (ce qui a changé, avant et après,
  * et l'effet sur les heures payées) ; l'auteur n'y est que par son identifiant (Loi 25).
+ * Une journée supprimée (`effacer`) y est aussi : ses valeurs avant, et rien après.
+ *
+ * Journée fériée : 8 h payées (`heuresFeriees`), hors chantier ; elles comptent dans le total
+ * de la semaine (`totalHeures`, `totalHeuresFeriees`) mais pas dans les heures travaillées.
  */
 function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, existante, maintenantIso,
   semaineFigee = false, acteur = null}) {
@@ -235,7 +256,7 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
     // Une journée envoyée vide n'efface JAMAIS une journée déjà enregistrée :
     // un appareil qui n'a pas pu charger la semaine (réseau, ancienne version)
     // ne doit pas faire disparaître des heures soumises.
-    if (j.vide && !j.estAucun && jourEnregistre(anciens[i])) {
+    if (j.vide && !j.effacer && !j.estAucun && jourEnregistre(anciens[i])) {
       heuresConservees += anciens[i].heuresTravaillees ?? 0;
       voyageConserve += anciens[i].voyagementPayeHeures ?? 0;
       return anciens[i];
@@ -248,14 +269,14 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
     }
     // Un chantier archivé ne se choisit plus ; une journée déjà enregistrée
     // avec ce chantier peut encore être renvoyée telle quelle.
-    if (!j.estAucun && !j.vide && archives.has(j.chantierId) &&
+    if (!j.estAucun && !j.estFerie && !j.vide && archives.has(j.chantierId) &&
         anciens[i]?.chantierId !== j.chantierId) {
       throw new HttpsError("invalid-argument", `${j.nomJour} : ce chantier est archivé.`);
     }
     let heures = null;
     let voyPaye = 0;
     let voyagement = null;
-    if (!j.estAucun && !j.vide) {
+    if (!j.estAucun && !j.estFerie && !j.vide) {
       joursRecalcules++;
       const minutes = minutesTravaillees(regles, j);
       minutesTravail += minutes ?? 0;
@@ -267,13 +288,16 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
         voyPaye = arrondir(payees / 60);
       }
     }
-    const rempli = j.estAucun || !j.vide;
+    const rempli = j.estAucun || j.estFerie || !j.vide;
     const ancien = anciens[i];
     const contenu = {
       nomJour: j.nomJour,
-      chantierId: j.estAucun || j.vide ? null : j.chantierId,
-      chantierNom: j.estAucun ? "Jour non travaillé" : (j.vide ? null : nomsChantiers.get(j.chantierId)),
+      chantierId: j.estAucun || j.estFerie || j.vide ? null : j.chantierId,
+      chantierNom: j.estAucun ? "Jour non travaillé" :
+        (j.estFerie ? NOM_FERIE : (j.vide ? null : nomsChantiers.get(j.chantierId))),
       estAucun: j.estAucun,
+      // Seulement pour un férié : les autres journées ne changent pas de forme.
+      ...(j.estFerie ? {estFerie: true, heuresFeriees: HEURES_FERIE} : {}),
       heureDebutMinutes: j.debut,
       heureFinMinutes: j.fin,
       pauseMatin: j.pauseMatin,
@@ -296,8 +320,9 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
           par: acteur.id,
           parRole: acteur.role ?? null,
           changements,
-          heuresAvant: ancien.heuresTravaillees ?? null,
-          heuresApres: contenu.heuresTravaillees ?? null,
+          // Heures payées : celles du travail, ou les 8 h d'un férié.
+          heuresAvant: ancien.heuresTravaillees ?? ancien.heuresFeriees ?? null,
+          heuresApres: contenu.heuresTravaillees ?? contenu.heuresFeriees ?? null,
         });
       }
     }
@@ -313,6 +338,7 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
 
   const travail = minutesTravail / 60 + heuresConservees;
   const voyage = minutesVoyage / 60 + voyageConserve;
+  const feries = heuresFerieesDe(sortie);
   const anciennesCorrections = Array.isArray(existante?.corrections) ? existante.corrections : [];
   const corrections = [...anciennesCorrections, ...nouvellesCorrections].slice(-MAX_CORRECTIONS);
   return {
@@ -321,9 +347,15 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
     ...(corrections.length ? {corrections} : {}),
     totalHeuresTravaillees: arrondir(travail),
     totalVoyagementPaye: arrondir(voyage),
-    totalHeures: arrondir(travail + voyage),
+    totalHeuresFeriees: arrondir(feries),
+    totalHeures: arrondir(travail + voyage + feries),
     joursRecalcules,
   };
+}
+
+/** Heures des journées fériées (payées, hors chantier). */
+function heuresFerieesDe(jours) {
+  return jours.reduce((a, j) => a + (j?.estFerie === true ? (j.heuresFeriees ?? HEURES_FERIE) : 0), 0);
 }
 
 /**
@@ -334,6 +366,7 @@ function calculerFeuille({jours, nomsChantiers, archives = new Set(), regles, ex
 function memeSaisie(ancien, j, regles) {
   const egal = (a, b) => (a ?? null) === (b ?? null);
   return (ancien.estAucun === true) === j.estAucun &&
+    (ancien.estFerie === true) === j.estFerie &&
     egal(ancien.chantierId, j.chantierId) &&
     egal(ancien.heureDebutMinutes, j.debut) &&
     egal(ancien.heureFinMinutes, j.fin) &&
@@ -351,12 +384,14 @@ function memeSaisie(ancien, j, regles) {
  */
 function recalculerFeuille(feuille, regles, maintenantIso) {
   const jours = Array.isArray(feuille?.jours) ? feuille.jours : [];
-  // Aucune journée de travail enregistrée : rien à ajuster.
-  if (!jours.some((j) => jourEnregistre(j) && j.estAucun !== true)) return null;
+  // Aucune journée de travail enregistrée : rien à ajuster (un férié ne dépend pas des règles).
+  if (!jours.some((j) => jourEnregistre(j) && j.estAucun !== true && j.estFerie !== true)) {
+    return null;
+  }
   let travail = 0;
   let voyage = 0;
   const sortie = jours.map((j) => {
-    if (!jourEnregistre(j) || j.estAucun === true) return j;
+    if (!jourEnregistre(j) || j.estAucun === true || j.estFerie === true) return j;
     const minutes = minutesTravaillees(regles, {
       debut: j.heureDebutMinutes ?? null,
       fin: j.heureFinMinutes ?? null,
@@ -370,10 +405,11 @@ function recalculerFeuille(feuille, regles, maintenantIso) {
     voyage += voyPaye;
     return {...j, heuresTravaillees: heures, voyagementPayeHeures: voyPaye};
   });
-  // Les journées non enregistrées (ou « non travaillées ») ne comptent pour rien.
+  // Les journées non enregistrées (ou « non travaillées ») ne comptent pour rien ; les fériés
+  // gardent leurs heures.
   const totalHeuresTravaillees = arrondir(travail);
   const totalVoyagementPaye = arrondir(voyage);
-  const totalHeures = arrondir(travail + voyage);
+  const totalHeures = arrondir(travail + voyage + heuresFerieesDe(sortie));
   const inchange = sortie.every((j, i) => j === jours[i] ||
       (j.heuresTravaillees === jours[i].heuresTravaillees &&
         j.voyagementPayeHeures === jours[i].voyagementPayeHeures)) &&
@@ -388,15 +424,15 @@ function recalculerFeuille(feuille, regles, maintenantIso) {
   };
 }
 
-/** Journée déjà soumise : non travaillée, ou avec chantier et heures. */
+/** Journée déjà soumise : non travaillée, fériée, ou avec chantier et heures. */
 function jourEnregistre(jour) {
-  return !!jour && (jour.estAucun === true ||
+  return !!jour && (jour.estAucun === true || jour.estFerie === true ||
     (typeof jour.chantierId === "string" && jour.heureDebutMinutes !== null &&
       jour.heureDebutMinutes !== undefined));
 }
 
-const CHAMPS_SAISIE = ["chantierId", "estAucun", "heureDebutMinutes", "heureFinMinutes",
-  "pauseMatin", "diner", "tempsVoyagementMinutes"];
+const CHAMPS_SAISIE = ["chantierId", "estAucun", "estFerie", "heureDebutMinutes",
+  "heureFinMinutes", "pauseMatin", "diner", "tempsVoyagementMinutes"];
 
 function changement(ancien, nouveau) {
   return CHAMPS_SAISIE.some((c) => (ancien[c] ?? null) !== (nouveau[c] ?? null));
@@ -426,7 +462,7 @@ function changementsDuJour(ancien, nouveau) {
 }
 
 module.exports = {
-  FUSEAU_ECHEANCE, NOMS_JOURS, REGLES_DEFAUT,
+  FUSEAU_ECHEANCE, NOMS_JOURS, REGLES_DEFAUT, HEURES_FERIE, NOM_FERIE,
   reglesPaieDepuis, minutesTravaillees, minutesVoyagementPayees,
   analyserLundi, echeanceSemaine, lundiCourant,
   lireJour, lireJours, calculerFeuille, recalculerFeuille,

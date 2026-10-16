@@ -3,6 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/chantier.dart';
+import '../models/correction_feuille.dart' show heuresFerie, formatHeuresFerie;
 import '../models/employee.dart';
 import '../models/regles_paie.dart';
 import '../services/app_session.dart';
@@ -16,6 +17,24 @@ const Chantier chantierAucun = Chantier(
   nom: 'Aucun (jour non travaillé)',
   adresse: '',
 );
+
+/// Journée de congé férié : 8 h payées d'office, jamais dans un chantier.
+const Chantier chantierFerie = Chantier(
+  id: '_ferie',
+  companyId: '',
+  nom: 'Férié',
+  adresse: '',
+);
+
+/// Ce qu'on envoie au serveur pour supprimer la journée [index] d'une semaine de [nombre]
+/// jours : elle seule est effacée ; les autres partent vides, et le serveur les garde telles
+/// quelles (une journée vide n'efface jamais une journée enregistrée).
+List<Map<String, dynamic>> joursPourSuppression(int nombre, int index) => [
+  for (var i = 0; i < nombre; i++)
+    i == index
+        ? <String, dynamic>{'effacer': true}
+        : <String, dynamic>{'estAucun': false},
+];
 
 /// Valeurs calculées à l'enregistrement d'une journée d'une semaine antérieure,
 /// avec la saisie qui les a produites.
@@ -58,6 +77,24 @@ class JourTravail {
   JourTravail(this.nomJour, {this.pauseMatin = true, this.diner = true});
 
   bool get estAucun => chantier?.id == '_aucun';
+  bool get estFerie => chantier?.id == '_ferie';
+
+  /// Heures payées d'un férié (8 h) ; 0 pour une autre journée.
+  double get heuresFeriees => estFerie ? heuresFerie : 0;
+
+  /// Remet la journée à vide (journée supprimée).
+  void vider() {
+    chantier = null;
+    projetTexte = '';
+    heureDebut = null;
+    heureFin = null;
+    pauseMatin = true;
+    diner = true;
+    tempsVoyagement = null;
+    verrouilleLocalement = false;
+    modifieApresVerrouillage = false;
+    _figees = null;
+  }
 
   int? get _debutMinutes =>
       heureDebut == null ? null : heureDebut!.hour * 60 + heureDebut!.minute;
@@ -93,7 +130,7 @@ class JourTravail {
 
   /// Heures payées de la journée selon les règles de la compagnie (pauses).
   double? get heuresTravaillees {
-    if (estAucun) return null;
+    if (estAucun || estFerie) return null;
     final figees = _figeesValides;
     if (figees != null) return figees.heures;
     final minutes = AppSession.reglesPaie.value.minutesTravaillees(
@@ -112,7 +149,7 @@ class JourTravail {
   /// Voyagement payé de la journée (heures) : le temps au-delà du seuil de la
   /// compagnie, au pourcentage choisi.
   double get heuresVoyagementPayees {
-    if (estAucun) return 0;
+    if (estAucun || estFerie) return 0;
     final figees = _figeesValides;
     if (figees != null) return figees.voyagementPaye;
     return AppSession.reglesPaie.value.minutesVoyagementPayees(
@@ -130,7 +167,7 @@ class JourTravail {
       tempsVoyagement != null;
 
   bool get estRempli {
-    if (estAucun) return true;
+    if (estAucun || estFerie) return true;
     final aChantier = chantier != null || projetTexte.trim().isNotEmpty;
     return aChantier && heuresTravaillees != null;
   }
@@ -322,6 +359,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     final choisi = jour.chantier;
     if (choisi == null ||
         choisi.id == chantierAucun.id ||
+        choisi.id == chantierFerie.id ||
         _chantiers.any((c) => c.id == choisi.id)) {
       return _chantiers;
     }
@@ -351,6 +389,8 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           final jd = joursData[i];
           _jours[i].chantier = jd['estAucun'] == true
               ? chantierAucun
+              : jd['estFerie'] == true
+              ? chantierFerie
               : _trouverChantierParId(jd['chantierId']);
           _jours[i].projetTexte = jd['chantierNom'] ?? '';
           if (jd['heureDebutMinutes'] != null) {
@@ -555,8 +595,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       ? _jours.fold(0.0, (total, j) => total + j.heuresVoyagementPayees)
       : 0;
 
-  /// Total payé de la semaine : heures travaillées + voyagement payé.
-  double get _totalSemaine => _totalHeuresTravaillees + _totalVoyagementPaye;
+  /// Fériés de la semaine : 8 h payées chacun.
+  double get _totalFeries =>
+      _jours.fold(0.0, (total, j) => total + j.heuresFeriees);
+
+  /// Total payé de la semaine : heures travaillées + voyagement payé + fériés.
+  double get _totalSemaine =>
+      _totalHeuresTravaillees + _totalVoyagementPaye + _totalFeries;
 
   Duration get _totalVoyagementSemaine => _jours.fold(
     Duration.zero,
@@ -605,6 +650,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     final jours = _jours.map((j) {
       // Une journée incomplète n'est pas soumise : elle est envoyée vide.
       if (!j.estRempli) return <String, dynamic>{'estAucun': false};
+      if (j.estFerie) return <String, dynamic>{'estFerie': true};
       return <String, dynamic>{
         'estAucun': j.estAucun,
         'chantierId': j.estAucun ? null : j.chantier?.id,
@@ -789,6 +835,84 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     });
   }
 
+  /// Journée entrée par erreur (ex. jeudi au lieu de mercredi) : supprimée tant que la
+  /// semaine n'est pas verrouillée ; ses heures sont retirées de la semaine. En compagnie, le
+  /// serveur la garde dans l'historique des corrections ; les autres journées ne changent pas.
+  Future<void> _supprimerJour(JourTravail jour) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Supprimer la journée de ${jour.nomJour.toLowerCase()} ?'),
+        content: const Text(
+          'Ses heures sont retirées de la semaine. Vous pourrez la remplir de nouveau.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            key: const ValueKey('supprimer_jour_confirmer'),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    final index = _jours.indexOf(jour);
+    setState(() => _envoiSemaineEnCours = true);
+    var succes = false;
+    if (_estIndividuel) {
+      final avant = jour.chantier;
+      final texte = jour.projetTexte;
+      setState(jour.vider);
+      succes = await _sauvegarderDocument();
+      if (!succes && mounted) {
+        setState(() {
+          jour.chantier = avant;
+          jour.projetTexte = texte;
+        });
+      }
+    } else {
+      try {
+        // Les autres journées partent vides : le serveur les garde telles quelles.
+        final reponse = await Fonctions.appeler('enregistrerFeuilleTemps', {
+          'lundiDate': _isoDate(_lundiDeLaSemaine),
+          'jours': joursPourSuppression(_jours.length, index),
+        });
+        _totalServeur = (reponse['totalHeures'] as num?)?.toDouble();
+        succes = true;
+        if (mounted) setState(jour.vider);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                Fonctions.message(
+                  e,
+                  'Suppression impossible. Vérifiez votre réseau et réessayez.',
+                ),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    }
+    if (!mounted) return;
+    setState(() => _envoiSemaineEnCours = false);
+    if (succes) {
+      _empreinteChargee = _empreinteSaisie();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Journée de ${jour.nomJour.toLowerCase()} supprimée.'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<Employee?>(
@@ -970,6 +1094,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                                 ),
                               ],
                             ),
+                            if (_totalFeries > 0) ...[
+                              const Divider(height: 20),
+                              _ligneTotal(
+                                'Fériés (payés)',
+                                '${_totalFeries.toStringAsFixed(2)} h',
+                              ),
+                            ],
                             if (_voyagementPaye) ...[
                               const Divider(height: 20),
                               _ligneTotal(
@@ -1073,12 +1204,27 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
           subtitle: Text(
             jour.estAucun
                 ? 'Jour non travaillé'
+                : jour.estFerie
+                ? 'Férié • ${formatHeuresFerie()} payées'
                 : '${individuel ? jour.projetTexte : (jour.chantier?.nom ?? '')} • ${jour.heuresTravaillees?.toStringAsFixed(2) ?? '0'} h',
           ),
-          trailing: IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            tooltip: 'Modifier',
-            onPressed: verrouillee ? null : () => _debloquerJour(jour),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                key: ValueKey('supprimer_jour_${jour.nomJour}'),
+                icon: const Icon(Icons.delete_outline),
+                tooltip: 'Supprimer la journée',
+                onPressed: verrouillee || _envoiSemaineEnCours
+                    ? null
+                    : () => _supprimerJour(jour),
+              ),
+              IconButton(
+                icon: const Icon(Icons.edit_outlined),
+                tooltip: 'Modifier',
+                onPressed: verrouillee ? null : () => _debloquerJour(jour),
+              ),
+            ],
           ),
         ),
       );
@@ -1113,7 +1259,15 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                     color: enErreur ? Colors.red.shade800 : null,
                   ),
                 ),
-                if (jour.estAucun)
+                if (jour.estFerie)
+                  Text(
+                    formatHeuresFerie(),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: ThemeCompagnie.accentDe(context),
+                    ),
+                  )
+                else if (jour.estAucun)
                   const Text(
                     '--',
                     style: TextStyle(
@@ -1167,6 +1321,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                           value: chantierAucun,
                           child: Text('Aucun (jour non travaillé)'),
                         ),
+                        const DropdownMenuItem<Chantier>(
+                          value: chantierFerie,
+                          child: Text('Férié (8 h payées)'),
+                        ),
                         ..._chantiersPour(jour).map((c) {
                           return DropdownMenuItem(
                             value: c,
@@ -1191,7 +1349,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   ),
                 ],
               ),
-            if (!jour.estAucun) ...[
+            if (!jour.estAucun && !jour.estFerie) ...[
               const SizedBox(height: 10),
               Row(
                 children: [
