@@ -9,6 +9,7 @@ import '../models/regles_paie.dart';
 import 'fonctions.dart';
 import 'preferences.dart';
 import 'theme_compagnie.dart';
+import 'notifications_push.dart';
 
 /// État de connexion de l'application.
 ///
@@ -312,6 +313,8 @@ class AppSession {
   // ==================== DÉCONNEXION ====================
 
   static Future<void> deconnecter() async {
+    // Ce téléphone ne reçoit plus les notifications de l'admin (avant de fermer la session).
+    await NotificationsPush.desactiver();
     final user = FirebaseAuth.instance.currentUser;
     notifier.value = null;
     await _arreterEcoutes();

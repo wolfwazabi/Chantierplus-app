@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
@@ -7,6 +9,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
 import 'models/employee.dart';
 import 'services/app_session.dart';
+import 'services/notifications_push.dart';
 import 'services/preferences.dart';
 import 'services/theme_compagnie.dart';
 import 'screens/compte_screen.dart';
@@ -68,6 +71,11 @@ void main() async {
   }
   await Preferences.charger();
   await AppSession.restaurerAuDemarrage();
+  // Notifications sur le téléphone des admins : à chaque connexion (et au démarrage).
+  AppSession.notifier.addListener(() {
+    if (AppSession.estAdmin) unawaited(NotificationsPush.activer());
+  });
+  if (AppSession.estAdmin) unawaited(NotificationsPush.activer());
   runApp(const ConstructionApp());
 }
 
@@ -83,6 +91,8 @@ class ConstructionApp extends StatelessWidget {
       builder: (context, couleur, _) => MaterialApp(
         title: 'Chantier+',
         debugShowCheckedModeBanner: false,
+        // Une notification reçue pendant que l'app est ouverte s'y affiche.
+        scaffoldMessengerKey: NotificationsPush.messager,
         theme: ThemeCompagnie.construire(couleur),
         // Toute page défile toujours : tirer vers le bas actualise, même une page courte.
         scrollBehavior: const DefilementActualisable(),

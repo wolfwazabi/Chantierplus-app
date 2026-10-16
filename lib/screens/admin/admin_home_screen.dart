@@ -9,6 +9,7 @@ import 'activite_screen.dart';
 import 'couleur_compagnie_screen.dart';
 import 'liste_achats_screen.dart';
 import 'materiel_general_screen.dart';
+import 'notifications_admin_screen.dart';
 import 'regles_paie_screen.dart';
 import 'semaine_liste_screen.dart';
 import 'employes_liste_screen.dart';
@@ -168,6 +169,25 @@ class AdminHomeScreen extends StatelessWidget {
               Navigator.of(
                 context,
               ).push(MaterialPageRoute(builder: (_) => EmployesListeScreen()));
+            },
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: ListTile(
+            key: const ValueKey('admin_notifications'),
+            leading: Icon(Icons.notifications_outlined, color: accent),
+            title: const Text('Notifications'),
+            subtitle: const Text(
+              'Extras, travaux, matériel, heures, photos et documents',
+            ),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const NotificationsAdminScreen(),
+                ),
+              );
             },
           ),
         ),

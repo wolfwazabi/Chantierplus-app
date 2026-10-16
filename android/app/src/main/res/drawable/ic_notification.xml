@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Petite icône des notifications : le « + » du logo Chantier+ (Android n'en garde que la forme). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8.944,2L15.056,2L15.056,8.944L22,8.944L22,15.056L15.056,15.056L15.056,22L8.944,22L8.944,15.056L2,15.056L2,8.944L8.944,8.944Z" />
+</vector>
