@@ -52,8 +52,15 @@ const Map<String, String> typesDocuments = {
   'ifc': 'application/octet-stream',
   'rvt': 'application/octet-stream',
   'skp': 'application/octet-stream',
-  'zip': 'application/zip',
 };
+
+/// Archives refusées (décision de l'entrepreneur, 16 oct. 2026) : on extrait le dossier
+/// d'abord, puis on importe les fichiers qu'il contient. Les .zip déjà déposés restent.
+const Set<String> archivesRefusees = {'zip', 'rar', '7z'};
+
+/// Le message montré à l'admin (sous le bouton et pour un .zip refusé).
+const String messageArchives =
+    'Fichiers .zip : extrayez le dossier d’abord, puis importez les fichiers qu’il contient.';
 
 /// Liste des documents d'un chantier. [peutGerer] (admins) permet le dépôt
 /// et la suppression ; sinon, consultation seulement (contremaîtres).
@@ -190,7 +197,11 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
     final employe = AppSession.current;
     if (employe == null) return 'session expirée, reconnectez-vous';
 
-    final typeMime = typesDocuments[_extension(fichier.name)];
+    final extension = _extension(fichier.name);
+    if (archivesRefusees.contains(extension)) {
+      return 'les fichiers .$extension ne sont pas acceptés : extrayez le dossier d’abord, puis importez les fichiers qu’il contient';
+    }
+    final typeMime = typesDocuments[extension];
     if (typeMime == null) return 'format non accepté';
 
     final taille = await fichier.length() ?? 0;
@@ -454,6 +465,27 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                 icon: const Icon(Icons.upload_file),
                 label: const Text('Déposer des documents'),
               ),
+            ),
+          ),
+        if (widget.peutGerer)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.folder_zip_outlined,
+                  size: 16,
+                  color: Colors.black54,
+                ),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    messageArchives,
+                    key: ValueKey('message_zip'),
+                    style: TextStyle(fontSize: 12, color: Colors.black54),
+                  ),
+                ),
+              ],
             ),
           ),
         if (_envoiEnCours != null)

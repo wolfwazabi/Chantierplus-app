@@ -84,11 +84,13 @@ service firebase.storage {
     // Formats de bureau, images et plans courants. Refusés volontairement :
     // HTML, SVG, XML, JavaScript et exécutables, qui pourraient servir à
     // l'hameçonnage ou à diffuser un logiciel malveillant depuis le lien.
+    // Archives (.zip) refusées depuis le 16 oct. 2026 : on extrait le dossier
+    // d'abord ; les .zip déjà déposés restent lisibles et supprimables.
     function extensionPermise(nom) {
       return nom.lower().matches(
         '.+[.](pdf|doc|docx|xls|xlsx|xlsm|ppt|pptx|odt|ods|odp|rtf|txt|csv'
         + '|jpg|jpeg|png|webp|heic|heif|gif|tif|tiff|bmp'
-        + '|dwg|dxf|dwf|ifc|rvt|skp|zip)');
+        + '|dwg|dxf|dwf|ifc|rvt|skp)');
     }
 
     // Liste exacte (paramètres « ; charset=… » tolérés). Ne pas chercher

@@ -46,6 +46,9 @@ describe('Storage — documents de chantier', () => {
     await refuser('virus.exe', { contentType: 'application/x-msdownload' });
     await refuser('virus.exe', BINAIRE);
     await refuser('sans_extension', PDF);
+    // Archive : extraire le dossier d'abord.
+    await refuser('dossier.zip', { contentType: 'application/zip' });
+    await refuser('dossier.ZIP', BINAIRE);
     await refuser('gros.pdf', PDF, new Uint8Array(50 * 1024 * 1024 + 1));
     await refuser('plan.pdf', PDF);
   });

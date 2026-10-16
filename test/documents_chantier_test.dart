@@ -90,6 +90,15 @@ void main() {
       expect(find.text('2.0 Mo • 03/10/2026'), findsOneWidget);
       expect(find.text('40 Ko • 28/09/2026'), findsOneWidget);
       expect(find.byTooltip('Supprimer'), findsNWidgets(2));
+      // Les .zip ne se déposent plus : extraire le dossier d'abord.
+      expect(find.byKey(const ValueKey('message_zip')), findsOneWidget);
+      expect(find.textContaining('extrayez le dossier'), findsOneWidget);
+    });
+
+    test('.zip : plus dans les formats acceptés', () {
+      expect(typesDocuments.containsKey('zip'), isFalse);
+      expect(archivesRefusees, contains('zip'));
+      expect(typesDocuments.containsKey('pdf'), isTrue);
     });
 
     testWidgets(
@@ -109,6 +118,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Déposer des documents'), findsNothing);
       expect(find.byTooltip('Supprimer'), findsNothing);
+      expect(find.byKey(const ValueKey('message_zip')), findsNothing);
       expect(find.text('Plan etage.pdf'), findsOneWidget);
       // Au choix : « Enregistrer dans le téléphone » sur chaque document.
       expect(find.byTooltip('Enregistrer dans le téléphone'), findsNWidgets(2));
