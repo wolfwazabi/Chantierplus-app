@@ -71,6 +71,7 @@ function messageHeures(employeNom, jours, totalHeures) {
     const nom = j.nomJour.toLowerCase();
     if (j.effacer) noms.push(`${nom} supprimé`);
     else if (j.estFerie) noms.push(`${nom} férié`);
+    else if (j.estBanque) noms.push(`${nom} banque (${nombre(j.heuresBanque)} h)`);
     else if (j.estAucun) noms.push(`${nom} non travaillé`);
     else if (!j.vide) noms.push(nom);
   }

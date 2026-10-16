@@ -140,6 +140,7 @@ class SemaineDetailScreen extends StatelessWidget {
 
                               final heuresParJour = <String, double?>{};
                               final feries = <String>{};
+                              final banque = <String>{};
                               for (final j in jours) {
                                 final nomJour = j['nomJour'] as String?;
                                 final h = (j['heuresTravaillees'] as num?)
@@ -147,6 +148,12 @@ class SemaineDetailScreen extends StatelessWidget {
                                 if (nomJour != null) heuresParJour[nomJour] = h;
                                 if (nomJour != null && j['estFerie'] == true) {
                                   feries.add(nomJour);
+                                }
+                                // Heures en banque : le nombre d'heures prises.
+                                if (nomJour != null && j['estBanque'] == true) {
+                                  heuresParJour[nomJour] =
+                                      (j['heuresBanque'] as num?)?.toDouble();
+                                  banque.add(nomJour);
                                 }
                               }
 
@@ -184,6 +191,10 @@ class SemaineDetailScreen extends StatelessWidget {
                                       Text(
                                         feries.contains(nomsJoursFeuille[i])
                                             ? 'Férié'
+                                            : banque.contains(
+                                                nomsJoursFeuille[i],
+                                              )
+                                            ? 'Banque ${heuresParJour[nomsJoursFeuille[i]]?.toStringAsFixed(2) ?? ''}'
                                             : heuresParJour[nomsJoursFeuille[i]] !=
                                                   null
                                             ? heuresParJour[nomsJoursFeuille[i]]!

@@ -1039,6 +1039,8 @@ async function calculerEtEnregistrerFeuille({
       totalVoyagementPaye: calcul.totalVoyagementPaye,
       // Heures des journées fériées (8 h payées chacune, hors chantier) : seulement s'il y en a.
       ...(calcul.totalHeuresFeriees > 0 ? {totalHeuresFeriees: calcul.totalHeuresFeriees} : {}),
+      // Heures prises dans la banque : seulement s'il y en a (le solde viendra plus tard).
+      ...(calcul.totalHeuresBanque > 0 ? {totalHeuresBanque: calcul.totalHeuresBanque} : {}),
       // Copie des règles appliquées : un changement futur ne réécrit pas le passé.
       // Semaine passée sans journée recalculée : les règles d'origine restent.
       reglesPaie: reglesConservees ||
@@ -1059,10 +1061,12 @@ async function calculerEtEnregistrerFeuille({
     totalVoyagementPaye: resultat.totalVoyagementPaye,
     // Seulement s'il y a un férié : la réponse ne change pas pour les autres semaines.
     ...(resultat.totalHeuresFeriees > 0 ? {totalHeuresFeriees: resultat.totalHeuresFeriees} : {}),
+    ...(resultat.totalHeuresBanque > 0 ? {totalHeuresBanque: resultat.totalHeuresBanque} : {}),
     jours: resultat.jours.map((j) => ({
       heuresTravaillees: j.heuresTravaillees,
       voyagementPayeHeures: j.voyagementPayeHeures,
       ...(j.estFerie === true ? {heuresFeriees: j.heuresFeriees} : {}),
+      ...(j.estBanque === true ? {heuresBanque: j.heuresBanque} : {}),
     })),
   };
 }

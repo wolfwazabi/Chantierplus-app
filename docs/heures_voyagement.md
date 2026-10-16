@@ -49,6 +49,12 @@ pourcentage.
   le serveur vide la journée et l'ajoute à l'historique `corrections` (avant → rien, heures
   avant → null). L'employé : tant que la semaine n'est pas verrouillée (mardi 18 h) ; l'admin :
   toujours. Une journée envoyée vide, elle, n'efface toujours rien.
+- **Heures en banque** (choix « Heures en banque », juste sous « Aucun » et « Férié » ;
+  interrupteur dans le formulaire de l'admin) : l'employé entre le nombre d'heures prises dans
+  sa banque (plus de 0, au plus 24 par journée, ex. « 3,5 »). Payées, jamais dans un chantier.
+  Le serveur écrit `estBanque: true`, `heuresBanque`, `chantierNom: "Heures en banque"` ; la
+  feuille a `totalHeuresBanque` (seulement s'il y en a) et `totalHeures` les compte. Le solde
+  de la banque n'est **pas encore** tenu ni affiché : plus tard, il sera mis à jour tout seul.
 
 ## Historique de la formule
 

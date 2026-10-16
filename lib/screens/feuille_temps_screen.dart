@@ -3,7 +3,12 @@ import 'package:flutter/cupertino.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/chantier.dart';
-import '../models/correction_feuille.dart' show heuresFerie, formatHeuresFerie;
+import '../models/correction_feuille.dart'
+    show
+        heuresFerie,
+        formatHeuresFerie,
+        lireHeuresBanque,
+        heuresBanqueAffichees;
 import '../models/employee.dart';
 import '../models/regles_paie.dart';
 import '../services/app_session.dart';
@@ -23,6 +28,15 @@ const Chantier chantierFerie = Chantier(
   id: '_ferie',
   companyId: '',
   nom: 'Férié',
+  adresse: '',
+);
+
+/// Heures prises dans la banque d'heures de l'employé : payées, jamais dans un chantier. Pour
+/// l'instant l'employé les entre ; plus tard, le solde sera tenu et affiché.
+const Chantier chantierBanque = Chantier(
+  id: '_banque',
+  companyId: '',
+  nom: 'Heures en banque',
   adresse: '',
 );
 
@@ -78,6 +92,10 @@ class JourTravail {
 
   bool get estAucun => chantier?.id == '_aucun';
   bool get estFerie => chantier?.id == '_ferie';
+  bool get estBanque => chantier?.id == '_banque';
+
+  /// Heures en banque : le nombre d'heures prises (null : pas encore entré).
+  double? heuresBanque;
 
   /// Heures payées d'un férié (8 h) ; 0 pour une autre journée.
   double get heuresFeriees => estFerie ? heuresFerie : 0;
@@ -91,6 +109,7 @@ class JourTravail {
     pauseMatin = true;
     diner = true;
     tempsVoyagement = null;
+    heuresBanque = null;
     verrouilleLocalement = false;
     modifieApresVerrouillage = false;
     _figees = null;
@@ -130,7 +149,7 @@ class JourTravail {
 
   /// Heures payées de la journée selon les règles de la compagnie (pauses).
   double? get heuresTravaillees {
-    if (estAucun || estFerie) return null;
+    if (estAucun || estFerie || estBanque) return null;
     final figees = _figeesValides;
     if (figees != null) return figees.heures;
     final minutes = AppSession.reglesPaie.value.minutesTravaillees(
@@ -149,7 +168,7 @@ class JourTravail {
   /// Voyagement payé de la journée (heures) : le temps au-delà du seuil de la
   /// compagnie, au pourcentage choisi.
   double get heuresVoyagementPayees {
-    if (estAucun || estFerie) return 0;
+    if (estAucun || estFerie || estBanque) return 0;
     final figees = _figeesValides;
     if (figees != null) return figees.voyagementPaye;
     return AppSession.reglesPaie.value.minutesVoyagementPayees(
@@ -168,6 +187,7 @@ class JourTravail {
 
   bool get estRempli {
     if (estAucun || estFerie) return true;
+    if (estBanque) return heuresBanque != null && heuresBanque! > 0;
     final aChantier = chantier != null || projetTexte.trim().isNotEmpty;
     return aChantier && heuresTravaillees != null;
   }
@@ -261,6 +281,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
         (j) => [
           j.chantier?.id,
           j.estAucun,
+          j.heuresBanque,
           j._debutMinutes,
           j._finMinutes,
           j.pauseMatin,
@@ -360,6 +381,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
     if (choisi == null ||
         choisi.id == chantierAucun.id ||
         choisi.id == chantierFerie.id ||
+        choisi.id == chantierBanque.id ||
         _chantiers.any((c) => c.id == choisi.id)) {
       return _chantiers;
     }
@@ -391,6 +413,8 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
               ? chantierAucun
               : jd['estFerie'] == true
               ? chantierFerie
+              : jd['estBanque'] == true
+              ? chantierBanque
               : _trouverChantierParId(jd['chantierId']);
           _jours[i].projetTexte = jd['chantierNom'] ?? '';
           if (jd['heureDebutMinutes'] != null) {
@@ -406,6 +430,7 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
               minutes: jd['tempsVoyagementMinutes'] as int,
             );
           }
+          _jours[i].heuresBanque = (jd['heuresBanque'] as num?)?.toDouble();
           _jours[i].pauseMatin = jd['pauseMatin'] ?? true;
           _jours[i].diner = jd['diner'] ?? true;
           if (jd['verrouille'] == true) {
@@ -599,9 +624,18 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
   double get _totalFeries =>
       _jours.fold(0.0, (total, j) => total + j.heuresFeriees);
 
-  /// Total payé de la semaine : heures travaillées + voyagement payé + fériés.
+  /// Heures prises dans la banque cette semaine.
+  double get _totalBanque => _jours.fold(
+    0.0,
+    (total, j) => total + (j.estBanque ? (j.heuresBanque ?? 0) : 0),
+  );
+
+  /// Total payé de la semaine : heures travaillées + voyagement payé + fériés + banque.
   double get _totalSemaine =>
-      _totalHeuresTravaillees + _totalVoyagementPaye + _totalFeries;
+      _totalHeuresTravaillees +
+      _totalVoyagementPaye +
+      _totalFeries +
+      _totalBanque;
 
   Duration get _totalVoyagementSemaine => _jours.fold(
     Duration.zero,
@@ -651,6 +685,12 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
       // Une journée incomplète n'est pas soumise : elle est envoyée vide.
       if (!j.estRempli) return <String, dynamic>{'estAucun': false};
       if (j.estFerie) return <String, dynamic>{'estFerie': true};
+      if (j.estBanque) {
+        return <String, dynamic>{
+          'estBanque': true,
+          'heuresBanque': j.heuresBanque,
+        };
+      }
       return <String, dynamic>{
         'estAucun': j.estAucun,
         'chantierId': j.estAucun ? null : j.chantier?.id,
@@ -1101,6 +1141,13 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                                 '${_totalFeries.toStringAsFixed(2)} h',
                               ),
                             ],
+                            if (_totalBanque > 0) ...[
+                              const Divider(height: 20),
+                              _ligneTotal(
+                                'Heures en banque (prises)',
+                                '${_totalBanque.toStringAsFixed(2)} h',
+                              ),
+                            ],
                             if (_voyagementPaye) ...[
                               const Divider(height: 20),
                               _ligneTotal(
@@ -1206,6 +1253,8 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                 ? 'Jour non travaillé'
                 : jour.estFerie
                 ? 'Férié • ${formatHeuresFerie()} payées'
+                : jour.estBanque
+                ? 'Heures en banque • ${heuresBanqueAffichees(jour.heuresBanque ?? 0)} h'
                 : '${individuel ? jour.projetTexte : (jour.chantier?.nom ?? '')} • ${jour.heuresTravaillees?.toStringAsFixed(2) ?? '0'} h',
           ),
           trailing: Row(
@@ -1259,9 +1308,11 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                     color: enErreur ? Colors.red.shade800 : null,
                   ),
                 ),
-                if (jour.estFerie)
+                if (jour.estFerie || jour.estBanque)
                   Text(
-                    formatHeuresFerie(),
+                    jour.estFerie
+                        ? formatHeuresFerie()
+                        : '${heuresBanqueAffichees(jour.heuresBanque ?? 0)} h',
                     style: TextStyle(
                       fontWeight: FontWeight.bold,
                       color: ThemeCompagnie.accentDe(context),
@@ -1325,6 +1376,10 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                           value: chantierFerie,
                           child: Text('Férié (8 h payées)'),
                         ),
+                        const DropdownMenuItem<Chantier>(
+                          value: chantierBanque,
+                          child: Text('Heures en banque'),
+                        ),
                         ..._chantiersPour(jour).map((c) {
                           return DropdownMenuItem(
                             value: c,
@@ -1349,7 +1404,30 @@ class _FeuilleTempsScreenState extends State<FeuilleTempsScreen> {
                   ),
                 ],
               ),
-            if (!jour.estAucun && !jour.estFerie) ...[
+            if (jour.estBanque) ...[
+              const SizedBox(height: 10),
+              TextFormField(
+                key: ValueKey('banque_${jour.nomJour}'),
+                initialValue: jour.heuresBanque == null
+                    ? ''
+                    : heuresBanqueAffichees(jour.heuresBanque!),
+                enabled: !verrouillee,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Heures prises dans la banque',
+                  hintText: 'Ex. : 8 ou 3,5',
+                  suffixText: 'h',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.savings_outlined),
+                  isDense: true,
+                ),
+                onChanged: (v) =>
+                    setState(() => jour.heuresBanque = lireHeuresBanque(v)),
+              ),
+            ],
+            if (!jour.estAucun && !jour.estFerie && !jour.estBanque) ...[
               const SizedBox(height: 10),
               Row(
                 children: [

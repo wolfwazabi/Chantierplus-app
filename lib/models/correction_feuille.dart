@@ -11,6 +11,24 @@ const int voyagementMaxMinutes = 12 * 60;
 /// Journée fériée : 8 h payées d'office, hors chantier (calculées par le serveur).
 const double heuresFerie = 8;
 
+/// Heures en banque : au plus 24 h par journée (comme le serveur).
+const double maxHeuresBanque = 24;
+
+/// « 7,5 » ou « 7.5 » → 7.5 ; null si ce n'est pas un nombre d'heures valable (plus de 0, au
+/// plus [maxHeuresBanque]).
+double? lireHeuresBanque(String texte) {
+  final v = double.tryParse(texte.trim().replaceAll(',', '.'));
+  if (v == null || !v.isFinite || v <= 0 || v > maxHeuresBanque) return null;
+  return (v * 100).round() / 100;
+}
+
+/// « 7,5 » ← 7.5 ; « 8 » ← 8.
+String heuresBanqueAffichees(double h) =>
+    (h == h.roundToDouble() ? h.toStringAsFixed(0) : h.toString()).replaceAll(
+      '.',
+      ',',
+    );
+
 /// Nombre de jours d'une feuille de temps (lundi à vendredi).
 const int joursParFeuille = 5;
 
@@ -32,6 +50,11 @@ class SaisieJour {
   /// « Férié » : 8 h payées, aucun chantier, rien d'autre à saisir.
   final bool estFerie;
 
+  /// « Heures en banque » : les heures prises dans la banque de l'employé ([heuresBanque]),
+  /// payées, aucun chantier.
+  final bool estBanque;
+  final double? heuresBanque;
+
   /// La journée entrée par erreur est supprimée (gardée dans l'historique des corrections).
   final bool effacer;
   final String? chantierId;
@@ -44,6 +67,8 @@ class SaisieJour {
   const SaisieJour({
     this.estAucun = false,
     this.estFerie = false,
+    this.estBanque = false,
+    this.heuresBanque,
     this.effacer = false,
     this.chantierId,
     this.debutMinutes,
@@ -64,6 +89,12 @@ class SaisieJour {
     if (jour == null) return vide;
     if (jour['estAucun'] == true) return const SaisieJour(estAucun: true);
     if (jour['estFerie'] == true) return const SaisieJour(estFerie: true);
+    if (jour['estBanque'] == true) {
+      return SaisieJour(
+        estBanque: true,
+        heuresBanque: (jour['heuresBanque'] as num?)?.toDouble(),
+      );
+    }
     final chantier = jour['chantierId'];
     return SaisieJour(
       chantierId: chantier is String && chantier.isNotEmpty ? chantier : null,
@@ -80,6 +111,7 @@ class SaisieJour {
   bool get estVide =>
       !estAucun &&
       !estFerie &&
+      !estBanque &&
       !effacer &&
       chantierId == null &&
       debutMinutes == null &&
@@ -89,6 +121,8 @@ class SaisieJour {
   SaisieJour copieAvec({
     bool? estAucun,
     bool? estFerie,
+    bool? estBanque,
+    Object? heuresBanque = _inchange,
     Object? chantierId = _inchange,
     Object? debutMinutes = _inchange,
     Object? finMinutes = _inchange,
@@ -98,6 +132,10 @@ class SaisieJour {
   }) => SaisieJour(
     estAucun: estAucun ?? this.estAucun,
     estFerie: estFerie ?? this.estFerie,
+    estBanque: estBanque ?? this.estBanque,
+    heuresBanque: identical(heuresBanque, _inchange)
+        ? this.heuresBanque
+        : heuresBanque as double?,
     chantierId: identical(chantierId, _inchange)
         ? this.chantierId
         : chantierId as String?,
@@ -119,6 +157,7 @@ class SaisieJour {
     if (effacer) return {'effacer': true};
     if (estAucun) return {'estAucun': true};
     if (estFerie) return {'estFerie': true};
+    if (estBanque) return {'estBanque': true, 'heuresBanque': heuresBanque};
     return {
       'estAucun': false,
       'chantierId': chantierId,
@@ -136,6 +175,12 @@ class SaisieJour {
   /// Message à montrer si la saisie ne peut pas être enregistrée, sinon null. Le serveur
   /// revérifie tout : ceci évite seulement un aller-retour.
   String? get erreur {
+    if (estBanque) {
+      final h = heuresBanque;
+      return h == null || h <= 0 || h > maxHeuresBanque
+          ? 'Indiquez les heures prises dans la banque (plus de 0, au plus 24).'
+          : null;
+    }
     if (estAucun || estFerie || effacer || estVide) return null;
     if (chantierId == null) return 'Choisissez un chantier.';
     if (debutMinutes == null || finMinutes == null) {
@@ -156,6 +201,8 @@ class SaisieJour {
       other is SaisieJour &&
       other.estAucun == estAucun &&
       other.estFerie == estFerie &&
+      other.estBanque == estBanque &&
+      other.heuresBanque == heuresBanque &&
       other.effacer == effacer &&
       other.chantierId == chantierId &&
       other.debutMinutes == debutMinutes &&
@@ -168,6 +215,8 @@ class SaisieJour {
   int get hashCode => Object.hash(
     estAucun,
     estFerie,
+    estBanque,
+    heuresBanque,
     effacer,
     chantierId,
     debutMinutes,

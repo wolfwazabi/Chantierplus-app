@@ -2,6 +2,7 @@
 // changement des règles de paie ne réécrit jamais le passé. Voir
 // functions/src/feuille_temps.js (côté serveur, mêmes règles).
 import 'package:construction_app/models/chantier.dart';
+import 'package:construction_app/models/correction_feuille.dart';
 import 'package:construction_app/models/regles_paie.dart';
 import 'package:construction_app/screens/feuille_temps_screen.dart';
 import 'package:construction_app/services/app_session.dart';
@@ -109,6 +110,35 @@ void main() {
     expect(j.heuresFeriees, 8);
     expect(j.estRempli, isTrue);
     expect(_jour().heuresFeriees, 0);
+  });
+
+  test("heures en banque : remplie seulement avec un nombre d'heures", () {
+    final j = _jour()..chantier = chantierBanque;
+    expect(j.estBanque, isTrue);
+    expect(j.estFerie, isFalse);
+    expect(j.heuresTravaillees, isNull);
+    expect(j.heuresVoyagementPayees, 0);
+    expect(j.heuresFeriees, 0);
+    expect(j.estRempli, isFalse); // pas encore d'heures
+    j.heuresBanque = 7.5;
+    expect(j.estRempli, isTrue);
+    j.vider();
+    expect(j.heuresBanque, isNull);
+    expect(j.estBanque, isFalse);
+  });
+
+  test('heures en banque : lecture du nombre entré', () {
+    expect(lireHeuresBanque('8'), 8);
+    expect(lireHeuresBanque(' 3,5 '), 3.5);
+    expect(lireHeuresBanque('7.25'), 7.25);
+    expect(lireHeuresBanque('24'), 24);
+    expect(lireHeuresBanque('0'), isNull);
+    expect(lireHeuresBanque('-2'), isNull);
+    expect(lireHeuresBanque('25'), isNull);
+    expect(lireHeuresBanque('abc'), isNull);
+    expect(lireHeuresBanque(''), isNull);
+    expect(heuresBanqueAffichees(8), '8');
+    expect(heuresBanqueAffichees(3.5), '3,5');
   });
 
   test('vider : la journée supprimée redevient vide (et modifiable)', () {

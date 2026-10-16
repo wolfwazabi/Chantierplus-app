@@ -298,7 +298,8 @@ class _FormulaireJourState extends State<FormulaireJour> {
     if (_saisie.estVide) {
       // Le serveur n'efface jamais une journée déjà soumise sur une saisie vide.
       setState(
-        () => _erreur = _origine.estAucun || _origine.estFerie
+        () => _erreur =
+            _origine.estAucun || _origine.estFerie || _origine.estBanque
             ? 'Indiquez un chantier et les heures, ou supprimez la journée.'
             : 'Rien à enregistrer. Pour retirer cette journée, touchez '
                   '« Supprimer la journée ».',
@@ -307,6 +308,10 @@ class _FormulaireJourState extends State<FormulaireJour> {
     }
     await _envoyer(_saisie);
   }
+
+  /// Non travaillé, férié ou heures en banque : pas de chantier ni d'heures de début et de fin.
+  static bool _horsChantier(SaisieJour s) =>
+      s.estAucun || s.estFerie || s.estBanque;
 
   /// La journée entrée par erreur (ex. jeudi au lieu de mercredi) : supprimée, ses heures
   /// retirées de la semaine ; la suppression reste dans l'historique des corrections.
@@ -407,7 +412,7 @@ class _FormulaireJourState extends State<FormulaireJour> {
                         _erreur = null;
                         _saisie = v
                             ? const SaisieJour(estAucun: true)
-                            : _origine.estAucun || _origine.estFerie
+                            : _horsChantier(_origine)
                             ? SaisieJour.vide
                             : _origine;
                       }),
@@ -426,12 +431,61 @@ class _FormulaireJourState extends State<FormulaireJour> {
                         _erreur = null;
                         _saisie = v
                             ? const SaisieJour(estFerie: true)
-                            : _origine.estAucun || _origine.estFerie
+                            : _horsChantier(_origine)
                             ? SaisieJour.vide
                             : _origine;
                       }),
               ),
-              if (!_saisie.estAucun && !_saisie.estFerie) ...[
+              SwitchListTile(
+                key: const ValueKey('jour_banque'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Heures en banque'),
+                subtitle: const Text(
+                  'Prises dans la banque d\'heures de l\'employé (aucun chantier).',
+                ),
+                value: _saisie.estBanque,
+                onChanged: _enCours
+                    ? null
+                    : (v) => setState(() {
+                        _erreur = null;
+                        _saisie = v
+                            ? SaisieJour(
+                                estBanque: true,
+                                heuresBanque: _origine.estBanque
+                                    ? _origine.heuresBanque
+                                    : null,
+                              )
+                            : _horsChantier(_origine)
+                            ? SaisieJour.vide
+                            : _origine;
+                      }),
+              ),
+              if (_saisie.estBanque)
+                TextFormField(
+                  key: const ValueKey('jour_heures_banque'),
+                  initialValue: _saisie.heuresBanque == null
+                      ? ''
+                      : heuresBanqueAffichees(_saisie.heuresBanque!),
+                  enabled: !_enCours,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Heures prises dans la banque',
+                    hintText: 'Ex. : 8 ou 3,5',
+                    suffixText: 'h',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (v) => setState(() {
+                    _erreur = null;
+                    _saisie = _saisie.copieAvec(
+                      heuresBanque: lireHeuresBanque(v),
+                    );
+                  }),
+                ),
+              if (!_saisie.estAucun &&
+                  !_saisie.estFerie &&
+                  !_saisie.estBanque) ...[
                 if (_chargement)
                   const Padding(
                     padding: EdgeInsets.symmetric(vertical: 12),

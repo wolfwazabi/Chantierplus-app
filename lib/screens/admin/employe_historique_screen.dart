@@ -254,6 +254,10 @@ class SemaineEmployeScreen extends StatelessWidget {
         (j['heuresTravaillees'] as num?)?.toDouble() ??
         (j['estFerie'] == true
             ? (j['heuresFeriees'] as num?)?.toDouble() ?? heuresFerie
+            : null) ??
+        // Heures en banque : les heures prises.
+        (j['estBanque'] == true
+            ? (j['heuresBanque'] as num?)?.toDouble()
             : null);
     final voyPaye = (j['voyagementPayeHeures'] as num?)?.toDouble();
     final estAucun = j['estAucun'] == true;

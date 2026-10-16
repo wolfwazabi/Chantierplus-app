@@ -646,3 +646,63 @@ describe('Supprimer une journée entrée par erreur', () => {
     rejette(() => ft.lireJours([{ effacer: 'oui' }]));
   });
 });
+
+describe('Heures en banque : prises par l\'employé, payées, hors chantier', () => {
+  test('4 h prises dans la banque : dans le total de la semaine, pas dans les heures travaillées', () => {
+    const r = calcul([jour(), { estBanque: true, heuresBanque: 4 }]);
+    const b = r.jours[1];
+    assert.equal(b.estBanque, true);
+    assert.equal(b.heuresBanque, 4);
+    assert.equal(b.chantierId, null);
+    assert.equal(b.chantierNom, 'Heures en banque');
+    assert.equal(b.heuresTravaillees, null);
+    assert.equal(b.verrouille, true);
+    assert.equal(r.totalHeuresBanque, 4);
+    assert.equal(r.totalHeuresTravaillees, 7.75);
+    assert.equal(r.totalHeures, 11.75);
+    assert.equal('estBanque' in r.jours[0], false);
+  });
+
+  test('nombre d\'heures requis, plus de 0 et au plus 24 ; un seul type de journée', () => {
+    rejette(() => ft.lireJours([{ estBanque: true }]));
+    rejette(() => ft.lireJours([{ estBanque: true, heuresBanque: 0 }]));
+    rejette(() => ft.lireJours([{ estBanque: true, heuresBanque: 25 }]));
+    rejette(() => ft.lireJours([{ estBanque: true, heuresBanque: '8' }]));
+    rejette(() => ft.lireJours([{ estBanque: true, estFerie: true, heuresBanque: 8 }]));
+    rejette(() => ft.lireJours([{ estBanque: true, estAucun: true, heuresBanque: 8 }]));
+    assert.equal(ft.lireJours([{ estBanque: true, heuresBanque: 7.5 }])[0].heuresBanque, 7.5);
+  });
+
+  test('conservée quand le jour arrive vide ; recalcul des règles : les heures restent', () => {
+    const avant = calcul([jour({ estBanque: true, heuresBanque: 8 }), jour()]);
+    const r = calcul([{ estAucun: false }, jour()], defaut, { jours: avant.jours });
+    assert.equal(r.jours[0].heuresBanque, 8);
+    assert.equal(r.totalHeures, 15.75);
+    const maj = ft.recalculerFeuille({ ...avant, reglesPaie: defaut },
+      ft.reglesPaieDepuis({ dinerPaye: false }), '2026-01-07T09:00:00.000Z');
+    assert.equal(maj.jours[0].heuresBanque, 8);
+    assert.equal(maj.totalHeures, 15.25);
+  });
+
+  test('8 h devenues 4 h : dans l\'historique (les heures prises, avant et après)', () => {
+    const avant = { jours: calcul([{ estBanque: true, heuresBanque: 8 }]).jours };
+    const r = ft.calculerFeuille({
+      jours: ft.lireJours([{ estBanque: true, heuresBanque: 4 }]), nomsChantiers: NOMS, regles: defaut,
+      existante: avant, maintenantIso: '2026-01-06T12:00:00.000Z', acteur: { id: 'emp-1', role: 'employe' },
+    });
+    const c = r.corrections[0];
+    assert.deepEqual(c.changements, [{ champ: 'heuresBanque', avant: 8, apres: 4 }]);
+    assert.equal(c.heuresAvant, 8);
+    assert.equal(c.heuresApres, 4);
+    assert.equal(r.totalHeures, 4);
+  });
+
+  test('renvoyée telle quelle : aucune correction', () => {
+    const avant = { jours: calcul([{ estBanque: true, heuresBanque: 8 }]).jours };
+    const r = ft.calculerFeuille({
+      jours: ft.lireJours([{ estBanque: true, heuresBanque: 8 }]), nomsChantiers: NOMS, regles: defaut,
+      existante: avant, maintenantIso: '2026-01-06T12:00:00.000Z', acteur: { id: 'emp-1', role: 'employe' },
+    });
+    assert.equal(r.corrections, undefined);
+  });
+});

@@ -152,6 +152,32 @@ void main() {
       expect(SaisieJour.depuisJour(const {'estAucun': false}).estVide, isTrue);
     });
 
+    test(
+      "heures en banque : estBanque et le nombre d'heures, rien d'autre",
+      () {
+        final s = SaisieJour.depuisJour(const {
+          'estBanque': true,
+          'heuresBanque': 7.5,
+          'chantierNom': 'Heures en banque',
+        });
+        expect(s.estBanque, isTrue);
+        expect(s.heuresBanque, 7.5);
+        expect(s.estVide, isFalse);
+        expect(s.erreur, isNull);
+        expect(s.versDonnees(), {'estBanque': true, 'heuresBanque': 7.5});
+        expect(
+          const SaisieJour(estBanque: true).erreur,
+          'Indiquez les heures prises dans la banque (plus de 0, au plus 24).',
+        );
+        expect(
+          const SaisieJour(estBanque: true, heuresBanque: 25).erreur,
+          isNotNull,
+        );
+        expect(s == s.copieAvec(heuresBanque: 8.0), isFalse);
+        expect(s == s.copieAvec(), isTrue);
+      },
+    );
+
     test('férié : seul estFerie est envoyé ; supprimer : seul effacer', () {
       final s = SaisieJour.depuisJour(const {
         'estFerie': true,
@@ -534,6 +560,39 @@ void main() {
     );
 
     testWidgets(
+      "« Heures en banque » : le nombre d'heures est exigé, puis envoyé",
+      (tester) async {
+        final appels = _Appels();
+        await _ouvrirSemaine(tester, appels);
+        await _toucherJour(tester, 0);
+        await tester.tap(find.byKey(const ValueKey('jour_banque')));
+        await tester.pumpAndSettle();
+        expect(find.byKey(const ValueKey('jour_chantier')), findsNothing);
+        expect(find.byKey(const ValueKey('jour_debut')), findsNothing);
+        // Sans nombre : refusé.
+        await tester.tap(find.byKey(const ValueKey('jour_enregistrer')));
+        await tester.pumpAndSettle();
+        expect(appels.faits, isEmpty);
+        expect(
+          find.text(
+            'Indiquez les heures prises dans la banque (plus de 0, au plus 24).',
+          ),
+          findsOneWidget,
+        );
+        await tester.enterText(
+          find.byKey(const ValueKey('jour_heures_banque')),
+          '6,5',
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('jour_enregistrer')));
+        await tester.pumpAndSettle();
+        final jours = appels.faits.single.value['jours'] as List;
+        expect(jours[0], {'estBanque': true, 'heuresBanque': 6.5});
+        expect((jours[1] as Map)['chantierId'], 'c2');
+      },
+    );
+
+    testWidgets(
       'supprimer une journée entrée par erreur : confirmation, puis effacer est envoyé',
       (tester) async {
         final appels = _Appels();
@@ -573,6 +632,32 @@ void main() {
         expect(find.byKey(const ValueKey('jour_supprimer')), findsNothing);
       },
     );
+
+    testWidgets('des heures en banque se montrent « Banque » et le nombre', (
+      tester,
+    ) async {
+      final fiche = _fiche()
+        ..['jours'] = [
+          {
+            'nomJour': 'Lundi',
+            'estAucun': false,
+            'estBanque': true,
+            'heuresBanque': 6.5,
+            'chantierId': null,
+            'chantierNom': 'Heures en banque',
+            'heuresTravaillees': null,
+            'verrouille': true,
+          },
+        ]
+        ..['totalHeures'] = 6.5;
+      await _ouvrirSemaine(tester, _Appels(), fiches: [fiche]);
+      expect(
+        tester
+            .widget<Text>(find.byKey(const ValueKey('jour_emp1_2026-10-12_0')))
+            .data,
+        'Banque 6.50',
+      );
+    });
 
     testWidgets('un férié se montre « Férié » dans le tableau', (tester) async {
       final fiche = _fiche()

@@ -730,6 +730,23 @@ describe('Feuille de temps : heures calculées par le serveur', () => {
     assert.equal(c.heuresApres, null);
   });
 
+  test('heures en banque : le nombre entré est payé, hors chantier', async () => {
+    await vider();
+    const r = await envoyer(emp, [jour(), { estBanque: true, heuresBanque: 3.5 }]);
+    assert.equal(r.totalHeures, 11.25);
+    assert.equal(r.totalHeuresBanque, 3.5);
+    assert.deepEqual(r.jours[1], { heuresTravaillees: null, voyagementPayeHeures: 0, heuresBanque: 3.5 });
+    const f = await feuilleDe('ft-emp');
+    assert.equal(f.jours[1].chantierNom, 'Heures en banque');
+    assert.equal(f.jours[1].chantierId, null);
+    assert.equal(f.jours[1].estBanque, true);
+    assert.equal(f.jours[1].heuresBanque, 3.5);
+    assert.equal(f.totalHeuresBanque, 3.5);
+    // Sans nombre ou plus de 24 h : refusé.
+    await assert.rejects(envoyer(emp, [{ estBanque: true }]));
+    await assert.rejects(envoyer(emp, [{ estBanque: true, heuresBanque: 30 }]));
+  });
+
   test('valeurs calculées, nom et identité envoyés par le client : ignorés', async () => {
     await vider();
     await envoyer(emp, [jour({ heuresTravaillees: 99, voyagementPayeHeures: 40, chantierNom: 'Faux' })], SEMAINE, {

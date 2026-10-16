@@ -44,6 +44,8 @@ describe('Message d\'un envoi d\'heures', () => {
   test('férié, non travaillé, journée supprimée', () => {
     const m = n.messageHeures('Émile', jours([{ estFerie: true }, { estAucun: true }, { effacer: true }]), 8);
     assert.equal(m.corps, 'Lundi férié, mardi non travaillé, mercredi supprimé — total de la semaine : 8 h');
+    const b = n.messageHeures('Émile', jours([{ estBanque: true, heuresBanque: 7.5 }]), 7.5);
+    assert.equal(b.corps, 'Lundi banque (7,5 h) — total de la semaine : 7,5 h');
   });
 
   test('rien de nouveau (tout envoyé vide) : seulement le total', () => {
