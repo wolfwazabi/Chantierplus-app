@@ -67,6 +67,26 @@ void main() {
     expect(ReglagesHabituels.vides.plancherSuivi(p), isFalse);
   });
 
+  test('rive triple : gardée et remise ; des habitudes « double » la remettent à 2', () {
+    const triple = ProjetCharpente(
+      plancher: ParametresPlancher(plisRive: 3, plisBordure: 3),
+    );
+    final h = ReglagesHabituels.vides.avecPlancherDe(triple);
+    final neuf = h.appliquer(const ProjetCharpente()).plancher;
+    expect(neuf.plisRive, 3);
+    expect(neuf.plisBordure, 3);
+    final doubles = ReglagesHabituels.vides.avecPlancherDe(
+      const ProjetCharpente(
+        plancher: ParametresPlancher(
+          riveDouble: true,
+          solivesDoublesAuxCotes: true,
+        ),
+      ),
+    );
+    expect(doubles.appliquer(triple).plancher.plisRive, 2);
+    expect(doubles.appliquer(triple).plancher.plisBordure, 2);
+  });
+
   test('un nouveau calcul prend les choix, pas les mesures', () {
     final neuf = habitudes.appliquer(const ProjetCharpente());
     final pl = neuf.plancher;

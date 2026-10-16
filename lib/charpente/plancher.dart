@@ -137,12 +137,20 @@ class SpecPlancher {
   final double epaisseurSolive;
   final double epaisseurRive;
 
-  /// Solives de bordure doublées (côtés parallèles aux solives).
-  final bool solivesDoublesAuxCotes;
+  /// Solives de bordure (côtés parallèles aux solives) : 1, 2 ou 3 épaisseurs.
+  final int plisBordure;
 
-  /// Solive de rive doublée : deux pièces côte à côte (les solives sont
-  /// alors plus courtes d'une épaisseur de rive de plus à chaque bout).
-  final bool riveDouble;
+  /// Solives de rive : 1, 2 ou 3 épaisseurs côte à côte (les solives sont alors
+  /// plus courtes d'autant à chaque bout).
+  ///
+  /// Aux coins d'équerre, rives et bordures de plusieurs épaisseurs se croisent
+  /// « en escalier » : la rive extérieure va jusqu'au coin, la bordure extérieure
+  /// s'appuie dessus, la rive suivante s'appuie sur la bordure extérieure, et
+  /// ainsi de suite. Chaque épaisseur recouvre le bout de la suivante.
+  final int plisRive;
+
+  bool get solivesDoublesAuxCotes => plisBordure >= 2;
+  bool get riveDouble => plisRive >= 2;
   final ModeEtriers etriers;
 
   /// Rangées d'entremises (0 à 3).
@@ -201,8 +209,10 @@ class SpecPlancher {
     this.angleSolivesDeg,
     this.epaisseurSolive = 1.5,
     this.epaisseurRive = 1.5,
-    this.solivesDoublesAuxCotes = false,
-    this.riveDouble = false,
+    bool solivesDoublesAuxCotes = false,
+    bool riveDouble = false,
+    int? plisBordure,
+    int? plisRive,
     this.etriers = ModeEtriers.aucun,
     this.rangeesEntremises = 0,
     this.longueursPlanches = longueursPlanchesParDefaut,
@@ -220,7 +230,8 @@ class SpecPlancher {
     this.clousParEtrier = 10,
     this.clousParBoite = 120,
     this.margeClousPourcent = 5,
-  });
+  }) : plisBordure = plisBordure ?? (solivesDoublesAuxCotes ? 2 : 1),
+       plisRive = plisRive ?? (riveDouble ? 2 : 1);
 
   void valider() {
     if (!(espacement >= 6 && espacement <= 48)) {
@@ -231,6 +242,11 @@ class SpecPlancher {
     }
     if (!(epaisseurRive > 0 && epaisseurRive <= 6)) {
       throw const SpecInvalide('Épaisseur de la solive de rive invalide.');
+    }
+    if (plisRive < 1 || plisRive > 3 || plisBordure < 1 || plisBordure > 3) {
+      throw const SpecInvalide(
+        'Rives et bordures : simples, doubles ou triples.',
+      );
     }
     if (rangeesEntremises < 0 || rangeesEntremises > 3) {
       throw const SpecInvalide('Entremises : de 0 à 3 rangées.');
@@ -298,8 +314,11 @@ class Solive {
   /// Solive de bordure : posée le long d'un côté parallèle aux solives.
   final bool bordure;
 
-  /// Deuxième solive d'un doublage.
-  final bool doublon;
+  /// Pli d'une solive de bordure de plusieurs épaisseurs : 0 (l'extérieure), 1, 2.
+  final int pli;
+
+  /// Deuxième ou troisième solive d'une bordure doublée ou triplée.
+  bool get doublon => pli > 0;
   const Solive({
     required this.v,
     required this.u0,
@@ -311,7 +330,7 @@ class Solive {
     this.penteFin = 0,
     this.contour,
     required this.bordure,
-    required this.doublon,
+    this.pli = 0,
   });
 }
 
@@ -339,12 +358,16 @@ class PieceRive {
   final int morceau;
   final int morceaux;
 
-  /// Deuxième pièce d'une rive doublée.
-  final bool doublon;
+  /// Pli d'une rive de plusieurs épaisseurs : 0 (l'extérieure), 1, 2.
+  final int pli;
+
+  /// Deuxième ou troisième pièce d'une rive doublée ou triplée.
+  bool get doublon => pli > 0;
 
   /// Distance de ce morceau au début du côté, quand les morceaux sont inégaux
-  /// (rive doublée faite de plusieurs morceaux, joints alternés) ; null : les
-  /// morceaux sont égaux.
+  /// (rive doublée faite de plusieurs morceaux, joints alternés) ou qu'un pli
+  /// intérieur s'arrête contre une bordure (coin croisé) ; null : les morceaux
+  /// sont égaux et partent du coin.
   final double? debut;
   const PieceRive({
     required this.cote,
@@ -353,7 +376,7 @@ class PieceRive {
     required this.angleFinDeg,
     required this.morceau,
     required this.morceaux,
-    this.doublon = false,
+    this.pli = 0,
     this.debut,
   });
 
@@ -573,8 +596,10 @@ class _Brute {
   final double v;
   final Corde corde;
   final bool bordure;
-  final bool doublon;
-  const _Brute(this.v, this.corde, this.bordure, this.doublon);
+
+  /// Pli d'une bordure de plusieurs épaisseurs (0 : l'extérieure).
+  final int pli;
+  const _Brute(this.v, this.corde, this.bordure, this.pli);
 }
 
 /// Calcule le plancher. Lance [SpecInvalide] si les données sont invalides.
@@ -590,8 +615,8 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   final s = spec.espacement;
   final maxPlanche = spec.longueursPlanches.reduce(math.max);
 
-  // Rive de chaque côté (non parallèle aux solives) : une ou deux épaisseurs.
-  //  - rives doublées : les deux épaisseurs partout ;
+  // Rive de chaque côté (non parallèle aux solives) : une à trois épaisseurs.
+  //  - rives doublées ou triplées : ces épaisseurs partout ;
   //  - côté de la maison : simple, sauf si la rive doit être faite de plusieurs
   //    morceaux (côté plus long que la plus longue planche) : doublée, joints
   //    alternés.
@@ -601,9 +626,7 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
       continue;
     }
     final epissee = r.longueurCote(i) > maxPlanche + 1e-9;
-    plisRive[i] = i == spec.coteMaison
-        ? (epissee ? 2 : 1)
-        : (spec.riveDouble ? 2 : 1);
+    plisRive[i] = i == spec.coteMaison ? (epissee ? 2 : 1) : spec.plisRive;
   }
   if (spec.coteMaison != null && plisRive[spec.coteMaison!] == 0) {
     avertissements.add(
@@ -618,6 +641,8 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   // --- Solives de bordure (côtés parallèles aux solives) ---------------------
   final brutes = <_Brute>[];
   final cles = <String>{};
+  // Côtés parallèles aux solives qui portent une solive de bordure.
+  final cotesBordure = <int>{};
   void ajouter(_Brute b) {
     final cle =
         '${(b.v * 100).round()}|${(b.corde.debut * 100).round()}|${(b.corde.fin * 100).round()}';
@@ -637,13 +662,14 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
     for (final c in r.cordes(horizontale: true, c: v)) {
       final chevauche = math.min(x1, c.fin) - math.max(x0, c.debut);
       if (chevauche >= 0.5 * (x1 - x0)) {
-        ajouter(_Brute(v, c, true, false));
-        if (spec.solivesDoublesAuxCotes) {
-          final v2 = v + n.y * t;
+        ajouter(_Brute(v, c, true, 0));
+        cotesBordure.add(i);
+        for (var k = 1; k < spec.plisBordure; k++) {
+          final v2 = v + n.y * t * k;
           for (final c2 in r.cordes(horizontale: true, c: v2)) {
             if (math.min(c.fin, c2.fin) - math.max(c.debut, c2.debut) >
                 0.5 * c.longueur) {
-              ajouter(_Brute(v2, c2, true, true));
+              ajouter(_Brute(v2, c2, true, k));
             }
           }
         }
@@ -669,13 +695,16 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
         }
       }
       if (!gene) {
-        ajouter(_Brute(v, c, false, false));
+        ajouter(_Brute(v, c, false, 0));
       }
     }
   }
 
   // --- Longueurs de coupe (retrait des solives de rive, coupes d'angle) -------
   final solives = <Solive>[];
+  // Portée la plus longue, sans l'allonge des bordures dans un coin croisé (elle
+  // ne change pas la portée).
+  var porteeSolives = 0.0;
   // Les bouts des solives sont sur les faces intérieures des rives : les cordes
   // du contour décalé (côtés parallèles aux solives : pas de rive, pas de décalage).
   final interieur = _polygoneInterieur(r, epaisseurRiveCote);
@@ -686,7 +715,31 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
       'vérifiez la forme.',
     );
   }
+  // Coin d'équerre entre la rive [arete] (côté perpendiculaire aux solives) et un
+  // côté qui porte des bordures, près de la ligne v d'une bordure.
+  bool coinCroise(int arete, double v) {
+    for (final s in [arete, arete + 1]) {
+      final voisin = (s == arete ? arete - 1 : arete + 1) % r.nombre;
+      if (cotesBordure.contains(voisin) &&
+          (r.angleInterieurDeg(s) - 90).abs() < 0.5 &&
+          (r.sommet(s).y - v).abs() <= spec.plisBordure * t + 1e-6) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   for (final b in brutes) {
+    // Coins croisés : le pli k de la bordure s'arrête sur le pli k de la rive (le
+    // dernier si la rive en a moins), pas sur la face intérieure de la rive.
+    double allonge(int arete) {
+      final nr = plisRive[arete % r.nombre];
+      if (!b.bordure || nr < 2 || !coinCroise(arete, b.v)) {
+        return 0;
+      }
+      return (nr - 1 - math.min(b.pli, nr - 1)) * spec.epaisseurRive;
+    }
+
     double retrait(int arete) {
       final n = r.normaleInterieure(arete);
       return epaisseurRiveCote(arete) / math.max(n.x.abs(), 0.02);
@@ -765,6 +818,27 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
         }
       }
     }
+    porteeSolives = math.max(porteeSolives, longueurCoupe);
+    final a0 = allonge(areteDebut), a1 = allonge(areteFin);
+    if (a0 > 0 || a1 > 0) {
+      if (forme != null) {
+        var mn = double.infinity, mx = -double.infinity;
+        for (final p in forme) {
+          mn = math.min(mn, p.x);
+          mx = math.max(mx, p.x);
+        }
+        forme = [
+          for (final p in forme)
+            Pt(
+              p.x < mn + 1e-6 ? p.x - a0 : (p.x > mx - 1e-6 ? p.x + a1 : p.x),
+              p.y,
+            ),
+        ];
+      }
+      u0 -= a0;
+      u1 += a1;
+      longueurCoupe += a0 + a1;
+    }
     solives.add(
       Solive(
         v: b.v,
@@ -777,7 +851,7 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
         penteDebut: pente(areteDebut),
         penteFin: pente(areteFin),
         bordure: b.bordure,
-        doublon: b.doublon,
+        pli: b.pli,
       ),
     );
   }
@@ -796,16 +870,28 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
     if (plisRive[i] == 0) {
       continue;
     }
-    final longueur = r.longueurCote(i);
-    final morceaux = math.max(1, (longueur / maxPlanche - 1e-9).ceil());
     final plis = plisRive[i];
+    // Coin croisé au sommet [s] (voisin : le côté des bordures) : le pli d de la
+    // rive s'arrête contre la bordure (d plis de bordure au plus).
+    double recul(int d, int s, int voisin) {
+      if (d == 0 ||
+          !cotesBordure.contains(voisin % r.nombre) ||
+          (r.angleInterieurDeg(s) - 90).abs() >= 0.5) {
+        return 0;
+      }
+      return math.min(d, spec.plisBordure) * t;
+    }
+
     for (var d = 0; d < plis; d++) {
-      // Rive doublée faite de plusieurs morceaux : les joints du second pli
-      // sont décalés de ceux du premier. Sinon, morceaux égaux.
+      final reculDebut = recul(d, i, i - 1), reculFin = recul(d, i + 1, i + 1);
+      final longueur = r.longueurCote(i) - reculDebut - reculFin;
+      final morceaux = math.max(1, (longueur / maxPlanche - 1e-9).ceil());
+      // Rive de plusieurs plis faite de plusieurs morceaux : les joints d'un
+      // pli sont décalés de ceux du pli voisin. Sinon, morceaux égaux.
       final longueurs = (plis > 1 && morceaux > 1)
           ? morceauxEnPlis(longueur, maxPlanche, d)
           : [for (var m = 0; m < morceaux; m++) longueur / morceaux];
-      var debut = 0.0;
+      var debut = reculDebut;
       for (var m = 0; m < longueurs.length; m++) {
         rives.add(
           PieceRive(
@@ -815,7 +901,7 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
             angleFinDeg: r.angleInterieurDeg(i + 1),
             morceau: m,
             morceaux: longueurs.length,
-            doublon: d == 1,
+            pli: d,
             debut: debut,
           ),
         );
@@ -840,15 +926,15 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
   if (spec.rangeesEntremises > 0 || spec.entremisesAuto) {
     final distinctes = solives.where((x) => !x.doublon).toList();
     var ecartsPoses = 0; // sert à alterner les entremises d'un écart à l'autre
-    // Une solive de bordure doublée occupe 2 épaisseurs : l'entremise s'arrête
-    // contre la seconde.
+    // Une solive de bordure doublée (triplée) occupe 2 (3) épaisseurs :
+    // l'entremise s'arrête contre la dernière.
     final bornes = <(double, double)>[
       for (final x in distinctes)
         () {
           var lo = x.v - t / 2, hi = x.v + t / 2;
           for (final d in solives) {
             if (d.doublon &&
-                (d.v - x.v).abs() < t + 0.5 &&
+                (d.v - x.v).abs() < (spec.plisBordure - 1) * t + 0.5 &&
                 math.min(x.u1, d.u1) - math.max(x.u0, d.u0) >
                     0.5 * (x.u1 - x.u0)) {
               lo = math.min(lo, d.v - t / 2);
@@ -947,9 +1033,7 @@ ResultatPlancher calculerPlancher(SpecPlancher spec) {
       : solives.where((x) => !x.bordure).length;
   final etriers = suspendues * parSolive;
 
-  final portee = solives.isEmpty
-      ? 0.0
-      : solives.map((x) => x.longueurCoupe).reduce(math.max);
+  final portee = porteeSolives;
 
   // --- Poutres, pieux et pattes ----------------------------------------------
   final poutres = spec.poutres == null

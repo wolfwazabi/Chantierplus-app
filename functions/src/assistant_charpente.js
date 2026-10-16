@@ -235,6 +235,9 @@ function normaliserProjet(entree) {
     section: choix(p.section, ["2×6", "2×8", "2×10", "2×12"], "2×10", "section des solives", corr),
     bordureDouble: booleen(p.bordureDouble, false),
     riveDouble: booleen(p.riveDouble, false),
+    // Triple : seulement avec « double » (sinon ignoré), comme dans l'application.
+    ...(p.plisBordure === 3 && p.bordureDouble === true ? {plisBordure: 3} : {}),
+    ...(p.plisRive === 3 && p.riveDouble === true ? {plisRive: 3} : {}),
     etriers: choix(p.etriers, ["aucun", "unBout", "deuxBouts"], "deuxBouts", "étriers", corr),
     entremises: entier(p.entremises, {min: 0, max: 3, defaut: 0, nom: "rangées d'entremises", corr}),
     panneau: choix(p.panneau, ["4x8", "4x9", "4x10", "4x12"], "4x8", "format du sous-plancher", corr),

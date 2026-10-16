@@ -55,6 +55,19 @@ describe('normaliserProjet : valeurs par défaut', () => {
 });
 
 describe('normaliserProjet : sortie du modèle', () => {
+  test('rive ou bordure triple : gardée seulement avec « double »', () => {
+    const e = structuredClone(SORTIE_MODELE);
+    e.plancher.plisRive = 3;
+    e.plancher.plisBordure = 3;
+    e.plancher.bordureDouble = false;
+    const { projet } = a.normaliserProjet(e);
+    assert.equal(projet.plancher.riveDouble, true);
+    assert.equal(projet.plancher.plisRive, 3);
+    assert.ok(!('plisBordure' in projet.plancher));
+    e.plancher.plisRive = 4;
+    assert.ok(!('plisRive' in a.normaliserProjet(e).projet.plancher));
+  });
+
   test('exemple complet : conforme à la fixture lue par l\'application', () => {
     const { projet, corrections } = a.normaliserProjet(SORTIE_MODELE);
     assert.deepEqual(corrections, []);

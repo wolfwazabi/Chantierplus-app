@@ -15,6 +15,8 @@ class ReglagesHabituels {
     'section',
     'bordureDouble',
     'riveDouble',
+    'plisBordure',
+    'plisRive',
     'etriers',
     'entremises',
     'panneau',

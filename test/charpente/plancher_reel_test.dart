@@ -63,18 +63,31 @@ void main() {
       expect(r.rives, hasLength(3));
       expect(r.rives.where((p) => p.cote == 2), hasLength(1));
       expect(r.rives.where((p) => p.cote == 0), hasLength(2));
-      expect(r.rives.every((p) => (p.longueur - 180).abs() < 1e-9), isTrue);
+      // Coins croisés : la rive extérieure va d'un coin à l'autre ; la rive
+      // intérieure s'arrête contre la bordure extérieure (1 1/2 po à chaque bout).
+      expect(
+        r.rives.where((p) => !p.doublon).every((p) => p.longueur == 180),
+        isTrue,
+      );
+      expect(r.rives.singleWhere((p) => p.doublon).longueur, 177);
+      expect(r.rives.singleWhere((p) => p.doublon).depart, 1.5);
     });
 
-    test(
-      'solives plus courtes de 4 1/2 po : une rive simple + une rive doublée',
-      () {
-        expect(
-          r.solives.every((s) => (s.longueurCoupe - 163.5).abs() < 1e-9),
-          isTrue,
-        );
-      },
-    );
+    test('solives plus courtes de 4 1/2 po : une rive simple + une rive doublée', () {
+      expect(
+        r.solives
+            .where((s) => !s.bordure || s.doublon)
+            .every((s) => (s.longueurCoupe - 163.5).abs() < 1e-9),
+        isTrue,
+      );
+      // Bordure extérieure : jusqu'à la rive extérieure de l'avant (+1 1/2 po).
+      expect(
+        r.solives
+            .where((s) => s.bordure && !s.doublon)
+            .every((s) => (s.longueurCoupe - 165).abs() < 1e-9),
+        isTrue,
+      );
+    });
 
     test('une rangée d\'entremises, 11 blocs dans un seul 2×8 de 16 pi', () {
       expect(r.entremises, hasLength(11));
@@ -148,7 +161,16 @@ void main() {
         expect(r.nombreSolives, 14);
         expect(r.etriers, 10);
         expect(
-          r.solives.every((s) => (s.longueurCoupe - 139.5).abs() < 1e-9),
+          r.solives
+              .where((s) => !s.bordure || s.doublon)
+              .every((s) => (s.longueurCoupe - 139.5).abs() < 1e-9),
+          isTrue,
+        );
+        // Coin croisé : la bordure extérieure va jusqu'à la rive extérieure.
+        expect(
+          r.solives
+              .where((s) => s.bordure && !s.doublon)
+              .every((s) => (s.longueurCoupe - 141).abs() < 1e-9),
           isTrue,
         );
       },
@@ -512,10 +534,12 @@ void main() {
         180,
         180,
       ]);
+      // Second pli : entre les bordures (coins croisés, 1 1/2 po de moins à
+      // chaque bout), joints alternés.
       expect(maison.where((p) => p.doublon).map((p) => p.longueur), [
-        90,
-        180,
-        90,
+        89.25,
+        178.5,
+        89.25,
       ]);
       expect(
         r.avertissements.any((a) => a.contains('plusieurs morceaux')),

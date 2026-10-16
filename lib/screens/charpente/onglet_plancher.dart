@@ -120,25 +120,34 @@ class OngletPlancher extends StatelessWidget {
             resume: _resumeRives(),
             enfants: [
               _direction(),
-              SwitchListTile(
-                key: const ValueKey('rive_double'),
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Solives de rive doubles'),
-                subtitle: const Text('Deux épaisseurs aux bouts des solives'),
-                value: _p.riveDouble,
-                onChanged: (v) => _set(_p.copieAvec(riveDouble: v)),
+              _plis(
+                context,
+                cle: 'rive_plis',
+                titre: 'Solives de rive',
+                sousTitre: 'Aux bouts des solives',
+                valeur: _p.plisRive,
+                onChange: (n) => _set(_p.copieAvec(plisRive: n)),
               ),
               _coteMaison(),
-              SwitchListTile(
-                key: const ValueKey('bordure_double'),
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Solives de bordure doublées'),
-                subtitle: const Text(
-                  'Le long des côtés parallèles aux solives',
-                ),
-                value: _p.solivesDoublesAuxCotes,
-                onChanged: (v) => _set(_p.copieAvec(solivesDoublesAuxCotes: v)),
+              _plis(
+                context,
+                cle: 'bordure_plis',
+                titre: 'Solives de bordure',
+                sousTitre: 'Le long des côtés parallèles aux solives',
+                valeur: _p.plisBordure,
+                onChange: (n) => _set(_p.copieAvec(plisBordure: n)),
               ),
+              if (_p.plisRive > 1 || _p.plisBordure > 1)
+                Padding(
+                  key: const ValueKey('coins_croises'),
+                  padding: const EdgeInsets.only(top: 4, bottom: 6),
+                  child: Text(
+                    'Coins croisés en escalier : la rive extérieure va jusqu\'au '
+                    'coin, la bordure extérieure s\'appuie dessus, la rive suivante '
+                    's\'appuie sur la bordure, et ainsi de suite.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ),
             ],
           ),
           SectionRepliable(
@@ -310,8 +319,55 @@ class OngletPlancher extends StatelessWidget {
     final maison = _p.coteMaison == null
         ? ''
         : ' (côté ${_p.coteMaison! + 1} : maison)';
-    return '$direction · rives ${_p.riveDouble ? 'doubles' : 'simples'}$maison · '
-        'bordures ${_p.solivesDoublesAuxCotes ? 'doublées' : 'simples'}';
+    return '$direction · rives ${_nomPlis(_p.plisRive, 's')}$maison · '
+        'bordures ${_nomPlis(_p.plisBordure, 'es')}';
+  }
+
+  /// « simples », « doubles » / « doublées », « triples » / « triplées ».
+  static String _nomPlis(int n, String accord) => switch (n) {
+    1 => 'simples',
+    2 => accord == 's' ? 'doubles' : 'doublées',
+    _ => accord == 's' ? 'triples' : 'triplées',
+  };
+
+  /// Une, deux ou trois épaisseurs (rives, bordures).
+  Widget _plis(
+    BuildContext context, {
+    required String cle,
+    required String titre,
+    required String sousTitre,
+    required int valeur,
+    required ValueChanged<int> onChange,
+  }) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(titre, style: theme.textTheme.bodyLarge),
+          Text(sousTitre, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 6),
+          SegmentedButton<int>(
+            key: ValueKey(cle),
+            showSelectedIcon: false,
+            segments: [
+              for (final (n, nom) in const [
+                (1, 'Simple'),
+                (2, 'Double'),
+                (3, 'Triple'),
+              ])
+                ButtonSegment(
+                  value: n,
+                  label: Text(nom, key: ValueKey('${cle}_$n')),
+                ),
+            ],
+            selected: {valeur},
+            onSelectionChanged: (s) => onChange(s.first),
+          ),
+        ],
+      ),
+    );
   }
 
   String _resumeEtriers() {

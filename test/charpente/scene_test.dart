@@ -15,6 +15,8 @@ ResultatPlancher _plancher(
   int entremises = 0,
   bool riveDouble = false,
   bool bordureDouble = false,
+  int? plisRive,
+  int? plisBordure,
   FormatPanneau panneau = panneau4x8,
   double? angle,
 }) => calculerPlancher(
@@ -23,6 +25,8 @@ ResultatPlancher _plancher(
     rangeesEntremises: entremises,
     riveDouble: riveDouble,
     solivesDoublesAuxCotes: bordureDouble,
+    plisRive: plisRive,
+    plisBordure: plisBordure,
     panneau: panneau,
     angleSolivesDeg: angle,
   ),
@@ -257,6 +261,53 @@ void main() {
       expect(
         s.infos.values.any((i) => i.titre == 'Solive de bordure (doublée)'),
         isTrue,
+      );
+    });
+
+    test('coins croisés (1 à 3 plis) : aucune pièce ne se chevauche', () {
+      final formes = {
+        'rectangle': Polygone.rectangle(240, 144),
+        'L': Polygone(const [
+          Pt(0, 0),
+          Pt(240, 0),
+          Pt(240, 120),
+          Pt(120, 120),
+          Pt(120, 240),
+          Pt(0, 240),
+        ]),
+      };
+      for (final f in formes.entries) {
+        for (final rive in [1, 2, 3]) {
+          for (final bordure in [1, 2, 3]) {
+            final r = _plancher(
+              f.value,
+              entremises: 1,
+              plisRive: rive,
+              plisBordure: bordure,
+            );
+            final s = construireScene(plancher: r, sectionPlancher: section2x8);
+            expect(
+              _chevauchements(s),
+              isEmpty,
+              reason: '${f.key} : rive $rive, bordure $bordure',
+            );
+          }
+        }
+      }
+      final s = construireScene(
+        plancher: _plancher(
+          Polygone.rectangle(240, 144),
+          plisRive: 3,
+          plisBordure: 3,
+        ),
+      );
+      expect(
+        s.infos.values.where((i) => i.titre == 'Solive de rive (triplée)'),
+        isNotEmpty,
+      );
+      expect(
+        s.infos.values.where((i) => i.titre == 'Solive de bordure (triplée)'),
+        isNotEmpty,
       );
     });
 

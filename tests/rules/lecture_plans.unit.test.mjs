@@ -1300,6 +1300,11 @@ describe('réglages habituels de l\'entrepreneur (là où le plan ne dit rien)',
     assert.deepEqual(r.poutres, HABITUDES.plancher.poutres);
   });
 
+  test('validerReglages : rive triple gardée avec « double », sinon ignorée', () => {
+    assert.equal(lp.validerReglages({ plancher: { riveDouble: true, plisRive: 3 } }).plancher.plisRive, 3);
+    assert.equal(lp.validerReglages({ plancher: { riveDouble: false, plisRive: 3 } }).plancher.plisRive, undefined);
+  });
+
   test('validerReglages : poutres null (« sans poutres ») gardé ; poutres absentes : rien', () => {
     assert.equal(lp.validerReglages({ plancher: { riveDouble: true, poutres: null } }).poutres, null);
     assert.ok(!('poutres' in lp.validerReglages({ plancher: { riveDouble: true } })));

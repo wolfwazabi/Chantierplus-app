@@ -70,8 +70,8 @@ String _barre(WidgetTester t, String cle) => t
     .first
     .data!;
 
-bool _interrupteur(WidgetTester t, String cle) =>
-    t.widget<SwitchListTile>(_cle(cle)).value;
+int _plis(WidgetTester t, String cle) =>
+    t.widget<SegmentedButton<int>>(_cle(cle)).selected.single;
 
 Future<String?> _gardes() async =>
     (await SharedPreferences.getInstance()).getString(_cleHabitudes);
@@ -126,17 +126,29 @@ void main() {
           findsOneWidget,
         );
         // Repliés : les champs ne sont pas affichés.
-        expect(_cle('rive_double'), findsNothing);
+        expect(_cle('rive_plis_2'), findsNothing);
         expect(_cle('etriers'), findsNothing);
 
         await deplierReglages(t, ['direction_rives']);
-        expect(_cle('rive_double'), findsOneWidget);
+        expect(_cle('rive_plis_2'), findsOneWidget);
+        expect(_cle('coins_croises'), findsNothing);
         // Le résumé suit la valeur.
-        await _tap(t, _cle('rive_double'));
+        await _tap(t, _cle('rive_plis_2'));
         expect(
           find.text('Direction automatique · rives doubles · bordures simples'),
           findsOneWidget,
         );
+        // Plusieurs épaisseurs : l'explication des coins croisés.
+        expect(_cle('coins_croises'), findsOneWidget);
+        await _tap(t, _cle('rive_plis_3'));
+        await _tap(t, _cle('bordure_plis_3'));
+        expect(
+          find.text(
+            'Direction automatique · rives triples · bordures triplées',
+          ),
+          findsOneWidget,
+        );
+        expect(_plis(t, 'rive_plis'), 3);
       },
     );
 
@@ -150,7 +162,7 @@ void main() {
       await _onglet(t, 'Plancher');
       expect(_cle('etriers'), findsOneWidget);
       expect(
-        _cle('rive_double'),
+        _cle('rive_plis_2'),
         findsNothing,
         reason: 'les autres restent repliés',
       );
@@ -250,7 +262,7 @@ void main() {
       expect(_cle('habitudes_remettre_plancher'), findsNothing);
 
       await deplierReglages(t, ['direction_rives']);
-      await _tap(t, _cle('rive_double'));
+      await _tap(t, _cle('rive_plis_2'));
       await _tap(t, _cle('habitudes_garder_plancher'));
       expect(
         find.textContaining('Réglages du plancher gardés'),
@@ -268,11 +280,11 @@ void main() {
       expect(_barre(t, 'plancher'), 'Vos réglages habituels');
 
       // Un réglage change : la barre le dit, on peut remettre.
-      await _tap(t, _cle('bordure_double'));
+      await _tap(t, _cle('bordure_plis_2'));
       expect(_barre(t, 'plancher'), 'Différents de vos habitudes');
       await _tap(t, _cle('habitudes_remettre_plancher'));
-      expect(_interrupteur(t, 'bordure_double'), isFalse);
-      expect(_interrupteur(t, 'rive_double'), isTrue);
+      expect(_plis(t, 'bordure_plis'), 1);
+      expect(_plis(t, 'rive_plis'), 2);
       expect(_barre(t, 'plancher'), 'Vos réglages habituels');
       // La mesure est restée.
       expect(
@@ -283,7 +295,7 @@ void main() {
       // « Annuler » rétablit le réglage d'avant.
       await t.tap(find.text('Annuler'));
       await t.pumpAndSettle();
-      expect(_interrupteur(t, 'bordure_double'), isTrue);
+      expect(_plis(t, 'bordure_plis'), 2);
       expect(_barre(t, 'plancher'), 'Différents de vos habitudes');
     });
 
@@ -295,7 +307,7 @@ void main() {
       });
       await _ouvrir(t);
       await deplierReglages(t, ['direction_rives']);
-      await _tap(t, _cle('rive_double'));
+      await _tap(t, _cle('rive_plis_1'));
       expect(_barre(t, 'plancher'), 'Différents de vos habitudes');
       await _tap(t, _cle('habitudes_garder_plancher'));
       expect(_barre(t, 'plancher'), 'Vos réglages habituels');
@@ -355,7 +367,7 @@ void main() {
       await t.enterText(_champ('rect_longueur'), "20'");
       await t.pumpAndSettle();
       await deplierReglages(t, ['direction_rives']);
-      await _tap(t, _cle('rive_double'));
+      await _tap(t, _cle('rive_plis_2'));
       await _tap(t, _cle('charpente_nouveau'));
       expect(
         find.textContaining('part de vos réglages habituels'),
@@ -367,7 +379,7 @@ void main() {
         t.widget<TextField>(_champ('rect_longueur')).controller!.text,
         "13'",
       );
-      expect(_interrupteur(t, 'rive_double'), isTrue);
+      expect(_plis(t, 'rive_plis'), 2);
       expect(_barre(t, 'plancher'), 'Vos réglages habituels');
     });
 

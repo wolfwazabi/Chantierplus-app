@@ -205,8 +205,13 @@ class ParametresPlancher {
   /// Direction des solives en degrés ; null : automatique (portée la plus courte).
   final double? angleSolivesDeg;
   final SectionBois section;
-  final bool solivesDoublesAuxCotes;
-  final bool riveDouble;
+
+  /// Solives de bordure et de rive : 1, 2 ou 3 épaisseurs (coins croisés « en
+  /// escalier » quand il y en a plusieurs ; voir [SpecPlancher.plisRive]).
+  final int plisBordure;
+  final int plisRive;
+  bool get solivesDoublesAuxCotes => plisBordure >= 2;
+  bool get riveDouble => plisRive >= 2;
   final ModeEtriers etriers;
   final int rangeesEntremises;
   final FormatPanneau panneau;
@@ -248,8 +253,10 @@ class ParametresPlancher {
     this.espacement = 16,
     this.angleSolivesDeg,
     this.section = section2x10,
-    this.solivesDoublesAuxCotes = false,
-    this.riveDouble = false,
+    bool solivesDoublesAuxCotes = false,
+    bool riveDouble = false,
+    int? plisBordure,
+    int? plisRive,
     this.etriers = ModeEtriers.deuxBouts,
     this.rangeesEntremises = 0,
     this.panneau = panneau4x8,
@@ -270,7 +277,8 @@ class ParametresPlancher {
     this.clousParBoite = 120,
     this.margeClous = 5,
     this.composite,
-  });
+  }) : plisBordure = plisBordure ?? (solivesDoublesAuxCotes ? 2 : 1),
+       plisRive = plisRive ?? (riveDouble ? 2 : 1);
 
   ParametresPlancher copieAvec({
     FormePlancher? forme,
@@ -279,6 +287,8 @@ class ParametresPlancher {
     SectionBois? section,
     bool? solivesDoublesAuxCotes,
     bool? riveDouble,
+    int? plisBordure,
+    int? plisRive,
     ModeEtriers? etriers,
     int? rangeesEntremises,
     FormatPanneau? panneau,
@@ -304,9 +314,19 @@ class ParametresPlancher {
         ? angleSolivesDeg()
         : this.angleSolivesDeg,
     section: section ?? this.section,
-    solivesDoublesAuxCotes:
-        solivesDoublesAuxCotes ?? this.solivesDoublesAuxCotes,
-    riveDouble: riveDouble ?? this.riveDouble,
+    // « Doublée » garde une rive triplée ; « simple » la remet à une épaisseur.
+    plisBordure:
+        plisBordure ??
+        (solivesDoublesAuxCotes == null
+            ? this.plisBordure
+            : (solivesDoublesAuxCotes
+                  ? (this.plisBordure >= 2 ? this.plisBordure : 2)
+                  : 1)),
+    plisRive:
+        plisRive ??
+        (riveDouble == null
+            ? this.plisRive
+            : (riveDouble ? (this.plisRive >= 2 ? this.plisRive : 2) : 1)),
     etriers: etriers ?? this.etriers,
     rangeesEntremises: rangeesEntremises ?? this.rangeesEntremises,
     panneau: panneau ?? this.panneau,
@@ -333,8 +353,8 @@ class ParametresPlancher {
     angleSolivesDeg: angleSolivesDeg,
     epaisseurSolive: section.epaisseur,
     epaisseurRive: section.epaisseur,
-    solivesDoublesAuxCotes: solivesDoublesAuxCotes,
-    riveDouble: riveDouble,
+    plisBordure: plisBordure,
+    plisRive: plisRive,
     etriers: etriers,
     rangeesEntremises: rangeesEntremises,
     longueursPlanches: longueursPlanches,
@@ -448,6 +468,9 @@ class ProjetCharpente {
       'section': plancher.section.nom,
       'bordureDouble': plancher.solivesDoublesAuxCotes,
       'riveDouble': plancher.riveDouble,
+      // Triple : précisé à part (une ancienne version de l'app y voit une rive double).
+      if (plancher.plisBordure == 3) 'plisBordure': 3,
+      if (plancher.plisRive == 3) 'plisRive': 3,
       'etriers': plancher.etriers.name,
       'entremises': plancher.rangeesEntremises,
       'panneau': plancher.panneau.id,
@@ -518,8 +541,10 @@ class ProjetCharpente {
       espacement: _num(p, 'espacement', 1, 100),
       angleSolivesDeg: angle == null ? null : _nombre(angle, -720, 720),
       section: section,
-      solivesDoublesAuxCotes: _bool(p['bordureDouble']),
-      riveDouble: _bool(p['riveDouble']),
+      plisBordure: _bool(p['bordureDouble'])
+          ? (p['plisBordure'] == 3 ? 3 : 2)
+          : 1,
+      plisRive: _bool(p['riveDouble']) ? (p['plisRive'] == 3 ? 3 : 2) : 1,
       etriers: etriers.first,
       rangeesEntremises: _entier(p['entremises'], 0, 10),
       panneau: panneau,

@@ -336,13 +336,114 @@ void main() {
       final r = _calc(_rect, riveDouble: true);
       expect(r.rives, hasLength(4));
       expect(r.rives.where((p) => p.doublon), hasLength(2));
-      expect(r.rives.every((p) => (p.longueur - 156).abs() < 1e-9), isTrue);
+      // Coins croisés : rive extérieure de coin à coin, rive intérieure entre
+      // les bordures.
       expect(
-        r.solives.every((s) => (s.longueurCoupe - 120).abs() < 1e-6),
+        r.rives.where((p) => !p.doublon).every((p) => p.longueur == 156),
+        isTrue,
+      );
+      expect(
+        r.rives.where((p) => p.doublon).every((p) => p.longueur == 153),
+        isTrue,
+      );
+      expect(
+        r.solives
+            .where((s) => !s.bordure)
+            .every((s) => (s.longueurCoupe - 120).abs() < 1e-6),
         isTrue,
       ); // 126 − 2 × 3
-      expect(r.bois.parLongueur, {120: 11, 168: 4});
+      // Bordures : jusqu'aux rives extérieures (126 − 2 × 1 1/2).
+      expect(
+        r.solives
+            .where((s) => s.bordure)
+            .every((s) => (s.longueurCoupe - 123).abs() < 1e-6),
+        isTrue,
+      );
+      // Les 2 bordures (123 po) se prennent dans des 12 pi.
+      expect(r.bois.parLongueur, {120: 9, 144: 2, 168: 4});
       expect(r.etriers, 0);
+    });
+
+    test('rives et bordures triplées : coins croisés en escalier', () {
+      final r = calculerPlancher(
+        SpecPlancher(
+          forme: _rect,
+          plisRive: 3,
+          plisBordure: 3,
+          rangeesEntremises: 1,
+        ),
+      );
+      // Rives : l'extérieure de coin à coin ; chaque pli suivant s'arrête contre
+      // un pli de bordure de plus (1 1/2 po à chaque bout).
+      expect(r.rives, hasLength(6));
+      for (final (pli, longueur, depart) in [
+        (0, 156.0, 0.0),
+        (1, 153.0, 1.5),
+        (2, 150.0, 3.0),
+      ]) {
+        final plis = r.rives.where((p) => p.pli == pli);
+        expect(plis, hasLength(2), reason: 'pli $pli');
+        expect(plis.every((p) => p.longueur == longueur), isTrue);
+        expect(plis.every((p) => p.depart == depart), isTrue);
+      }
+      // Bordures : 3 de chaque côté ; la k-ième s'appuie sur la k-ième rive.
+      final bordures = r.solives.where((s) => s.bordure).toList();
+      expect(bordures, hasLength(6));
+      for (final (pli, longueur) in [(0, 123.0), (1, 120.0), (2, 117.0)]) {
+        final plis = bordures.where((s) => s.pli == pli);
+        expect(plis, hasLength(2), reason: 'pli $pli');
+        expect(
+          plis.every((s) => (s.longueurCoupe - longueur).abs() < 1e-6),
+          isTrue,
+          reason: 'pli $pli',
+        );
+      }
+      // Solives intérieures : entre les rives intérieures (126 − 2 × 4 1/2).
+      expect(
+        r.solives
+            .where((s) => !s.bordure)
+            .every((s) => (s.longueurCoupe - 117).abs() < 1e-6),
+        isTrue,
+      );
+      expect(r.porteeMax, closeTo(117, 1e-6));
+      // Les entremises s'arrêtent contre la troisième bordure.
+      final v0 = r.entremisesPoses.map((p) => p.v0).reduce(math.min);
+      final v1 = r.entremisesPoses.map((p) => p.v1).reduce(math.max);
+      final b = r.formePivotee.boite;
+      expect(v0 - b.yMin, closeTo(4.5, 1e-6));
+      expect(b.yMax - v1, closeTo(4.5, 1e-6));
+    });
+
+    test(
+      'rive simple : rien ne change aux coins, même avec des bordures triplées',
+      () {
+        final r = calculerPlancher(SpecPlancher(forme: _rect, plisBordure: 3));
+        expect(
+          r.rives.every((p) => p.longueur == 156 && p.depart == 0),
+          isTrue,
+        );
+        expect(
+          r.solives.every((s) => (s.longueurCoupe - 123).abs() < 1e-6),
+          isTrue,
+        );
+      },
+    );
+
+    test('plis : 1 à 3 seulement', () {
+      expect(
+        () => calculerPlancher(SpecPlancher(forme: _rect, plisRive: 4)),
+        throwsA(isA<SpecInvalide>()),
+      );
+      expect(
+        () => calculerPlancher(SpecPlancher(forme: _rect, plisBordure: 0)),
+        throwsA(isA<SpecInvalide>()),
+      );
+      // « Double » et 2 plis : la même chose.
+      expect(SpecPlancher(forme: _rect, riveDouble: true).plisRive, 2);
+      expect(
+        SpecPlancher(forme: _rect, plisBordure: 3).solivesDoublesAuxCotes,
+        isTrue,
+      );
     });
 
     test(

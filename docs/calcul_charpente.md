@@ -10,8 +10,8 @@ description en paramètres.
 - **Plancher** : forme rectangulaire, à côtés et angles (n'importe quels angles,
   n'importe quel nombre de côtés) ou à coordonnées ; solives à 12, 16, 19,2 ou
   24 po c/c (ou autre entraxe), direction automatique (plus courte portée) ou
-  imposée, solives de rive (doubles au choix), solives de bordure (doublées au
-  choix), étriers (aucun / un bout / deux bouts), entremises (0 à 3 rangées),
+  imposée, solives de rive et solives de bordure (simples, doubles ou triples,
+  coins croisés en escalier), étriers (aucun / un bout / deux bouts), entremises (0 à 3 rangées),
   sous-plancher en 4×8, 4×9, 4×10 ou 4×12 avec joints décalés, chaque joint sur
   le centre d'une solive, avec la pièce à couper de chaque feuille.
   **Plancher sur pieux vissés** (réglages de l'entrepreneur, voir
@@ -83,6 +83,18 @@ description en paramètres.
   et les jacks ont chacun leur planche (on achète des 8 pi).
 - Solives : leurs bouts sont sur la face intérieure des rives (contour décalé de
   l'épaisseur de la rive) ; près d'un sommet aigu la solive se termine en pointe.
+- Coins croisés « en escalier » (rives ou bordures de 2 ou 3 épaisseurs, demande
+  du 16 oct. 2026) : à un coin d'équerre entre une rive et des bordures, la rive
+  extérieure va jusqu'au coin, la bordure extérieure s'appuie dessus, la rive
+  suivante s'appuie sur la bordure extérieure, et ainsi de suite ; chaque
+  épaisseur recouvre le bout de la suivante. Le pli k d'une rive est donc plus
+  court de k épaisseurs de bordure à ce bout (au plus le nombre de bordures) et le
+  pli k d'une bordure va jusqu'au pli k de la rive (le dernier si la rive en a
+  moins). Ex. : rive double + bordure simple sur 10 pi 6 po : bordures de 123 po,
+  solives de 120 po. Les solives intérieures et la portée ne changent pas ; les
+  autres coins (angles quelconques, coins rentrants) restent comme avant. Triple :
+  clé `plisRive`/`plisBordure` = 3 du projet, en plus de `riveDouble`/`bordureDouble`
+  (une ancienne version de l'app y lit du double).
 - Feuilles de plancher : bandes en travers des solives, la dernière refendue (au
   moins 12 po), joints décalés d'au moins 24 po entre rangées voisines.
 - Feuilles de mur : verticales, joints sur le centre d'un montant (ou sur le

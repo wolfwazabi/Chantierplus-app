@@ -130,7 +130,11 @@ void _ajouterPlancher(
     c.info(
       groupe,
       s.bordure
-          ? (s.doublon ? 'Solive de bordure (doublée)' : 'Solive de bordure')
+          ? switch (s.pli) {
+              0 => 'Solive de bordure',
+              1 => 'Solive de bordure (doublée)',
+              _ => 'Solive de bordure (triplée)',
+            }
           : 'Solive',
       [
         'Section : ${section.nom}',
@@ -149,7 +153,7 @@ void _ajouterPlancher(
     final v = f.sommet(i), w = f.sommet(i + 1);
     final dir = (w - v).unitaire;
     final n = f.normaleInterieure(i);
-    final ply = rive.doublon ? 1 : 0;
+    final ply = rive.pli;
     final a = ply * e, b = (ply + 1) * e;
     final s0 = rive.depart, s1 = s0 + rive.longueur;
     final mitreDebut = rive.morceau == 0 && !_horizontale(f.sommet(i - 1), v);
@@ -191,16 +195,24 @@ void _ajouterPlancher(
         z1: zHaut,
       ),
     );
-    c.info(groupe, rive.doublon ? 'Solive de rive (doublée)' : 'Solive de rive', [
-      'Section : ${section.nom}',
-      'Longueur à couper : ${c.l(rive.longueur)} (pointe longue)',
-      if (rive.morceaux > 1)
-        'Morceau ${rive.morceau + 1} de ${rive.morceaux} (à épisser sur une solive)',
-      if (mitreDebut)
-        'Coupe d\'angle au début : ${formatAngle(rive.angleDebutDeg / 2)} (coin de ${formatAngle(rive.angleDebutDeg)})',
-      if (mitreFin)
-        'Coupe d\'angle à la fin : ${formatAngle(rive.angleFinDeg / 2)} (coin de ${formatAngle(rive.angleFinDeg)})',
-    ]);
+    c.info(
+      groupe,
+      switch (rive.pli) {
+        0 => 'Solive de rive',
+        1 => 'Solive de rive (doublée)',
+        _ => 'Solive de rive (triplée)',
+      },
+      [
+        'Section : ${section.nom}',
+        'Longueur à couper : ${c.l(rive.longueur)} (pointe longue)',
+        if (rive.morceaux > 1)
+          'Morceau ${rive.morceau + 1} de ${rive.morceaux} (à épisser sur une solive)',
+        if (mitreDebut)
+          'Coupe d\'angle au début : ${formatAngle(rive.angleDebutDeg / 2)} (coin de ${formatAngle(rive.angleDebutDeg)})',
+        if (mitreFin)
+          'Coupe d\'angle à la fin : ${formatAngle(rive.angleFinDeg / 2)} (coin de ${formatAngle(rive.angleFinDeg)})',
+      ],
+    );
   }
 
   // --- Entremises ------------------------------------------------------------

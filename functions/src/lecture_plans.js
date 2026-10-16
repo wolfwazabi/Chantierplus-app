@@ -101,7 +101,8 @@ function validerFichiers(brut) {
 // -----------------------------------------------------------------------------
 
 /** Choix de construction du plancher gardés d'un projet à l'autre (clés du projet). */
-const CLES_REGLAGES_PLANCHER = ["espacement", "section", "bordureDouble", "riveDouble", "etriers", "entremises",
+const CLES_REGLAGES_PLANCHER = ["espacement", "section", "bordureDouble", "riveDouble", "plisBordure", "plisRive",
+  "etriers", "entremises",
   "panneau", "decalageMin", "marge", "longueursPlanches", "etriersBordures", "entremisesAuto",
   "entremisesEspacement", "entremisesAlternees", "coupesSeparees", "clousEtriers", "clousParEtrier",
   "clousParBoite", "margeClous"];

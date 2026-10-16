@@ -120,6 +120,47 @@ void main() {
       expect(b.commande.enTexte(), a.commande.enTexte());
     });
 
+    test(
+      'rives et bordures triplées : aller-retour ; « double » garde le triple',
+      () {
+        const p = ProjetCharpente(
+          plancher: ParametresPlancher(plisRive: 3, plisBordure: 3),
+        );
+        final j = jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>;
+        final pl = j['plancher'] as Map<String, dynamic>;
+        // Une ancienne version de l'app y lit des rives et bordures doubles.
+        expect(pl['riveDouble'], isTrue);
+        expect(pl['bordureDouble'], isTrue);
+        expect(pl['plisRive'], 3);
+        expect(pl['plisBordure'], 3);
+        final relu = ProjetCharpente.fromJson(j);
+        expect(relu.plancher.plisRive, 3);
+        expect(relu.plancher.plisBordure, 3);
+        // Projet d'avant (double, sans plis) : 2 ; triple sans « double » : ignoré.
+        pl.remove('plisRive');
+        expect(ProjetCharpente.fromJson(j).plancher.plisRive, 2);
+        pl['plisBordure'] = 3;
+        pl['bordureDouble'] = false;
+        expect(ProjetCharpente.fromJson(j).plancher.plisBordure, 1);
+        // Simple ou double : la clé n'est pas écrite (projets inchangés).
+        final defaut = const ProjetCharpente().toJson()['plancher'] as Map;
+        expect(defaut.containsKey('plisRive'), isFalse);
+        expect(defaut.containsKey('plisBordure'), isFalse);
+        // copieAvec : « double » garde le triple, « simple » le retire.
+        expect(p.plancher.copieAvec(riveDouble: true).plisRive, 3);
+        expect(p.plancher.copieAvec(riveDouble: false).plisRive, 1);
+        expect(
+          const ParametresPlancher().copieAvec(riveDouble: true).plisRive,
+          2,
+        );
+        expect(p.plancher.copieAvec(plisBordure: 2).plisBordure, 2);
+        // Jusqu'au calcul.
+        final spec = p.plancher.versSpec(Polygone.rectangle(156, 126));
+        expect(spec.plisRive, 3);
+        expect(spec.plisBordure, 3);
+      },
+    );
+
     test('les trois formes se relisent', () {
       for (final f in <FormePlancher>[
         const FormeRectangle(100, 80),

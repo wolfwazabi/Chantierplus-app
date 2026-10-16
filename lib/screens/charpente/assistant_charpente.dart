@@ -227,7 +227,11 @@ class _AssistantCharpenteState extends State<AssistantCharpente> {
       if (p.plancherActif && res.contour != null)
         'Plancher : ${_decrire(res)} à ${formatNombre(p.plancher.espacement, decimales: 1)} po c/c, '
             'solives ${p.plancher.section.nom}'
-            '${p.plancher.riveDouble ? ', rive double' : ''}',
+            '${switch (p.plancher.plisRive) {
+              1 => '',
+              2 => ', rive double',
+              _ => ', rive triple',
+            }}',
       if (p.mursActifs && res.murs != null)
         'Murs : ${res.murs!.murs.length} mur${res.murs!.murs.length > 1 ? 's' : ''}, '
             '${res.murs!.murs.fold(0, (a, m) => a + m.spec.ouvertures.length)} ouverture(s), '

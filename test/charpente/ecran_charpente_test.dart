@@ -152,8 +152,8 @@ void main() {
     ) async {
       await _ouvrir(t, _charpente());
       await deplierReglages(t, ['direction_rives', 'entremises']);
-      await _voir(t, find.byKey(const ValueKey('rive_double')));
-      await t.tap(find.byKey(const ValueKey('rive_double')));
+      await _voir(t, find.byKey(const ValueKey('rive_plis_2')));
+      await t.tap(find.byKey(const ValueKey('rive_plis_2')));
       await t.pumpAndSettle();
       await _voir(t, find.byKey(const ValueKey('entremises')));
       await t.tap(

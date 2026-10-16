@@ -72,8 +72,8 @@ void main() {
     await _choisir(t, 'section_2×10', '2×8 (7 1/4")');
 
     // Rives doublées, côté de la maison simple, solives de bordure doublées.
-    await _tap(t, _cle('rive_double'));
-    await _tap(t, _cle('bordure_double'));
+    await _tap(t, _cle('rive_plis_2'));
+    await _tap(t, _cle('bordure_plis_2'));
     await _choisir(t, 'cote_maison_null', 'Côté 3 — 15\'');
 
     // Étriers à un bout, solives intérieures seulement.
@@ -140,7 +140,7 @@ void main() {
     t,
   ) async {
     await _ouvrir(t);
-    await _tap(t, _cle('rive_double'));
+    await _tap(t, _cle('rive_plis_2'));
     expect(_cle('cote_maison_null'), findsOneWidget);
     await _choisir(t, 'cote_maison_null', 'Côté 1 — 13\'');
     expect(_cle('cote_maison_0'), findsOneWidget);
