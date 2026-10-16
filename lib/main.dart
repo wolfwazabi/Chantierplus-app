@@ -12,6 +12,7 @@ import 'services/app_session.dart';
 import 'services/notifications_push.dart';
 import 'services/preferences.dart';
 import 'services/theme_compagnie.dart';
+import 'services/version_app.dart';
 import 'screens/compte_screen.dart';
 import 'screens/calculatrice_screen.dart';
 import 'screens/feuille_temps_screen.dart';
@@ -74,8 +75,12 @@ void main() async {
   // Notifications sur le téléphone des admins : à chaque connexion (et au démarrage).
   AppSession.notifier.addListener(() {
     if (AppSession.estAdmin) unawaited(NotificationsPush.activer());
+    // Un admin qui ouvre une version plus récente l'annonce aux autres téléphones.
+    unawaited(VersionApp.annoncerSiPlusRecente());
   });
   if (AppSession.estAdmin) unawaited(NotificationsPush.activer());
+  // Mise à jour de l'app : pastille sur « Compte » quand une version plus récente existe.
+  VersionApp.demarrer();
   runApp(const ConstructionApp());
 }
 
@@ -245,12 +250,22 @@ class _HomePageState extends State<HomePage> {
 
         return Scaffold(
           body: SafeArea(child: onglets[indexSecurise].ecran),
-          bottomNavigationBar: BarreOnglets(
-            indexSelectionne: indexSecurise,
-            onSelection: _onItemTapped,
-            onglets: onglets
-                .map((o) => OngletBarre(o.label, o.icone, o.iconeSelectionne))
-                .toList(),
+          bottomNavigationBar: ValueListenableBuilder<bool>(
+            valueListenable: VersionApp.majDisponible,
+            builder: (context, majDisponible, _) => BarreOnglets(
+              indexSelectionne: indexSecurise,
+              onSelection: _onItemTapped,
+              onglets: onglets
+                  .map(
+                    (o) => OngletBarre(
+                      o.label,
+                      o.icone,
+                      o.iconeSelectionne,
+                      pastille: majDisponible && o.label == 'Compte',
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
         );
       },

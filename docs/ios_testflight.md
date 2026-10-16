@@ -57,6 +57,21 @@ suffisant pour des essais.
 - Chaque testeur installe **TestFlight** (App Store), ouvre l'invitation, puis installe
   Chantier+. Chaque version expire après 90 jours.
 
+### Mise à jour proposée dans l'app (depuis le 16 oct. 2026)
+
+- Codemagic compile chaque build avec son numéro (`--dart-define=NUMERO_BUILD`).
+- Le **premier téléphone d'admin** qui ouvre une version plus récente l'annonce
+  (`version_app/ios` dans Firestore : seulement plus haute, au plus 10 builds de plus).
+  Aucune clé à saisir : en pratique, installer soi-même la nouvelle version la
+  « publie » pour les autres.
+- Les téléphones qui ont une version plus ancienne voient une **pastille rouge sur
+  « Compte »** et le bouton **« Mettre à jour l'app »** sous « Préférences » : il ouvre
+  la page de Chantier+ dans TestFlight (bouton « Mettre à jour » d'Apple).
+- Testeurs externes : si une version attend encore la révision d'Apple, la pastille
+  peut apparaître avant que TestFlight la leur offre.
+- Les builds d'avant cette fonction ne voient rien ; un build de développement
+  (`flutter run`) n'annonce ni ne propose rien. Android : à brancher sur le Play Store.
+
 ## 6. Avant la publication publique
 
 - Politique de confidentialité en ligne (URL obligatoire dans App Store Connect).

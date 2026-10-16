@@ -45,7 +45,9 @@ workflows:
           # Google ; un délai dépassé est passager. On ne recommence que dans ce
           # cas : une vraie erreur de compilation arrête le build tout de suite.
           for tentative in 1 2 3; do
-            if flutter build ipa --release --build-number="$BUILD" \
+            # NUMERO_BUILD : l'app le compare à la dernière version annoncée (pastille
+            # « Compte » et bouton « Mettre à jour l'app », lib/services/version_app.dart).
+            if flutter build ipa --release --build-number="$BUILD" --dart-define=NUMERO_BUILD="$BUILD" \
               --export-options-plist=/Users/builder/export_options.plist 2>&1 | tee build_ipa.log; then
               exit 0
             fi

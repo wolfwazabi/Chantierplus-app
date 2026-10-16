@@ -5,7 +5,15 @@ class OngletBarre {
   final String label;
   final IconData icone;
   final IconData iconeSelectionne;
-  const OngletBarre(this.label, this.icone, this.iconeSelectionne);
+
+  /// Petite pastille rouge sur l'icône (ex. : une mise à jour de l'app sur « Compte »).
+  final bool pastille;
+  const OngletBarre(
+    this.label,
+    this.icone,
+    this.iconeSelectionne, {
+    this.pastille = false,
+  });
 }
 
 /// Barre d'onglets du bas, plus basse que la NavigationBar de Material (56 px
@@ -94,11 +102,16 @@ class _Onglet extends StatelessWidget {
                     : Colors.transparent,
                 borderRadius: BorderRadius.circular(14),
               ),
-              child: Icon(
-                selectionne ? onglet.iconeSelectionne : onglet.icone,
-                key: ValueKey('icone_${onglet.label}'),
-                size: 22,
-                color: couleur,
+              child: Badge(
+                key: ValueKey('pastille_${onglet.label}'),
+                isLabelVisible: onglet.pastille,
+                smallSize: 9,
+                child: Icon(
+                  selectionne ? onglet.iconeSelectionne : onglet.icone,
+                  key: ValueKey('icone_${onglet.label}'),
+                  size: 22,
+                  color: couleur,
+                ),
               ),
             ),
             SizedBox(

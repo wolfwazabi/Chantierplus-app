@@ -784,6 +784,23 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ------------------------------------------------- Dernière version de l'app
+    // version_app/{plateforme} : {build, le}. Lue par tous (pastille « Compte » et
+    // bouton « Mettre à jour l'app »). Annoncée par le téléphone d'un admin qui roule
+    // une version plus récente : seulement plus haute, au plus 10 builds de plus.
+    match /version_app/{plateforme} {
+      allow get: if estAuth();
+      allow create, update: if plateforme in ['ios', 'android']
+        && estEmployeActif()
+        && moi().role == 'admin'
+        && champsPermis(request.resource.data, ['build', 'le'])
+        && request.resource.data.build is int
+        && request.resource.data.le == request.time
+        && request.resource.data.build > (resource == null ? 0 : resource.data.build)
+        && request.resource.data.build <= (resource == null ? 100000 : resource.data.build + 10);
+      allow delete: if false;
+    }
+
     // Tout le reste est refusé par défaut.
   }
 }

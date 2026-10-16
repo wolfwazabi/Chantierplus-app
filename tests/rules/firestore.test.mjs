@@ -1586,3 +1586,39 @@ describe('Notifications des admins : appareils et préférences', () => {
     await assertFails(setDoc(doc(d, 'notifications_regroupees/x'), { companyId: 'A', dernierEnvoi: 0 }));
   });
 });
+
+// =============================================================================
+// Dernière version de l'app : pastille « Compte » et bouton « Mettre à jour »
+// =============================================================================
+describe('version_app', () => {
+  const version = (build) => ({ build, le: serverTimestamp() });
+
+  test('lue par tous ceux qui sont connectés ; jamais sans compte', async () => {
+    await assertSucceeds(getDoc(doc(ctxDe('uid-empA'), 'version_app/ios')));
+    await assertSucceeds(getDoc(doc(db(individu(env, 'uid-ind')), 'version_app/ios')));
+    await assertFails(getDoc(doc(db(env.unauthenticatedContext()), 'version_app/ios')));
+  });
+
+  test('un admin annonce une version plus récente (au plus 10 de plus)', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertSucceeds(setDoc(doc(d, 'version_app/ios'), version(12)));
+    await assertSucceeds(setDoc(doc(d, 'version_app/ios'), version(13)));
+    await assertFails(setDoc(doc(d, 'version_app/ios'), version(13))); // pas plus haute
+    await assertFails(setDoc(doc(d, 'version_app/ios'), version(11))); // plus ancienne
+    await assertFails(setDoc(doc(d, 'version_app/ios'), version(24))); // trop loin
+    await assertSucceeds(setDoc(doc(d, 'version_app/ios'), version(23)));
+    await assertFails(deleteDoc(doc(d, 'version_app/ios')));
+  });
+
+  test('refusé : employé, contremaître, autre plateforme, champ de plus, date fausse', async () => {
+    await assertFails(setDoc(doc(ctxDe('uid-empA'), 'version_app/ios'), version(12)));
+    await assertFails(setDoc(doc(ctxDe('uid-plusA'), 'version_app/ios'), version(12)));
+    await assertFails(setDoc(doc(db(individu(env, 'uid-ind')), 'version_app/ios'), version(12)));
+    const d = ctxDe('uid-adminA');
+    await assertFails(setDoc(doc(d, 'version_app/web'), version(12)));
+    await assertFails(setDoc(doc(d, 'version_app/ios'), { ...version(12), note: 'x' }));
+    await assertFails(setDoc(doc(d, 'version_app/ios'), { build: 12, le: new Date(0) }));
+    await assertFails(setDoc(doc(d, 'version_app/ios'), version('12')));
+    await assertFails(getDocs(collection(d, 'version_app')));
+  });
+});

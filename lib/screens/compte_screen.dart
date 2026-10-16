@@ -6,6 +6,7 @@ import '../services/fonctions.dart';
 import '../services/preferences.dart';
 import 'preferences_screen.dart';
 import '../services/theme_compagnie.dart';
+import '../services/version_app.dart';
 
 const List<String> metiersQuebec = [
   'Charpentier-menuisier',
@@ -141,6 +142,16 @@ class _CompteScreenState extends State<CompteScreen> {
   void _ouvrirPreferences() {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const PreferencesScreen()));
+  }
+
+  /// Ouvre TestFlight à la page de l'app, où se trouve « Mettre à jour ».
+  Future<void> _mettreAJour() async {
+    if (await VersionApp.ouvrirMiseAJour() || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Ouvrez l’app TestFlight pour mettre Chantier+ à jour.'),
+      ),
+    );
   }
 
   Future<void> _seDeconnecter() async {
@@ -362,7 +373,8 @@ class _CompteScreenState extends State<CompteScreen> {
       builder: (context, employee, _) {
         if (employee != null) {
           return Center(
-            child: Padding(
+            // Défile sur un petit écran (bouton « Mettre à jour l'app » en plus).
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -440,6 +452,27 @@ class _CompteScreenState extends State<CompteScreen> {
                       icon: const Icon(Icons.tune),
                       label: const Text('Préférences'),
                     ),
+                  ),
+                  // Une version plus récente existe : la pastille de « Compte » et ce bouton.
+                  ValueListenableBuilder<bool>(
+                    valueListenable: VersionApp.majDisponible,
+                    builder: (context, majDisponible, _) => !majDisponible
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 12),
+                            child: SizedBox(
+                              width: double.infinity,
+                              child: FilledButton.icon(
+                                key: const ValueKey('bouton_mise_a_jour'),
+                                onPressed: _mettreAJour,
+                                icon: Badge(
+                                  smallSize: 8,
+                                  child: const Icon(Icons.system_update),
+                                ),
+                                label: const Text('Mettre à jour l\'app'),
+                              ),
+                            ),
+                          ),
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
