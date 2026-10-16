@@ -1,6 +1,7 @@
 // Documents d'un chantier : l'admin voit « Déposer des documents » et les corbeilles
 // (onglet Documents de Admin → Chantiers), et les noms des onglets se lisent sur la
 // barre de la couleur de la compagnie (pas vert sur vert).
+import 'dart:async';
 import 'dart:math';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -57,6 +58,8 @@ List<MapEntry<String, Map<String, dynamic>>> _docs() => [
 Widget _documents({
   required bool peutGerer,
   List<MapEntry<String, Map<String, dynamic>>>? docs,
+  Future<String?> Function(String, Map<String, dynamic>)? ouvrir,
+  Future<String?> Function(String, Map<String, dynamic>)? enregistrer,
 }) => MaterialApp(
   home: Scaffold(
     body: DocumentsChantier(
@@ -64,6 +67,8 @@ Widget _documents({
       chantierId: 'c1',
       peutGerer: peutGerer,
       fluxDocuments: Stream.value(docs ?? _docs()),
+      ouvrirDocument: ouvrir,
+      enregistrerDocument: enregistrer,
     ),
   ),
 );
@@ -105,7 +110,94 @@ void main() {
       expect(find.text('Déposer des documents'), findsNothing);
       expect(find.byTooltip('Supprimer'), findsNothing);
       expect(find.text('Plan etage.pdf'), findsOneWidget);
-      expect(find.byIcon(Icons.open_in_new), findsNWidgets(2));
+      // Au choix : « Enregistrer dans le téléphone » sur chaque document.
+      expect(find.byTooltip('Enregistrer dans le téléphone'), findsNWidgets(2));
+    });
+
+    testWidgets(
+      'toucher un document l\'ouvre dans le téléphone (pas de page internet), '
+      'avec une roue pendant le téléchargement',
+      (tester) async {
+        AppSession.notifier.value = _employe(EmployeeRole.plus);
+        final ouverts = <String>[];
+        final fin = Completer<String?>();
+        await tester.pumpWidget(
+          _documents(
+            peutGerer: false,
+            ouvrir: (id, data) {
+              ouverts.add('$id:${data['nom']}');
+              return fin.future;
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Plan etage.pdf'));
+        await tester.pump();
+        expect(ouverts, ['d1:Plan etage.pdf']);
+        expect(
+          find.descendant(
+            of: find.byKey(const ValueKey('document_d1')),
+            matching: find.byType(CircularProgressIndicator),
+          ),
+          findsOneWidget,
+        );
+        // Un 2e toucher pendant le téléchargement ne relance rien.
+        await tester.tap(find.text('Devis.xlsx'));
+        await tester.pump();
+        expect(ouverts, hasLength(1));
+        fin.complete(null);
+        await tester.pumpAndSettle();
+        expect(find.byType(CircularProgressIndicator), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'enregistrer dans le téléphone : au choix, sans ouvrir le document',
+      (tester) async {
+        AppSession.notifier.value = _employe(EmployeeRole.plus);
+        final enregistres = <String>[];
+        final ouverts = <String>[];
+        await tester.pumpWidget(
+          _documents(
+            peutGerer: false,
+            ouvrir: (id, _) async {
+              ouverts.add(id);
+              return null;
+            },
+            enregistrer: (id, _) async {
+              enregistres.add(id);
+              return 'Document enregistré dans le téléphone.';
+            },
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.tap(find.byKey(const ValueKey('enregistrer_d2')));
+        await tester.pumpAndSettle();
+        expect(enregistres, ['d2']);
+        expect(ouverts, isEmpty);
+        expect(
+          find.text('Document enregistré dans le téléphone.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('ouverture impossible : le message est montré', (tester) async {
+      AppSession.notifier.value = _employe(EmployeeRole.admin);
+      await tester.pumpWidget(
+        _documents(
+          peutGerer: true,
+          ouvrir: (_, _) async =>
+              'Aucune application du téléphone n\'ouvre les fichiers .dwg.',
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Devis.xlsx'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('Aucune application du téléphone'),
+        findsOneWidget,
+      );
     });
   });
 

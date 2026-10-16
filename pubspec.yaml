@@ -42,6 +42,8 @@ dependencies:
   url_launcher: ^6.3.2
   shared_preferences: ^2.5.5
   firebase_messaging: ^16.7.0
+  open_filex: ^5.0.0
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:

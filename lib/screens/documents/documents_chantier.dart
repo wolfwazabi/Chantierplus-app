@@ -1,7 +1,12 @@
+import 'dart:io' show File;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../services/app_session.dart';
@@ -63,12 +68,25 @@ class DocumentsChantier extends StatefulWidget {
   @visibleForTesting
   final Stream<List<MapEntry<String, Map<String, dynamic>>>>? fluxDocuments;
 
+  /// Tests : remplace l'ouverture d'un document (téléchargement, puis l'application du
+  /// téléphone) ; rend le message d'erreur à montrer, ou null.
+  @visibleForTesting
+  final Future<String?> Function(String docId, Map<String, dynamic> data)?
+  ouvrirDocument;
+
+  /// Tests : remplace « Enregistrer dans le téléphone » ; rend le message à montrer.
+  @visibleForTesting
+  final Future<String?> Function(String docId, Map<String, dynamic> data)?
+  enregistrerDocument;
+
   const DocumentsChantier({
     super.key,
     required this.companyId,
     required this.chantierId,
     required this.peutGerer,
     this.fluxDocuments,
+    this.ouvrirDocument,
+    this.enregistrerDocument,
   });
 
   @override
@@ -77,6 +95,7 @@ class DocumentsChantier extends StatefulWidget {
 
 class _DocumentsChantierState extends State<DocumentsChantier> {
   String? _envoiEnCours; // nom du fichier en cours d'envoi
+  String? _ouvertureEnCours; // document en cours de téléchargement
   int _envoisRestants = 0;
 
   CollectionReference<Map<String, dynamic>> get _collection =>
@@ -222,15 +241,127 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
     }
   }
 
-  Future<void> _ouvrir(Map<String, dynamic> data) async {
-    final url = Uri.tryParse(data['url'] as String? ?? '');
-    if (url == null || url.scheme != 'https') {
-      _message('Lien du document invalide.', erreur: true);
+  /// Ouvre le document dans le téléphone même (jamais une page internet) : l'app en garde une
+  /// copie temporaire, invisible (son cache, que le téléphone vide au besoin), et l'application
+  /// du téléphone l'affiche — l'aperçu de l'iPhone, le lecteur PDF, Office ou d'images d'Android.
+  /// L'enregistrer dans le téléphone est un choix à part (bouton « Enregistrer »). Sur le web :
+  /// le lien, comme avant.
+  Future<void> _ouvrir(String docId, Map<String, dynamic> data) async {
+    if (_ouvertureEnCours != null) return;
+    final remplace = widget.ouvrirDocument;
+    if (kIsWeb && remplace == null) {
+      final url = Uri.tryParse(data['url'] as String? ?? '');
+      if (url == null || url.scheme != 'https') {
+        _message('Lien du document invalide.', erreur: true);
+        return;
+      }
+      final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
+      if (!ok) {
+        _message(
+          'Aucune application ne peut ouvrir ce document.',
+          erreur: true,
+        );
+      }
       return;
     }
-    final ok = await launchUrl(url, mode: LaunchMode.externalApplication);
-    if (!ok) {
-      _message('Aucune application ne peut ouvrir ce document.', erreur: true);
+    setState(() => _ouvertureEnCours = docId);
+    try {
+      final erreur = await (remplace ?? _ouvrirSurLeTelephone)(docId, data);
+      if (erreur != null) _message(erreur, erreur: true);
+    } finally {
+      if (mounted) setState(() => _ouvertureEnCours = null);
+    }
+  }
+
+  /// La copie temporaire du document (cache de l'app) ; reprise telle quelle si elle est déjà
+  /// là (même taille), sinon lue du serveur. Null : document sans fichier.
+  static Future<File?> _copieTemporaire(
+    String docId,
+    Map<String, dynamic> data,
+  ) async {
+    final chemin = data['cheminStorage'] as String?;
+    if (chemin == null || chemin.isEmpty) return null;
+    final nom = (data['nom'] as String?) ?? 'document';
+    final cache = await getTemporaryDirectory();
+    final local = nom
+        .replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_');
+    final fichier = File('${cache.path}/documents/${docId}_$local');
+    final taille = (data['taille'] as num?)?.toInt();
+    if (!await fichier.exists() ||
+        (taille != null && await fichier.length() != taille)) {
+      await fichier.parent.create(recursive: true);
+      await Stockage.instance.ref(chemin).writeToFile(fichier);
+    }
+    return fichier;
+  }
+
+  static Future<String?> _ouvrirSurLeTelephone(
+    String docId,
+    Map<String, dynamic> data,
+  ) async {
+    final nom = (data['nom'] as String?) ?? 'document';
+    try {
+      final fichier = await _copieTemporaire(docId, data);
+      if (fichier == null) return 'Document introuvable.';
+      // Un type générique (plans DWG…) : le téléphone choisit d'après l'extension.
+      final type = data['typeMime'] as String?;
+      final r = await OpenFilex.open(
+        fichier.path,
+        type: type == 'application/octet-stream' ? null : type,
+      );
+      return switch (r.type) {
+        ResultType.done => null,
+        ResultType.noAppToOpen =>
+          'Aucune application du téléphone n\'ouvre les fichiers .${_extension(nom)}.',
+        _ => 'Ouverture impossible : ${r.message}',
+      };
+    } on FirebaseException catch (e) {
+      return 'Téléchargement impossible (${detailErreurFirebase(e)}). Réessayez.';
+    } catch (_) {
+      return 'Ouverture impossible. Réessayez.';
+    }
+  }
+
+  /// « Enregistrer dans le téléphone » (au choix) : le téléphone demande où le garder
+  /// (Fichiers sur l'iPhone, Téléchargements ou un autre dossier sur Android).
+  Future<void> _enregistrer(String docId, Map<String, dynamic> data) async {
+    if (_ouvertureEnCours != null) return;
+    setState(() => _ouvertureEnCours = docId);
+    try {
+      final message =
+          await (widget.enregistrerDocument ?? _enregistrerDansLeTelephone)(
+            docId,
+            data,
+          );
+      if (message != null) _message(message);
+    } finally {
+      if (mounted) setState(() => _ouvertureEnCours = null);
+    }
+  }
+
+  static Future<String?> _enregistrerDansLeTelephone(
+    String docId,
+    Map<String, dynamic> data,
+  ) async {
+    final nom = (data['nom'] as String?) ?? 'document';
+    try {
+      final fichier = await _copieTemporaire(docId, data);
+      if (fichier == null) return 'Document introuvable.';
+      final type = data['typeMime'] as String?;
+      final enregistre = await FilePicker.saveFile(
+        dialogTitle: 'Enregistrer le document',
+        fileName: nom,
+        bytes: await fichier.readAsBytes(),
+        mimeType: type ?? 'application/octet-stream',
+      );
+      return enregistre == null
+          ? null
+          : 'Document enregistré dans le téléphone.';
+    } on FirebaseException catch (e) {
+      return 'Téléchargement impossible (${detailErreurFirebase(e)}). Réessayez.';
+    } catch (_) {
+      return 'Enregistrement impossible. Réessayez.';
     }
   }
 
@@ -383,22 +514,41 @@ class _DocumentsChantierState extends State<DocumentsChantier> {
                   final data = doc.value;
                   final nom = data['nom'] as String? ?? '';
                   return ListTile(
-                    leading: Icon(
-                      _icone(nom),
-                      color: ThemeCompagnie.accentDe(context),
-                    ),
+                    key: ValueKey('document_${doc.key}'),
+                    leading: _ouvertureEnCours == doc.key
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _icone(nom),
+                            color: ThemeCompagnie.accentDe(context),
+                          ),
                     title: Text(nom, overflow: TextOverflow.ellipsis),
                     subtitle: Text(
                       '${formaterTaille((data['taille'] as num?) ?? 0)} • ${_date(data['dateAjout'] as Timestamp?)}',
                     ),
-                    onTap: () => _ouvrir(data),
-                    trailing: widget.peutGerer
-                        ? IconButton(
+                    onTap: () => _ouvrir(doc.key, data),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Au choix : garder le document dans le téléphone.
+                        if (!kIsWeb)
+                          IconButton(
+                            key: ValueKey('enregistrer_${doc.key}'),
+                            icon: const Icon(Icons.download_outlined),
+                            tooltip: 'Enregistrer dans le téléphone',
+                            onPressed: () => _enregistrer(doc.key, data),
+                          ),
+                        if (widget.peutGerer)
+                          IconButton(
                             icon: const Icon(Icons.delete_outline),
                             tooltip: 'Supprimer',
                             onPressed: () => _supprimer(doc.key, data),
-                          )
-                        : const Icon(Icons.open_in_new, size: 20),
+                          ),
+                      ],
+                    ),
                   );
                 },
               );
