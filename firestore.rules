@@ -747,6 +747,43 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ------------------------------------------------- Notifications (admins)
+
+    // Le jeton de notification de l'appareil d'un admin, sous l'uid de sa session : seul cet
+    // appareil l'écrit ou l'efface ; le serveur s'en sert pour envoyer (Admin SDK).
+    match /appareils_notifications/{uid} {
+      allow get: if estAuth() && request.auth.uid == uid;
+      allow create, update: if estAuth() && request.auth.uid == uid
+        && adminDe(request.resource.data.companyId)
+        && request.resource.data.employeeId == session().employeeId
+        && champsPermis(request.resource.data,
+             ['companyId', 'employeeId', 'jeton', 'plateforme', 'majLe'])
+        && texte(request.resource.data.jeton, 1, 4096)
+        && request.resource.data.plateforme in ['android', 'ios']
+        && request.resource.data.majLe == request.time;
+      allow delete: if estAuth() && request.auth.uid == uid;
+    }
+
+    // Les catégories que l'admin veut recevoir (absent = toutes) : les siennes seulement.
+    function prefNotif(d, champ) {
+      return !d.keys().hasAny([champ]) || d[champ] is bool;
+    }
+
+    match /preferences_notifications/{employeeId} {
+      allow get: if estEmployeActif() && employeeId == session().employeeId;
+      allow create, update: if adminDe(request.resource.data.companyId)
+        && employeeId == session().employeeId
+        && champsPermis(request.resource.data, ['companyId', 'extras', 'travaux', 'materiel',
+                                                'heures', 'photos', 'documents'])
+        && prefNotif(request.resource.data, 'extras')
+        && prefNotif(request.resource.data, 'travaux')
+        && prefNotif(request.resource.data, 'materiel')
+        && prefNotif(request.resource.data, 'heures')
+        && prefNotif(request.resource.data, 'photos')
+        && prefNotif(request.resource.data, 'documents');
+      allow delete: if false;
+    }
+
     // Tout le reste est refusé par défaut.
   }
 }

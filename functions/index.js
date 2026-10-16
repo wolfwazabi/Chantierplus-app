@@ -4,6 +4,8 @@ initializeApp();
 const {setGlobalOptions} = require("firebase-functions/v2");
 const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {onSchedule} = require("firebase-functions/v2/scheduler");
+const {onDocumentCreated} = require("firebase-functions/v2/firestore");
+const {getMessaging} = require("firebase-admin/messaging");
 const {
   db, FieldValue, Timestamp,
   PIN_PEPPER, REGION, ROLES, ROLES_GESTION, FORMAT_NIP, FORMAT_NUMERO,
@@ -29,6 +31,7 @@ const lecturePlans = require("./src/lecture_plans");
 const suppression = require("./src/suppression_compagnie");
 const archivage = require("./src/anciens_employes");
 const nipPrive = require("./src/nip_prive");
+const notifications = require("./src/notifications");
 
 setGlobalOptions({region: REGION, maxInstances: 10});
 
@@ -949,10 +952,18 @@ exports.enregistrerFeuilleTemps = onCall(async (request) => {
   await limite.verifier();
   await limite.compter();
 
-  return calculerEtEnregistrerFeuille({
+  const resultat = await calculerEtEnregistrerFeuille({
     ctx, cible: {id: ctx.employeeId, nom: ctx.employe.nom}, lundiDate, jours, maintenant,
     acteur: {id: ctx.employeeId, nom: ctx.employe.nom, role: ctx.employe.role},
   });
+  // Les admins qui le veulent sont prévenus sur leur téléphone (jamais l'auteur lui-même) ; une
+  // notification manquée ne fait jamais échouer l'enregistrement.
+  const {titre, corps} = notifications.messageHeures(ctx.employe.nom, jours, resultat.totalHeures);
+  await notifications.notifier(db, getMessaging(), {
+    companyId: ctx.companyId, categorie: "heures", auteurId: ctx.employeeId, titre, corps,
+    donnees: {lundiDate}, logger,
+  });
+  return resultat;
 });
 
 /** Pas de saisie au-delà de la semaine prochaine. */
@@ -1735,3 +1746,40 @@ exports.lirePlanCharpente = onCall(
       }
     },
 );
+
+// =============================================================================
+// Notifications sur le téléphone des admins (voir src/notifications.js)
+// =============================================================================
+
+async function nomChantier(chantierId) {
+  if (chantierId === "_general") return "Général";
+  const s = await db.collection("chantiers").doc(chantierId).get();
+  return s.exists ? s.data().nom : "Chantier";
+}
+
+/** Une entrée créée sur un chantier : les admins qui veulent cette catégorie sont prévenus. */
+function notifierEntree(categorie) {
+  return async (event) => {
+    const d = event.data?.data();
+    if (!d || typeof d.companyId !== "string" || typeof d.chantierId !== "string") return;
+    try {
+      // Photos : une seule notification pour un envoi de plusieurs photos.
+      if (categorie === "photos" && !(await notifications.premierePhotoDuLot(db, {
+        companyId: d.companyId, chantierId: d.chantierId, auteurId: d.ajoutePar, maintenant: Date.now(),
+      }))) return;
+      const {titre, corps} = notifications.messageEntree(categorie, await nomChantier(d.chantierId), d);
+      await notifications.notifier(db, getMessaging(), {
+        companyId: d.companyId, categorie, auteurId: d.ajoutePar ?? null, titre, corps,
+        donnees: {chantierId: d.chantierId}, logger,
+      });
+    } catch (e) {
+      logger.error("Notification non envoyée", {categorie, detail: String(e?.message ?? e)});
+    }
+  };
+}
+
+exports.notifierExtra = onDocumentCreated("chantier_extras/{id}", notifierEntree("extras"));
+exports.notifierTravail = onDocumentCreated("chantier_travaux/{id}", notifierEntree("travaux"));
+exports.notifierMateriel = onDocumentCreated("chantier_materiel/{id}", notifierEntree("materiel"));
+exports.notifierPhoto = onDocumentCreated("chantier_photos/{id}", notifierEntree("photos"));
+exports.notifierDocument = onDocumentCreated("chantier_documents/{id}", notifierEntree("documents"));

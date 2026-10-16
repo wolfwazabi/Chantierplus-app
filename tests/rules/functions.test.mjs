@@ -10,7 +10,8 @@ import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInAnonymously } from 'firebase/auth';
 import { connectFunctionsEmulator, getFunctions, httpsCallable } from 'firebase/functions';
 import {
-  collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, setDoc, updateDoc, where,
+  collection, connectFirestoreEmulator, doc, getDoc, getDocs, getFirestore, query, serverTimestamp, setDoc,
+  updateDoc, where,
 } from 'firebase/firestore';
 import { lundi } from './helpers.mjs';
 import { initializeApp as initAdmin } from 'firebase-admin/app';
@@ -3423,5 +3424,126 @@ describe('Suppression d\'une compagnie (Proprio de l\'app seulement)', () => {
     assert.equal(r.ok, true);
     assert.equal(await existe(`companies/${ID}`), false);
     assert.equal((await adminDb.collection('journal_suppressions').doc(ID).get()).data().statutAvant, 'attente');
+  });
+});
+
+describe('Notifications sur le téléphone des admins', () => {
+  const NUM = '880777';
+  const cid = 'nt-compagnie';
+  const PIN = '482915';
+  let adm; let adm2; let emp;
+  const fiche = (nom, role, courriel) => ({
+    companyId: cid, nom, role, estProprietaire: false, courriel, pinHash: hacher(cid, PIN),
+  });
+  const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+  const envois = async (categorie) => (await adminDb.collection('envois_notifications_emulateur')
+    .where('companyId', '==', cid).get()).docs.map((d) => d.data())
+    .filter((e) => !categorie || e.categorie === categorie);
+  const attendre = async (categorie, n = 1) => {
+    for (let i = 0; i < 60; i++) {
+      const e = await envois(categorie);
+      if (e.length >= n) return e;
+      await pause(200);
+    }
+    return envois(categorie);
+  };
+  const viderEnvois = async () => Promise.all((await adminDb.collection('envois_notifications_emulateur')
+    .where('companyId', '==', cid).get()).docs.map((d) => d.ref.delete()));
+  // L'appareil de l'admin enregistre lui-même son jeton (règles : admin, sous l'uid de sa session).
+  const enregistrerAppareil = (a, employeeId, jeton) => setDoc(
+    doc(a.db, 'appareils_notifications', a.auth.currentUser.uid),
+    { companyId: cid, employeeId, jeton, plateforme: 'android', majLe: serverTimestamp() },
+  );
+  const extra = (description, auteur = 'nt-plus', nom = 'Paul Contremaître') =>
+    adminDb.collection('chantier_extras').add({
+      companyId: cid, chantierId: 'nt-ch', description, mainOeuvre: '2 h', dateTravaux: '2026-10-16',
+      ajoutePar: auteur, ajouteParNom: nom, dateAjout: FieldValue.serverTimestamp(),
+    });
+
+  before(async () => {
+    await adminDb.collection('companies').doc(cid).set(
+      { numero: NUM, nomEntreprise: 'Notif inc.', statut: 'approuvee' });
+    await adminDb.collection('employees').doc('nt-adm').set(fiche('Alice Admin', 'admin', 'nt-adm@exemple.ca'));
+    await adminDb.collection('employees').doc('nt-adm2').set(fiche('Bruno Admin', 'admin', 'nt-adm2@exemple.ca'));
+    await adminDb.collection('employees').doc('nt-plus').set(fiche('Paul Contremaître', 'plus', 'nt-plus@exemple.ca'));
+    await adminDb.collection('employees').doc('nt-emp').set(fiche('Émile Employé', 'employe', 'nt-emp@exemple.ca'));
+    await adminDb.collection('chantiers').doc('nt-ch').set({ companyId: cid, nom: 'Chalet Nord', adresse: '1 rue A' });
+    adm = await connecter(NUM, 'nt-adm@exemple.ca', PIN);
+    adm2 = await connecter(NUM, 'nt-adm2@exemple.ca', PIN);
+    emp = await connecter(NUM, 'nt-emp@exemple.ca', PIN);
+    await enregistrerAppareil(adm, 'nt-adm', 'jeton-adm');
+    await enregistrerAppareil(adm2, 'nt-adm2', 'jeton-adm2');
+  });
+
+  test('un employé ne peut pas enregistrer d\'appareil (admins seulement)', async () => {
+    await assert.rejects(enregistrerAppareil(emp, 'nt-emp', 'jeton-emp'),
+      (e) => e.code === 'permission-denied');
+  });
+
+  test('un extra entré par le contremaître : les deux admins sont prévenus', async () => {
+    await viderEnvois();
+    await extra('Porte ajoutée');
+    const e = await attendre('extras');
+    assert.equal(e.length, 1);
+    assert.equal(e[0].titre, 'Extra — Chalet Nord');
+    assert.equal(e[0].corps, 'Porte ajoutée (Paul Contremaître)');
+    assert.deepEqual([...e[0].jetons].sort(), ['jeton-adm', 'jeton-adm2']);
+    assert.equal(e[0].data.chantierId, 'nt-ch');
+  });
+
+  test('l\'auteur n\'est pas prévenu ; une catégorie fermée ne l\'est plus', async () => {
+    await viderEnvois();
+    // Bruno ferme les extras (ses préférences, écrites par lui).
+    await setDoc(doc(adm2.db, 'preferences_notifications', 'nt-adm2'), { companyId: cid, extras: false });
+    // Alice entre un extra : elle-même n'est pas prévenue, Bruno ne veut plus d'extras.
+    await extra('Fenêtre', 'nt-adm', 'Alice Admin');
+    // Un travail entré ensuite (Bruno le veut) : quand il arrive, l'extra est traité aussi.
+    await adminDb.collection('chantier_travaux').add({
+      companyId: cid, chantierId: 'nt-ch', texte: 'Finir le soffite', complete: false,
+      ajoutePar: 'nt-plus', ajouteParNom: 'Paul Contremaître', dateAjout: FieldValue.serverTimestamp(),
+    });
+    const t = await attendre('travaux');
+    assert.equal(t[0].titre, 'Travail à compléter — Chalet Nord');
+    await pause(1500);
+    assert.equal((await envois('extras')).length, 0);
+    await setDoc(doc(adm2.db, 'preferences_notifications', 'nt-adm2'), { companyId: cid, extras: true });
+  });
+
+  test('photos : un envoi de 3 photos ne donne qu\'une notification', async () => {
+    await viderEnvois();
+    for (let i = 0; i < 3; i++) {
+      await adminDb.collection('chantier_photos').add({
+        companyId: cid, chantierId: 'nt-ch', url: `https://firebasestorage.googleapis.com/p${i}`,
+        cheminStorage: `chantiers/${cid}/nt-ch/photos/p${i}.jpg`, ajoutePar: 'nt-plus',
+        ajouteParNom: 'Paul Contremaître', dateAjout: FieldValue.serverTimestamp(),
+      });
+    }
+    const p = await attendre('photos');
+    await pause(1500);
+    assert.equal((await envois('photos')).length, 1);
+    assert.equal(p[0].corps, 'Paul Contremaître a ajouté des photos.');
+  });
+
+  test('heures : l\'employé envoie sa journée, les admins sont prévenus', async () => {
+    await viderEnvois();
+    await emp.appeler('enregistrerFeuilleTemps', {
+      lundiDate: lundi(0),
+      jours: [{ estAucun: false, chantierId: 'nt-ch', heureDebutMinutes: 7 * 60, heureFinMinutes: 15 * 60,
+        pauseMatin: true, diner: true }],
+    });
+    const h = await envois('heures');
+    assert.equal(h.length, 1);
+    assert.equal(h[0].titre, 'Heures — Émile Employé');
+    assert.equal(h[0].corps, 'Lundi — total de la semaine : 7,75 h');
+  });
+
+  test('téléphone déconnecté (session fermée) : il ne reçoit plus rien et il est oublié', async () => {
+    await viderEnvois();
+    const uid2 = adm2.auth.currentUser.uid;
+    await adminDb.collection('sessions').doc(uid2).delete();
+    await extra('Escalier');
+    const e = await attendre('extras');
+    assert.deepEqual(e[0].jetons, ['jeton-adm']);
+    assert.equal((await adminDb.collection('appareils_notifications').doc(uid2).get()).exists, false);
   });
 });

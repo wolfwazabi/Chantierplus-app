@@ -1533,3 +1533,56 @@ describe('Collections serveur uniquement', () => {
     await assertFails(setDoc(doc(ctxDe('uid-adminA'), 'autre/x'), { a: 1 }));
   });
 });
+
+// =============================================================================
+describe('Notifications des admins : appareils et préférences', () => {
+  const appareil = (over = {}) => ({
+    companyId: 'A', employeeId: 'adminA', jeton: 'jeton-123', plateforme: 'android',
+    majLe: serverTimestamp(), ...over,
+  });
+
+  test('l\'admin enregistre le jeton de SON appareil (sous l\'uid de sa session)', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertSucceeds(setDoc(doc(d, 'appareils_notifications/uid-adminA'), appareil()));
+    await assertSucceeds(getDoc(doc(d, 'appareils_notifications/uid-adminA')));
+    await assertSucceeds(setDoc(doc(d, 'appareils_notifications/uid-adminA'), appareil({ jeton: 'neuf', plateforme: 'ios' })));
+    await assertSucceeds(deleteDoc(doc(d, 'appareils_notifications/uid-adminA')));
+  });
+
+  test('refusé : un autre uid, un autre employé, une autre compagnie, un champ de trop', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertFails(setDoc(doc(d, 'appareils_notifications/uid-autre'), appareil()));
+    await assertFails(setDoc(doc(d, 'appareils_notifications/uid-adminA'), appareil({ employeeId: 'empA' })));
+    await assertFails(setDoc(doc(d, 'appareils_notifications/uid-adminA'), appareil({ companyId: 'B' })));
+    await assertFails(setDoc(doc(d, 'appareils_notifications/uid-adminA'), appareil({ role: 'admin' })));
+    await assertFails(setDoc(doc(d, 'appareils_notifications/uid-adminA'), appareil({ plateforme: 'web' })));
+    await assertFails(getDocs(query(collection(d, 'appareils_notifications'), where('companyId', '==', 'A'))));
+  });
+
+  test('employé et contremaître : pas de notifications (admins seulement)', async () => {
+    await assertFails(setDoc(doc(ctxDe('uid-empA'), 'appareils_notifications/uid-empA'),
+      appareil({ employeeId: 'empA' })));
+    await assertFails(setDoc(doc(ctxDe('uid-plusA'), 'appareils_notifications/uid-plusA'),
+      appareil({ employeeId: 'plusA' })));
+  });
+
+  test('préférences : les siennes seulement, des oui/non par catégorie', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertSucceeds(getDoc(doc(d, 'preferences_notifications/adminA'))); // absent : lisible
+    await assertSucceeds(setDoc(doc(d, 'preferences_notifications/adminA'),
+      { companyId: 'A', extras: false, heures: true }));
+    await assertSucceeds(getDoc(doc(d, 'preferences_notifications/adminA')));
+    await assertFails(setDoc(doc(d, 'preferences_notifications/adminA'), { companyId: 'A', extras: 'non' }));
+    await assertFails(setDoc(doc(d, 'preferences_notifications/adminA'), { companyId: 'A', courriel: true }));
+    await assertFails(setDoc(doc(d, 'preferences_notifications/empA'), { companyId: 'A', extras: false }));
+    await assertFails(getDoc(doc(d, 'preferences_notifications/empA')));
+    await assertFails(setDoc(doc(ctxDe('uid-empA'), 'preferences_notifications/empA'),
+      { companyId: 'A', extras: false }));
+  });
+
+  test('envois de l\'émulateur et regroupement des photos : serveur seulement', async () => {
+    const d = ctxDe('uid-adminA');
+    await assertFails(getDocs(query(collection(d, 'envois_notifications_emulateur'), where('companyId', '==', 'A'))));
+    await assertFails(setDoc(doc(d, 'notifications_regroupees/x'), { companyId: 'A', dernierEnvoi: 0 }));
+  });
+});
