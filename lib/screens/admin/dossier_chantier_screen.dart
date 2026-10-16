@@ -3,22 +3,23 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/chantier.dart';
-import '../../models/extra_chantier.dart';
 import '../../models/resume_chantier.dart';
 import '../../services/app_session.dart';
-import '../../services/fichiers_chantier.dart';
 import '../../services/fonctions.dart';
 import '../../services/theme_compagnie.dart';
-import '../../widgets/photos_multiples.dart';
+import '../chantier_screen.dart' show PhotosChantierTab;
 import '../documents/documents_chantier.dart';
+import '../extras/extras_tab.dart';
+import '../liste_entrees_tab.dart';
 import 'chantier_admin_actions.dart';
-import 'grille_photos_dossier.dart';
 import 'resume_heures_carte.dart';
 import '../../widgets/actualiser.dart';
 
-/// Page d'un chantier pour l'admin, avec tout ce qui le concerne :
-///  - Résumé : heures, extras, matériel, travaux, export du dossier (ZIP) ;
-///  - Photos : agrandir, sélectionner et supprimer ;
+/// Page d'un chantier pour l'admin, avec tout ce qui le concerne, et où il gère les données :
+///  - Résumé : heures, export du dossier (ZIP) ;
+///  - Photos : en ajouter (appareil ou galerie), agrandir, sélectionner et supprimer ;
+///  - Extras, Travaux, Matériel : en ajouter, les modifier, les supprimer (mêmes écrans que sur
+///    le terrain ; un extra ne se supprime que par un admin) ;
 ///  - Documents : déposer, ouvrir et supprimer des plans, devis, etc.
 /// Le menu en haut permet de modifier ou d'archiver le chantier. Fonctionne aussi
 /// pour un chantier archivé (le dossier reste complet).
@@ -36,6 +37,11 @@ class DossierChantierScreen extends StatefulWidget {
   @visibleForTesting
   final Widget Function(String companyId, Chantier c)? contenuDocuments;
 
+  /// Tests : le contenu des onglets 'extras', 'travaux' et 'materiel'.
+  @visibleForTesting
+  final Widget Function(String onglet, String companyId, Chantier c)?
+  contenuOnglet;
+
   const DossierChantierScreen({
     super.key,
     required this.chantier,
@@ -43,6 +49,7 @@ class DossierChantierScreen extends StatefulWidget {
     this.contenuResume,
     this.contenuPhotos,
     this.contenuDocuments,
+    this.contenuOnglet,
   });
 
   @override
@@ -168,7 +175,8 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
     }
   }
 
-  /// Onglet Résumé : état du chantier, export, heures, extras, matériel, travaux.
+  /// Onglet Résumé : état du chantier, export, heures (les extras, le matériel et les travaux
+  /// ont leurs onglets, où on les gère).
   Widget _ongletResume(Chantier c, String companyId) {
     return PageActualisable(
       onRefresh: _charger,
@@ -248,10 +256,6 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
             )
           else if (_resume != null)
             ResumeHeuresCarte(resume: _resume!),
-          const SizedBox(height: 8),
-          _SectionExtras(companyId: companyId, chantierId: c.id),
-          _SectionMateriel(companyId: companyId, chantierId: c.id),
-          _SectionTravaux(companyId: companyId, chantierId: c.id),
           const SizedBox(height: 24),
         ],
       ),
@@ -288,8 +292,10 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
         final couleursOnglets = ThemeCompagnie.ongletsSurBarre(
           theme.appBarTheme.backgroundColor ?? theme.colorScheme.primary,
         );
+        Widget onglet(String nom, Widget Function() reel) =>
+            widget.contenuOnglet?.call(nom, companyId, c) ?? reel();
         return DefaultTabController(
-          length: 3,
+          length: 6,
           child: Scaffold(
             appBar: AppBar(
               title: Text(c.nom, overflow: TextOverflow.ellipsis),
@@ -334,9 +340,18 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                 labelColor: couleursOnglets.actif,
                 unselectedLabelColor: couleursOnglets.inactif,
                 indicatorColor: couleursOnglets.actif,
+                // Six onglets : ils défilent sur un téléphone.
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 tabs: const [
                   Tab(icon: Icon(Icons.assessment_outlined), text: 'Résumé'),
                   Tab(icon: Icon(Icons.photo_library_outlined), text: 'Photos'),
+                  Tab(icon: Icon(Icons.add_task), text: 'Extras'),
+                  Tab(icon: Icon(Icons.assignment_outlined), text: 'Travaux'),
+                  Tab(
+                    icon: Icon(Icons.shopping_cart_outlined),
+                    text: 'Matériel',
+                  ),
                   Tab(
                     icon: Icon(Icons.description_outlined),
                     text: 'Documents',
@@ -352,18 +367,60 @@ class _DossierChantierScreenState extends State<DossierChantierScreen> {
                       _ongletResume(c, companyId),
                 ),
                 _GardeEnVie(
+                  // Ajouter des photos (appareil ou galerie), les agrandir, en supprimer.
                   child:
                       widget.contenuPhotos?.call(companyId, c) ??
-                      ListView(
+                      PhotosChantierTab(
                         key: const ValueKey('onglet_photos'),
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          _SectionPhotos(
-                            companyId: companyId,
-                            chantierId: c.id,
-                          ),
-                        ],
+                        chantierId: c.id,
+                        companyId: companyId,
+                        connecte: true,
                       ),
+                ),
+                _GardeEnVie(
+                  child: onglet(
+                    'extras',
+                    () => ExtrasTab(
+                      key: ValueKey('extras_${c.id}'),
+                      chantierId: c.id,
+                      companyId: companyId,
+                      connecte: true,
+                    ),
+                  ),
+                ),
+                _GardeEnVie(
+                  child: onglet(
+                    'travaux',
+                    () => ListeEntreesTab(
+                      key: ValueKey('travaux_${c.id}'),
+                      chantierId: c.id,
+                      companyId: companyId,
+                      connecte: true,
+                      collection: 'chantier_travaux',
+                      libelleChampAjout: 'Décrire le travail à compléter',
+                      libelleComplete: 'Marquer comme complété',
+                      libelleActif: 'Remettre en travaux',
+                      icone: Icons.assignment,
+                      avecQuantite: false,
+                    ),
+                  ),
+                ),
+                _GardeEnVie(
+                  child: onglet(
+                    'materiel',
+                    () => ListeEntreesTab(
+                      key: ValueKey('materiel_${c.id}'),
+                      chantierId: c.id,
+                      companyId: companyId,
+                      connecte: true,
+                      collection: 'chantier_materiel',
+                      libelleChampAjout: 'Décrire le matériel manquant',
+                      libelleComplete: 'Marquer comme obtenu',
+                      libelleActif: 'Remettre comme manquant',
+                      icone: Icons.shopping_cart,
+                      avecQuantite: true,
+                    ),
+                  ),
                 ),
                 _GardeEnVie(
                   // Dépôt, ouverture et suppression des documents (admin).
@@ -404,224 +461,5 @@ class _GardeEnVieState extends State<_GardeEnVie>
   Widget build(BuildContext context) {
     super.build(context);
     return widget.child;
-  }
-}
-
-Query<Map<String, dynamic>> _requete(
-  String collection,
-  String companyId,
-  String chantierId,
-) => FirebaseFirestore.instance
-    .collection(collection)
-    .where('companyId', isEqualTo: companyId)
-    .where('chantierId', isEqualTo: chantierId)
-    .orderBy('dateAjout', descending: true);
-
-Widget _titreSection(String titre, int? n) => Padding(
-  padding: const EdgeInsets.fromLTRB(4, 16, 4, 6),
-  child: Text(
-    n == null ? titre : '$titre ($n)',
-    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-  ),
-);
-
-Widget _vide(String texte) => Padding(
-  padding: const EdgeInsets.all(8),
-  child: Text(texte, style: TextStyle(color: Colors.grey.shade600)),
-);
-
-class _SectionExtras extends StatelessWidget {
-  final String companyId;
-  final String chantierId;
-  const _SectionExtras({required this.companyId, required this.chantierId});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _requete('chantier_extras', companyId, chantierId).snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) return _vide('Impossible de charger les extras.');
-        final extras = (snap.data?.docs ?? [])
-            .map((d) => ExtraChantier.fromFirestore(d.id, d.data()))
-            .toList();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _titreSection('Extras', snap.hasData ? extras.length : null),
-            if (snap.hasData && extras.isEmpty) _vide('Aucun extra.'),
-            for (final e in extras)
-              Card(
-                child: ListTile(
-                  leading: e.photos.isNotEmpty
-                      ? VignettePhotos(urls: e.photos)
-                      : Icon(
-                          Icons.add_task,
-                          color: ThemeCompagnie.accentDe(context),
-                        ),
-                  title: Text(e.description),
-                  subtitle: Text(
-                    '${e.mainOeuvre}\n${dateAffichee(e.dateTravaux)}'
-                    '${e.ajouteParNom.isEmpty ? '' : ' • ${e.ajouteParNom}'}',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                  isThreeLine: true,
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SectionMateriel extends StatelessWidget {
-  final String companyId;
-  final String chantierId;
-  const _SectionMateriel({required this.companyId, required this.chantierId});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _requete('chantier_materiel', companyId, chantierId).snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) return _vide('Impossible de charger le matériel.');
-        final docs = snap.data?.docs ?? [];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _titreSection('Matériel', snap.hasData ? docs.length : null),
-            if (snap.hasData && docs.isEmpty) _vide('Aucun matériel.'),
-            for (final d in docs)
-              Card(
-                child: ListTile(
-                  leading: Icon(
-                    d.data()['complete'] == true
-                        ? Icons.check_circle
-                        : Icons.shopping_cart_outlined,
-                    color: d.data()['complete'] == true
-                        ? Colors.green
-                        : Colors.orange,
-                  ),
-                  title: Text((d.data()['texte'] ?? '').toString()),
-                  subtitle: Text(
-                    [
-                      if ((d.data()['quantite'] ?? '').toString().isNotEmpty)
-                        'Quantité : ${d.data()['quantite']}',
-                      d.data()['complete'] == true ? 'Obtenu' : 'À obtenir',
-                    ].join(' • '),
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SectionTravaux extends StatelessWidget {
-  final String companyId;
-  final String chantierId;
-  const _SectionTravaux({required this.companyId, required this.chantierId});
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _requete('chantier_travaux', companyId, chantierId).snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) return _vide('Impossible de charger les travaux.');
-        final docs = snap.data?.docs ?? [];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _titreSection(
-              'Travaux à compléter',
-              snap.hasData ? docs.length : null,
-            ),
-            if (snap.hasData && docs.isEmpty)
-              _vide('Aucun travail à compléter.'),
-            for (final d in docs)
-              Card(
-                child: ListTile(
-                  leading: Icon(
-                    d.data()['complete'] == true
-                        ? Icons.check_circle
-                        : Icons.assignment_outlined,
-                    color: d.data()['complete'] == true
-                        ? Colors.green
-                        : Colors.orange,
-                  ),
-                  title: Text((d.data()['texte'] ?? '').toString()),
-                  subtitle: Text(
-                    d.data()['complete'] == true ? 'Complété' : 'À compléter',
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SectionPhotos extends StatelessWidget {
-  final String companyId;
-  final String chantierId;
-  const _SectionPhotos({required this.companyId, required this.chantierId});
-
-  Future<void> _supprimer(
-    BuildContext context,
-    List<PhotoDossier> photos,
-  ) async {
-    final messager = ScaffoldMessenger.of(context);
-    final resultat = await supprimerElementsChantier(
-      'chantier_photos',
-      photos.map((p) => p.element),
-    );
-    messager.showSnackBar(
-      SnackBar(
-        content: Text(
-          messageSuppression(
-            resultat,
-            singulier: 'photo supprimée',
-            pluriel: 'photos supprimées',
-          ),
-        ),
-        backgroundColor: resultat.toutSupprime ? null : Colors.red,
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      stream: _requete('chantier_photos', companyId, chantierId).snapshots(),
-      builder: (context, snap) {
-        if (snap.hasError) return _vide('Impossible de charger les photos.');
-        final docs = snap.data?.docs ?? [];
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _titreSection('Photos', snap.hasData ? docs.length : null),
-            if (snap.hasData && docs.isEmpty) _vide('Aucune photo.'),
-            if (docs.isNotEmpty)
-              GrillePhotosDossier(
-                photos: [
-                  for (final d in docs)
-                    PhotoDossier(
-                      d.id,
-                      (d.data()['url'] ?? '').toString(),
-                      d.data()['cheminStorage'] as String?,
-                    ),
-                ],
-                onSupprimer: (photos) => _supprimer(context, photos),
-              ),
-            const SizedBox(height: 24),
-          ],
-        );
-      },
-    );
   }
 }

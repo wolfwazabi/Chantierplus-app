@@ -255,26 +255,43 @@ void main() {
                 Text('PHOTOS ${c.id}', key: const ValueKey('p')),
             contenuDocuments: (_, c) =>
                 Text('DOCS ${c.id}', key: const ValueKey('d')),
+            contenuOnglet: (onglet, _, c) =>
+                Text('${onglet.toUpperCase()} ${c.id}'),
           ),
         ),
       );
       await tester.pumpAndSettle();
     }
 
-    testWidgets('trois onglets : Résumé, Photos, Documents', (tester) async {
-      await ouvrir(tester);
-      expect(find.text('Chalet Nord'), findsOneWidget); // titre
-      for (final t in ['Résumé', 'Photos', 'Documents']) {
-        expect(find.widgetWithText(Tab, t), findsOneWidget, reason: t);
-      }
-      expect(find.text('RESUME c1'), findsOneWidget);
-      await tester.tap(find.widgetWithText(Tab, 'Photos'));
-      await tester.pumpAndSettle();
-      expect(find.text('PHOTOS c1'), findsOneWidget);
-      await tester.tap(find.widgetWithText(Tab, 'Documents'));
-      await tester.pumpAndSettle();
-      expect(find.text('DOCS c1'), findsOneWidget);
-    });
+    testWidgets(
+      'six onglets : Résumé, Photos, Extras, Travaux, Matériel, Documents (on y gère les données)',
+      (tester) async {
+        await ouvrir(tester);
+        expect(find.text('Chalet Nord'), findsOneWidget); // titre
+        for (final t in [
+          'Résumé',
+          'Photos',
+          'Extras',
+          'Travaux',
+          'Matériel',
+          'Documents',
+        ]) {
+          expect(find.widgetWithText(Tab, t), findsOneWidget, reason: t);
+        }
+        expect(find.text('RESUME c1'), findsOneWidget);
+        for (final (onglet, contenu) in [
+          ('Photos', 'PHOTOS c1'),
+          ('Extras', 'EXTRAS c1'),
+          ('Travaux', 'TRAVAUX c1'),
+          ('Matériel', 'MATERIEL c1'),
+          ('Documents', 'DOCS c1'),
+        ]) {
+          await tester.tap(find.widgetWithText(Tab, onglet));
+          await tester.pumpAndSettle();
+          expect(find.text(contenu), findsOneWidget, reason: onglet);
+        }
+      },
+    );
 
     testWidgets('menu : modifier, archiver (chantier actif)', (tester) async {
       await ouvrir(tester);

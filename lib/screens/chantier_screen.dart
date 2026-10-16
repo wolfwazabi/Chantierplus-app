@@ -296,7 +296,7 @@ class _ChantierScreenState extends State<ChantierScreen> {
                         _onglet(
                           'photos',
                           chantierId,
-                          () => _PhotosTab(
+                          () => PhotosChantierTab(
                             chantierId: chantierId,
                             companyId: companyId,
                             connecte: connecte,
@@ -365,21 +365,24 @@ class _ChantierScreenState extends State<ChantierScreen> {
 
 // ==================== ONGLET PHOTOS ====================
 
-class _PhotosTab extends StatefulWidget {
+/// Photos d'un chantier : prendre ou choisir des photos (envoyées au serveur), les agrandir,
+/// et — admin ou contremaître — en supprimer. Sert sur le terrain et dans le dossier de l'admin.
+class PhotosChantierTab extends StatefulWidget {
   final String chantierId;
   final String companyId;
   final bool connecte;
-  const _PhotosTab({
+  const PhotosChantierTab({
+    super.key,
     required this.chantierId,
     required this.companyId,
     required this.connecte,
   });
 
   @override
-  State<_PhotosTab> createState() => _PhotosTabState();
+  State<PhotosChantierTab> createState() => _EtatPhotosChantierTab();
 }
 
-class _PhotosTabState extends State<_PhotosTab> {
+class _EtatPhotosChantierTab extends State<PhotosChantierTab> {
   bool _enversEnCours = false;
   double _progression = 0;
 
