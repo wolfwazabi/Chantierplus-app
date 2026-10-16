@@ -1813,10 +1813,23 @@ exports.copieDevis = onDocumentCreated(
 exports.preparerCopieDevis = onCall({memory: "1GiB", timeoutSeconds: 300}, async (request) => {
   verifierAppCheck(request, "preparerCopieDevis");
   const ctx = await contexteAdmin(request);
-  const documentId = texte(request.data?.documentId, "documentId", {max: 128});
   const limite = limiteur(`devis_${ctx.employeeId}`, 60, HEURE);
   await limite.verifier();
   await limite.compter();
+  const bucket = getStorage().bucket(BUCKET_STOCKAGE);
+
+  // Rattrapage (à la connexion d'un admin) : les devis de la compagnie déposés avant cette
+  // fonction (pas encore de copie), 20 au plus par appel.
+  if (request.data?.tous === true) {
+    const docs = (await db.collection("chantier_documents").where("companyId", "==", ctx.companyId).get())
+        .docs.filter((d) => devis.estDevis(d.data().nom) && !d.data().copieContremaitre).slice(0, 20);
+    for (const d of docs) {
+      await devis.preparer({db, bucket, FieldValue, ref: d.ref, data: d.data(), documentId: d.id, crypto, logger});
+    }
+    return {traites: docs.length};
+  }
+
+  const documentId = texte(request.data?.documentId, "documentId", {max: 128});
   const ref = db.collection("chantier_documents").doc(documentId);
   const snap = await ref.get();
   if (!snap.exists || snap.data().companyId !== ctx.companyId) {
@@ -1827,8 +1840,7 @@ exports.preparerCopieDevis = onCall({memory: "1GiB", timeoutSeconds: 300}, async
   }
   if (snap.data().copieContremaitre?.etat === "en_cours") return {etat: "en_cours"};
   const etat = await devis.preparer({
-    db, bucket: getStorage().bucket(BUCKET_STOCKAGE), FieldValue, ref, data: snap.data(),
-    documentId, crypto, logger,
+    db, bucket, FieldValue, ref, data: snap.data(), documentId, crypto, logger,
   });
   return {etat};
 });

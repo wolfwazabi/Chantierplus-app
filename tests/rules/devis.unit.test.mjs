@@ -12,8 +12,12 @@ const devis = require('../../functions/src/devis.js');
 const pdfjs = await import(pathToFileURL(createRequire(require.resolve('../../functions/index.js'))
   .resolve('pdfjs-dist/legacy/build/pdf.mjs')).href);
 
+// Polices standard de pdf.js : sans elles, le texte de l'original ne se dessine pas.
+const POLICES = createRequire(require.resolve('../../functions/index.js'))
+  .resolve('pdfjs-dist/package.json').replace(/package\.json$/, 'standard_fonts/');
+
 async function ouvrir(octets) {
-  return pdfjs.getDocument({ data: new Uint8Array(octets), isEvalSupported: false }).promise;
+  return pdfjs.getDocument({ data: new Uint8Array(octets), isEvalSupported: false, standardFontDataUrl: POLICES }).promise;
 }
 
 /** Part des pixels foncés dans un rectangle de la page rendue à l'échelle 2 (points PDF). */
@@ -28,10 +32,26 @@ async function partFoncee(octets, page, [x1, y1, x2, y2]) {
   const l = Math.round(Math.abs(c - a)), h = Math.round(Math.abs(d - b));
   const px = context.getImageData(x, y, l, h).data;
   let fonce = 0;
-  for (let i = 0; i < px.length; i += 4) if (px[i] < 60 && px[i + 1] < 60 && px[i + 2] < 60) fonce++;
+  for (let i = 0; i < px.length; i += 4) if (px[i] < 128 && px[i + 1] < 128 && px[i + 2] < 128) fonce++;
   await doc.destroy();
   void canvas;
   return fonce / (px.length / 4);
+}
+
+/** Couleur moyenne (gris de 0 à 255) d'un rectangle de la page rendue. */
+async function grisMoyen(octets, page, [x1, y1, x2, y2]) {
+  const doc = await ouvrir(octets);
+  const p = await doc.getPage(page);
+  const vue = p.getViewport({ scale: 2 });
+  const { context } = doc.canvasFactory.create(Math.ceil(vue.width), Math.ceil(vue.height));
+  await p.render({ canvasContext: context, viewport: vue }).promise;
+  const [a, b, c, d] = vue.convertToViewportRectangle([x1, y1, x2, y2]);
+  const px = context.getImageData(Math.round(Math.min(a, c)), Math.round(Math.min(b, d)),
+    Math.round(Math.abs(c - a)), Math.round(Math.abs(d - b))).data;
+  let s = 0;
+  for (let i = 0; i < px.length; i += 4) s += (px[i] + px[i + 1] + px[i + 2]) / 3;
+  await doc.destroy();
+  return s / (px.length / 4);
 }
 
 // --- Tests ----------------------------------------------------------------------------------
@@ -89,7 +109,7 @@ describe('Devis : les montants', () => {
 });
 
 describe('Devis : la copie sans montants', () => {
-  test('montants noircis à leur place, le reste lisible, aucun texte dans la copie', async () => {
+  test('montants effacés en blanc, sans trace ; le reste lisible ; aucun texte dans la copie', async () => {
     const original = pdf({ dessin: fluxDevis });
     const r = await devis.copieSansMontants(original);
     assert.equal(r.pages, 1);
@@ -103,16 +123,34 @@ describe('Devis : la copie sans montants', () => {
     assert.equal(Math.round(vue.height), 792);
     assert.equal((await page.getTextContent()).items.length, 0);
     await doc.destroy();
-    // Les montants : noirs ; les descriptions et quantités : surtout blanches.
+    // Les montants (bien écrits dans l'original) : plus un pixel d'encre, fond blanc, aucun
+    // carré visible ; les descriptions, quantités et le titre : toujours écrits.
     for (const [desc, , , y] of LIGNES) {
-      assert.ok(await partFoncee(r.pdf, 1, [452, y + 1, 478, y + 8]) > 0.9, `montant de ${desc}`);
-      assert.ok(await partFoncee(r.pdf, 1, [72, y, 140, y + 9]) < 0.5, `description ${desc}`);
+      const zone = [450, y - 2, 480, y + 10];
+      assert.ok(await partFoncee(original, 1, zone) > 0.05, `montant écrit dans l'original : ${desc}`);
+      assert.equal(await partFoncee(r.pdf, 1, zone), 0, `montant effacé : ${desc}`);
+      assert.ok(await grisMoyen(r.pdf, 1, zone) > 250, `effacé en blanc : ${desc}`);
+      assert.ok(await partFoncee(r.pdf, 1, [72, y, 140, y + 9]) > 0.05, `description ${desc}`);
     }
     // Les quantités restent lisibles, même « 1 » juste avant « 450.00 » (pas des milliers).
     for (const [, qte, , y] of LIGNES) {
-      if (qte) assert.ok(await partFoncee(r.pdf, 1, [298, y, 310, y + 9]) < 0.5, `quantité à ${y}`);
+      if (qte) assert.ok(await partFoncee(r.pdf, 1, [298, y, 310, y + 9]) > 0.02, `quantité à ${y}`);
     }
-    assert.ok(await partFoncee(r.pdf, 1, [72, 700, 200, 709]) < 0.5, 'titre et numéro du devis');
+    assert.ok(await partFoncee(r.pdf, 1, [72, 700, 200, 709]) > 0.05, 'titre et numéro du devis');
+  });
+
+  test('ligne grisée d\'un tableau : le montant est effacé du même gris (pas de tache blanche)', async () => {
+    // Bande gris clair (85 %) derrière la ligne de la quincaillerie.
+    const grise = () => '0.85 g 66 636 480 16 re f 0 g\n' + fluxDevis();
+    const original = pdf({ dessin: grise });
+    const r = await devis.copieSansMontants(original);
+    const zone = [450, 638, 480, 650];
+    assert.ok(await partFoncee(original, 1, zone) > 0.05);
+    assert.equal(await partFoncee(r.pdf, 1, zone), 0);
+    const gris = await grisMoyen(r.pdf, 1, zone);
+    const fond = await grisMoyen(r.pdf, 1, [380, 638, 440, 650]); // la bande, à côté
+    assert.ok(Math.abs(gris - fond) < 6, `effacé ${gris} vs bande ${fond}`);
+    assert.ok(fond < 230 && fond > 205, `bande grise ${fond}`);
   });
 
   test('PDF numérisé (sans texte) ou trop long : pas de copie, caché aux contremaîtres', async () => {

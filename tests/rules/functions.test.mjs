@@ -3655,6 +3655,21 @@ describe("Devis (copie sans montants) et suppression d'un chantier archivé", ()
     await rejette(adm.appeler('preparerCopieDevis', { documentId: p.ref.id }), 'failed-precondition');
   });
 
+  test('rattrapage : un ancien devis (sans copie) est traité à la connexion de l\'admin', async () => {
+    // Un document déposé « avant » : renommé en devis après coup (aucun déclencheur ne passe).
+    const { ref } = await deposerDocument('dv-ch', 'Soumission.pdf', pdf({ dessin: fluxDevis }), 'application/pdf');
+    await pause(1500);
+    await ref.update({ nom: 'Ancien devis.pdf' });
+    assert.equal('copieContremaitre' in (await ref.get()).data(), false);
+    const r = await adm.appeler('preparerCopieDevis', { tous: true });
+    assert.ok(r.traites >= 1);
+    const d = (await ref.get()).data();
+    assert.equal(d.copieContremaitre.etat, 'prete');
+    assert.equal('url' in d, false);
+    assert.match(d.cheminStorage, /devis_/); // renommé : les règles le réservent aux admins
+    await rejette(plus.appeler('preparerCopieDevis', { tous: true }), 'permission-denied');
+  });
+
   test('document supprimé : son fichier et sa copie disparaissent', async () => {
     const { ref, chemin } = await deposerDocument('dv-ch', 'Devis toit.pdf', pdf({ dessin: fluxDevis }), 'application/pdf');
     const d = await copieFinie(ref);

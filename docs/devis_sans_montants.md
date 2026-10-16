@@ -30,8 +30,11 @@ contremaîtres ».
 ## Comment c'est fait
 
 - `functions/src/devis.js` : le serveur lit le texte du PDF avec ses positions (pdf.js), trouve
-  les montants, rend chaque page en image (144 ppp), y dessine les carrés noirs et refait un PDF
-  d'images : le texte n'existe plus dans la copie (rien à copier sous les carrés).
+  les montants, rend chaque page en image (144 ppp), les **efface de la couleur du fond**
+  (demande de Philip : blanc et invisible, pas de carré noir) — ligne de pixels par ligne de
+  pixels, avec la couleur prise juste à gauche et à droite : une ligne grisée de tableau reste
+  grise, un trait qui traverse continue — puis refait un PDF d'images : le texte n'existe plus
+  dans la copie (rien à copier là où étaient les montants).
 - Déclencheur `copieDevis` (fiche créée) ; `preparerCopieDevis` (admin) pour un devis déposé
   avant cette fonction ou une copie ratée — l'app de l'admin le demande toute seule pour un
   ancien devis ; `effacerFichiersDocument` (fiche supprimée) efface le fichier et sa copie.
@@ -46,8 +49,9 @@ contremaîtres ».
 
 ## Tests
 
-- `tests/rules/devis.unit.test.mjs` : montants trouvés ou non, carrés noirs au bon endroit
-  (mesurés sur l'image), quantités lisibles, copie sans texte, numérisé et trop long cachés.
+- `tests/rules/devis.unit.test.mjs` : montants trouvés ou non, effacés sans trace (plus un pixel
+  d'encre, fond blanc ; même gris sur une ligne grisée), quantités lisibles, copie sans texte,
+  numérisé et trop long cachés.
 - `tests/rules/functions.test.mjs` (« Devis… ») : déclencheur, lien révoqué, Excel caché,
   copie refaite par l'admin seulement, fichiers effacés avec la fiche.
 - Règles : `storage.test.mjs`, `firestore.test.mjs` ; app : `test/documents_chantier_test.dart`.

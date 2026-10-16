@@ -14,6 +14,7 @@ import 'services/preferences.dart';
 import 'services/theme_compagnie.dart';
 import 'services/version_app.dart';
 import 'screens/compte_screen.dart';
+import 'screens/documents/documents_chantier.dart' show rattraperAnciensDevis;
 import 'screens/calculatrice_screen.dart';
 import 'screens/feuille_temps_screen.dart';
 import 'screens/chantier_screen.dart';
@@ -77,8 +78,11 @@ void main() async {
     if (AppSession.estAdmin) unawaited(NotificationsPush.activer());
     // Un admin qui ouvre une version plus récente l'annonce aux autres téléphones.
     unawaited(VersionApp.annoncerSiPlusRecente());
+    // Devis déposés avant la copie sans montants : faits une fois par le serveur.
+    unawaited(rattraperAnciensDevis());
   });
   if (AppSession.estAdmin) unawaited(NotificationsPush.activer());
+  unawaited(rattraperAnciensDevis());
   // Mise à jour de l'app : pastille sur « Compte » quand une version plus récente existe.
   VersionApp.demarrer();
   runApp(const ConstructionApp());

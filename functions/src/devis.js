@@ -7,8 +7,9 @@
  *    un devis. L'admin garde l'original ; le contremaître n'y a plus accès (règles Storage, lien
  *    à jeton retiré de la fiche et révoqué).
  *  - Pour un PDF qui a du texte, le serveur fait une copie : chaque page est rendue en image, les
- *    montants (avec $, ou à 2 décimales : 1 234,56 $, $1,234.56, 450.00) y sont noircis. Le texte
- *    n'existe plus dans la copie : rien à copier ni à chercher sous les carrés noirs.
+ *    montants (avec $, ou à 2 décimales : 1 234,56 $, $1,234.56, 450.00) y sont effacés de la
+ *    couleur du fond (blanc), sans trace. Le texte n'existe plus dans la copie : rien à copier
+ *    ni à chercher là où étaient les montants.
  *  - Un devis qui n'est pas un PDF, ou un PDF numérisé (sans texte), est caché aux contremaîtres.
  *
  * Fiche du document : `devis: true` et `copieContremaitre` = {etat, chemin?, taille?, pages?,
@@ -22,7 +23,7 @@ const MAX_PAGES = 30;
 /** Résolution de la copie : 2 × 72 = 144 points par pouce, lisible à l'écran et imprimé. */
 const ECHELLE = 2;
 const QUALITE_JPEG = 85;
-/** Marge autour d'un montant noirci, en points. */
+/** Marge autour d'un montant effacé, en points. */
 const MARGE = 1.5;
 
 /** Le nom contient « devis » (majuscules et accents ignorés). */
@@ -101,7 +102,7 @@ function lignesDe(items) {
 }
 
 /**
- * Les rectangles à noircir sur une page, en coordonnées du PDF : [[x1, y1, x2, y2]]. Un montant
+ * Les rectangles à effacer sur une page, en coordonnées du PDF : [[x1, y1, x2, y2]]. Un montant
  * coupé en plusieurs morceaux donne un rectangle par morceau.
  */
 function rectanglesMontants(items) {
@@ -128,8 +129,9 @@ function rectanglesMontants(items) {
         const v = [m.c / lv, m.d / lv];
         const t0 = m.largeur * (min / n) - MARGE;
         const t1 = m.largeur * ((max + 1) / n) + MARGE;
-        const s0 = -0.3 * m.hauteur - MARGE;
-        const s1 = 1.0 * m.hauteur + MARGE;
+        // Des jambages de la virgule (-0,25) au haut du $ (0,85) : pas plus haut que la ligne.
+        const s0 = -0.25 * m.hauteur - MARGE / 3;
+        const s1 = 0.85 * m.hauteur + MARGE / 3;
         const coins = [[t0, s0], [t1, s0], [t1, s1], [t0, s1]]
             .map(([tt, ss]) => [m.x + u[0] * tt + v[0] * ss, m.y + u[1] * tt + v[1] * ss]);
         const xs = coins.map((p) => p[0]);
@@ -139,6 +141,53 @@ function rectanglesMontants(items) {
     }
   }
   return {rects, montants};
+}
+
+/** Bande de pixels lue de chaque côté d'un montant pour trouver le fond de chaque ligne. */
+const BANDE = 4;
+
+/**
+ * Efface un rectangle de la page rendue sans laisser de trace : chaque ligne de pixels prend la
+ * couleur du fond juste à gauche et juste à droite du montant (la plus fréquente parmi ces
+ * pixels). Une page blanche reste blanche ; une ligne grisée de tableau reste grise ; un trait
+ * horizontal qui traverse continue.
+ */
+function effacer(ctx, x, y, l, h, largeur) {
+  const xg = Math.max(0, x - BANDE);
+  const xd = Math.min(largeur, x + l + BANDE);
+  const w = xd - xg;
+  const px = ctx.getImageData(xg, y, w, h).data;
+  const sortie = ctx.getImageData(x, y, l, h);
+  for (let j = 0; j < h; j++) {
+    // Couleurs regroupées (32 niveaux par canal) ; la moyenne exacte du groupe gagnant.
+    const groupes = new Map();
+    for (let i = 0; i < w; i++) {
+      const xi = xg + i;
+      if (xi >= x && xi < x + l) continue;
+      const k = (j * w + i) * 4;
+      const cle = ((px[k] >> 3) << 10) | ((px[k + 1] >> 3) << 5) | (px[k + 2] >> 3);
+      const g = groupes.get(cle) ?? {n: 0, r: 0, v: 0, b: 0, clair: px[k] + px[k + 1] + px[k + 2]};
+      g.n++;
+      g.r += px[k];
+      g.v += px[k + 1];
+      g.b += px[k + 2];
+      groupes.set(cle, g);
+    }
+    // À égalité, le plus clair : le fond plutôt qu'un bout de lettre voisine.
+    let m = null;
+    for (const g of groupes.values()) {
+      if (!m || g.n > m.n || (g.n === m.n && g.clair > m.clair)) m = g;
+    }
+    const [r, v, b] = m ? [m.r / m.n, m.v / m.n, m.b / m.n].map(Math.round) : [255, 255, 255];
+    for (let i = 0; i < l; i++) {
+      const k = (j * l + i) * 4;
+      sortie.data[k] = r;
+      sortie.data[k + 1] = v;
+      sortie.data[k + 2] = b;
+      sortie.data[k + 3] = 255;
+    }
+  }
+  ctx.putImageData(sortie, x, y);
 }
 
 let pdfjsPromesse = null;
@@ -219,10 +268,15 @@ async function copieSansMontants(octets) {
       context.fillStyle = "white";
       context.fillRect(0, 0, toile.width, toile.height);
       await page.render({canvasContext: context, viewport: vue}).promise;
-      context.fillStyle = "black";
+      // Effacés de la couleur du fond (blanc, ou le gris d'une ligne grisée), ligne par ligne.
       for (const rect of r.rects) {
         const [x1, y1, x2, y2] = vue.convertToViewportRectangle(rect);
-        context.fillRect(Math.min(x1, x2), Math.min(y1, y2), Math.abs(x2 - x1), Math.abs(y2 - y1));
+        const x = Math.max(0, Math.floor(Math.min(x1, x2)));
+        const y = Math.max(0, Math.floor(Math.min(y1, y2)));
+        const l = Math.min(toile.width - x, Math.ceil(Math.abs(x2 - x1)) + 1);
+        const h = Math.min(toile.height - y, Math.ceil(Math.abs(y2 - y1)) + 1);
+        if (l <= 0 || h <= 0) continue;
+        effacer(context, x, y, l, h, toile.width);
       }
       pages.push({
         jpeg: toile.encodeSync("jpeg", QUALITE_JPEG),

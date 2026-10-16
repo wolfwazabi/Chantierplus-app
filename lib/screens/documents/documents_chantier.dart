@@ -67,6 +67,21 @@ const String messageArchives =
 /// serveur (functions/src/devis.js) et les règles.
 bool estDevis(String nom) => RegExp(r'd[eéèêë]vis').hasMatch(nom.toLowerCase());
 
+/// Rattrapage, une fois par lancement de l'app d'un admin : le serveur fait la copie sans
+/// montants des devis déposés avant cette fonction (ils gardaient leur lien à jeton).
+bool _rattrapageDevisFait = false;
+Future<void> rattraperAnciensDevis() async {
+  if (_rattrapageDevisFait || !AppSession.estAdmin) return;
+  _rattrapageDevisFait = true;
+  try {
+    await Fonctions.appelerAvecDelai('preparerCopieDevis', {
+      'tous': true,
+    }, const Duration(minutes: 5));
+  } catch (_) {
+    _rattrapageDevisFait = false; // réessayé à la prochaine connexion
+  }
+}
+
 /// Ce que la personne connectée voit d'un document.
 enum VueDocument {
   /// Le document tel quel (tout document pour un admin ; un document qui n'est pas un devis).
